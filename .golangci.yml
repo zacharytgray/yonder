@@ -1,0 +1,28 @@
+version: "2"
+
+run:
+  build-tags:
+    - integration
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - misspell
+    - nolintlint
+    - unconvert
+    - usestdlibvars
+  settings:
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+  exclusions:
+    presets:
+      - std-error-handling
+      - common-false-positives
+
+formatters:
+  enable:
+    - gofmt

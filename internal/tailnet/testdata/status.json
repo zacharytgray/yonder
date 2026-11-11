@@ -1,0 +1,48 @@
+{
+  "Version": "1.90.0",
+  "BackendState": "Running",
+  "Self": {
+    "ID": "nSelf",
+    "HostName": "Laptop",
+    "DNSName": "laptop.example.ts.net.",
+    "OS": "macOS",
+    "TailscaleIPs": ["100.64.0.1", "fd7a:115c:a1e0::1"],
+    "Online": true,
+    "LastSeen": "0001-01-01T00:00:00Z"
+  },
+  "Peer": {
+    "nodekey:aaa": {
+      "HostName": "gpu-box",
+      "DNSName": "gpu-box.example.ts.net.",
+      "OS": "linux",
+      "TailscaleIPs": ["100.64.0.2", "fd7a:115c:a1e0::2"],
+      "Online": false,
+      "LastSeen": "2026-11-11T18:00:00Z"
+    },
+    "nodekey:bbb": {
+      "HostName": "Desktop_PC",
+      "DNSName": "desktop-pc.example.ts.net.",
+      "OS": "linux",
+      "TailscaleIPs": ["100.64.0.3"],
+      "Online": true,
+      "LastSeen": "0001-01-01T00:00:00Z"
+    },
+    "nodekey:ccc": {
+      "HostName": "my phone",
+      "DNSName": "my-phone.example.ts.net.",
+      "OS": "iOS",
+      "TailscaleIPs": ["100.64.0.4"],
+      "Online": true,
+      "LastSeen": "2026-11-11T19:00:00Z"
+    },
+    "nodekey:ddd": {
+      "HostName": "old-server",
+      "DNSName": "old-server.example.ts.net.",
+      "OS": "linux",
+      "TailscaleIPs": ["100.64.0.5"],
+      "Online": false,
+      "LastSeen": "0001-01-01T00:00:00Z"
+    }
+  },
+  "CurrentTailnet": {"Name": "example.ts.net", "MagicDNSSuffix": "example.ts.net"}
+}

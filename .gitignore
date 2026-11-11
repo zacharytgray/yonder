@@ -1,0 +1,8 @@
+/bin/
+/dist/
+/yonder
+*.test
+*.out
+coverage.*
+.DS_Store
+.env
