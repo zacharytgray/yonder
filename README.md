@@ -54,8 +54,8 @@ You need [Tailscale](https://tailscale.com/download) on each machine, and SSH tu
 machines you want to reach (on macOS: System Settings → General → Sharing → Remote Login).
 
 ```sh
-brew trust --cask zacharytgray/tap/yonder
-brew install --cask zacharytgray/tap/yonder
+brew trust --cask zacharytgray/yonder/yonder
+brew install --cask zacharytgray/yonder/yonder
 ```
 
 Homebrew refuses to load casks from third-party taps until you trust them. The first line trusts

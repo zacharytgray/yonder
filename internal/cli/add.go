@@ -310,7 +310,7 @@ func (a *app) installYonder(t transport.Target, pr probe) (string, error) {
 			return "", fmt.Errorf(`yonder is not installed on %s (%s/%s) and this binary is %s/%s, so it can't be copied over.
 the install script failed there (%v).
 install it there, then run `+"`yonder add %s`"+` again:
-  brew trust --cask zacharytgray/tap/yonder && brew install --cask zacharytgray/tap/yonder
+  brew trust --cask zacharytgray/yonder/yonder && brew install --cask zacharytgray/yonder/yonder
   or: go install github.com/zacharytgray/yonder/cmd/yonder@latest`,
 				t.Name, pr.os, pr.arch, runtime.GOOS, runtime.GOARCH, err, t.Name)
 		}

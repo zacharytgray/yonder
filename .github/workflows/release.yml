@@ -5,8 +5,7 @@ on:
     tags: ["v*"]
 
 # GITHUB_TOKEN publishes the github release.
-# HOMEBREW_TAP_TOKEN is a fine-grained pat with contents:write on the tap repo.
-# it is unused until the tap exists and skip_upload is flipped in .goreleaser.yaml.
+# TAP_DEPLOY_KEY is the private half of a write deploy key on zacharytgray/homebrew-yonder.
 permissions:
   contents: write
 
@@ -27,4 +26,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}

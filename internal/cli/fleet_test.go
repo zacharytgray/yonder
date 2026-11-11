@@ -173,7 +173,7 @@ func TestInstallYonderScript(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "brew install --cask zacharytgray/tap/yonder") || !strings.Contains(err.Error(), "go install github.com/zacharytgray/yonder") || !strings.Contains(err.Error(), "404") {
+			if err == nil || !strings.Contains(err.Error(), "brew install --cask zacharytgray/yonder/yonder") || !strings.Contains(err.Error(), "go install github.com/zacharytgray/yonder") || !strings.Contains(err.Error(), "404") {
 				t.Fatalf("want the manual install error, got %v", err)
 			}
 		})
