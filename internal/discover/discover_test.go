@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -189,6 +191,10 @@ func TestParseVersion(t *testing.T) {
 		"Hermes Agent v0.9.0 (2026.11.1)\n": "0.9.0",
 		"1.2.3-beta.1\n":                    "1.2.3-beta.1",
 		"unknown\n":                         "unknown",
+		"opencode 1.2.3\n":                  "1.2.3",
+		"1.2.3\n":                           "1.2.3",
+		"\x1b[0m1.2.3\x1b[0m\n":             "1.2.3",
+		"checking for updates\n1.2.3\n":     "1.2.3",
 		"":                                  "",
 	}
 	for in, want := range cases {
@@ -223,5 +229,18 @@ func TestLocalShape(t *testing.T) {
 	}
 	if d := time.Since(start); d > overall+time.Second {
 		t.Fatalf("took %v", d)
+	}
+}
+
+func TestRunVersionOnStderr(t *testing.T) {
+	// stdout is blank, the version is on stderr
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "tool")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho\necho 'tool 1.2.3' >&2\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, ok := run(context.Background(), 2*time.Second, bin, "--version")
+	if !ok || parseVersion(out) != "1.2.3" {
+		t.Fatalf("got %q ok=%v", out, ok)
 	}
 }

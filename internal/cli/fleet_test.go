@@ -280,3 +280,62 @@ func TestCallerLogScrubsCommand(t *testing.T) {
 		t.Fatalf("log: %s", raw)
 	}
 }
+
+func TestInstallSkillOnAddedMachines(t *testing.T) {
+	fake := &fakeSSH{yonder: func(t transport.Target, args []string, stdio transport.IO) (int, error) {
+		b, _ := io.ReadAll(stdio.Stdin)
+		if strings.Contains(string(b), `"to":"bad-box"`) {
+			fmt.Fprint(stdio.Stderr, "boom")
+			return 1, nil
+		}
+		fmt.Fprint(stdio.Stdout, "claude-code  installed")
+		return 0, nil
+	}}
+	st := &tailnet.Status{Self: peer("laptop", true), Peers: []tailnet.Peer{peer("gpu-box", true), peer("bad-box", true)}}
+	a, out := testApp(t, fake, st)
+	if err := a.store.SetSelf("laptop"); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"gpu-box", "bad-box"} {
+		m := registry.Machine{Name: n, TailscaleIP: "100.64.0.9", SSHHostKey: "ssh-ed25519 AAAAhost", UpdatedAt: time.Now().UTC()}
+		if err := a.store.SaveMachine(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.installSkillOn("laptop", []string{"gpu-box", "bad-box"}, false)
+	if len(fake.yonders) != 2 || fake.yonders[0] != "gpu-box _exec" {
+		t.Fatalf("calls %v", fake.yonders)
+	}
+	s := out.String()
+	if !strings.Contains(s, "installed the skill on gpu-box\n") || !strings.Contains(s, "skill on bad-box: exit 1") {
+		t.Fatalf("output: %s", s)
+	}
+}
+
+func TestRemovePendingMachineIsQuiet(t *testing.T) {
+	st := &tailnet.Status{Self: peer("laptop", true), Peers: []tailnet.Peer{peer("new-box", true)}}
+	a, out := testApp(t, &fakeSSH{}, st)
+	if err := a.store.SetSelf("laptop"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(-time.Hour)
+	pend := registry.Machine{Name: "new-box", TailscaleIP: "100.64.0.9", Pending: true, UpdatedAt: now, AddedAt: now}
+	if err := a.store.SaveMachine(pend); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.removeCommand("new-box", false, true); err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "removed new-box (it was never set up)") {
+		t.Fatalf("output: %s", s)
+	}
+	for _, bad := range []string{"wasn't reachable", "ssh key", "--forget-local"} {
+		if strings.Contains(s, bad) {
+			t.Fatalf("pending removal should not mention %q:\n%s", bad, s)
+		}
+	}
+	if _, ok := a.store.Tombstone("new-box"); !ok {
+		t.Fatal("tombstone missing")
+	}
+}

@@ -79,7 +79,7 @@ func (a *app) ask(question string, yes bool) error {
 	}
 	ok := false
 	if err := huh.NewConfirm().Title(question).Value(&ok).Run(); err != nil {
-		return &usageError{fmt.Errorf("could not ask for confirmation (%v); pass --yes", err)}
+		return &usageError{fmt.Errorf("could not ask for confirmation (%w); pass --yes", err)}
 	}
 	if !ok {
 		return withCode(ExitError, "cancelled; nothing changed")
@@ -195,7 +195,11 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 		if err := a.store.Remove(t); err != nil {
 			return err
 		}
-		fmt.Fprintf(a.out, "removed %s from the registry\n", name)
+		if m.Pending {
+			fmt.Fprintf(a.out, "removed %s (it was never set up)\n", name)
+		} else {
+			fmt.Fprintf(a.out, "removed %s from the registry\n", name)
+		}
 	}
 	// strip before the sync, so the explicit strip reports what it removed
 	var stillTrust []string
@@ -247,6 +251,9 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 	if lost {
 		a.lostChecklist(name, keys, stillTrust)
 		return nil
+	}
+	if m.Pending && !rerun {
+		return nil // never got yonder, a registry copy or keys
 	}
 	switch {
 	case cleaned:

@@ -276,6 +276,26 @@ func writable(dir string) error {
 	return os.Remove(name)
 }
 
+// factsOnly marks a remote report's harnesses detected only when the machine's
+// facts list them. the remote's own detection also counts config dirs, which a
+// stray folder can trip. no facts yet means trust the remote.
+func factsOnly(r agents.Report, m registry.Machine) agents.Report {
+	if m.DiscoveredAt.IsZero() {
+		return r
+	}
+	have := map[string]bool{}
+	for _, h := range m.Facts.Harnesses {
+		have[h.Name] = true
+	}
+	hs := make([]agents.HarnessStatus, len(r.Harnesses))
+	for i, h := range r.Harnesses {
+		h.Detected = h.Detected && have[h.Name]
+		hs[i] = h
+	}
+	r.Harnesses = hs
+	return r
+}
+
 // skillChecks turns an agents status into one check per detected harness.
 func skillChecks(group string, r agents.Report, home, fix string) []Check {
 	var out []Check
@@ -451,7 +471,7 @@ func peerChecks(e Env, m registry.Machine, lost []lostMachine) peerResult {
 	if r, err := e.Remote.Skills(m); err != nil {
 		add("skill", Warn, "can't read skill status (an older yonder?): "+err.Error(), "upgrade yonder on "+m.Name)
 	} else {
-		res.checks = append(res.checks, skillChecks(m.Name, r, "", "yonder agents install --all-machines")...)
+		res.checks = append(res.checks, skillChecks(m.Name, factsOnly(r, m), "", "yonder agents install --all-machines")...)
 	}
 
 	if len(lost) > 0 {

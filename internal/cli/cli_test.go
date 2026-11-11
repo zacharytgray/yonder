@@ -158,6 +158,9 @@ func TestParseProbe(t *testing.T) {
 	if p.yonder != "/home/me/.local/bin/yonder" || p.os != "linux" || p.arch != "amd64" || p.home != "/home/me" || len(p.pubs) != 1 {
 		t.Fatalf("%+v", p)
 	}
+	if got := parseProbe("yonder=/home/me/.local/share/../bin/yonder\nos=Linux\n").yonder; got != "/home/me/.local/bin/yonder" {
+		t.Fatalf("uncleaned path kept: %q", got)
+	}
 	if parseProbe("os=Darwin\narch=arm64\n").os != "darwin" {
 		t.Fatal("darwin")
 	}

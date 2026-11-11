@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -129,7 +130,10 @@ func (a *app) savePending(p tailnet.Peer, o addOpts) error {
 }
 
 // probeScript finds yonder and reports os, arch, home and client keys, one key=value per line.
+// command -v echoes the PATH entry as written, so an entry like ~/.local/share/../bin
+// gave an uncleaned path. the dir is resolved with pwd -P; the file is left alone so brew links stay.
 const probeScript = `p=$(sh -lc 'command -v yonder' 2>/dev/null | tail -n 1)
+if [ -n "$p" ]; then d=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P) && p="$d/$(basename "$p")"; fi
 for c in "$p" "$HOME/.local/bin/yonder" /opt/homebrew/bin/yonder /usr/local/bin/yonder /home/linuxbrew/.linuxbrew/bin/yonder "$HOME/go/bin/yonder"; do
   if [ -n "$c" ] && [ -x "$c" ]; then echo "yonder=$c"; break; fi
 done
@@ -154,7 +158,9 @@ func parseProbe(out string) probe {
 		}
 		switch k {
 		case "yonder":
-			p.yonder = v
+			if v != "" {
+				p.yonder = path.Clean(v) // posix path from the remote, not filepath
+			}
 		case "os":
 			p.os = unameOS(v)
 		case "arch":

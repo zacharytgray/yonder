@@ -174,10 +174,10 @@ added_at = 2026-11-01T00:00:00Z
 		t.Fatalf("doctor --json: %v %+v", err, r)
 	}
 
-	// graceful remove of an offline machine
+	// removing a machine that was added while offline (pending): nothing to clean up there
 	f.run("", "add", "gpu-box", "--yes")
 	r = f.must("remove", "gpu-box", "--yes")
-	if !strings.Contains(r.stdout, "gpu-box wasn't reachable") || !strings.Contains(r.stdout, "yonder remove --forget-local") {
+	if !strings.Contains(r.stdout, "removed gpu-box (it was never set up)") || strings.Contains(r.stdout, "wasn't reachable") || strings.Contains(r.stdout, "ssh key is still trusted") {
 		t.Fatalf("graceful: %s", r.stdout)
 	}
 	if r := f.run("", "remove", "gpu-box", "--yes"); r.code != 1 || !strings.Contains(r.stderr, "already removed") {

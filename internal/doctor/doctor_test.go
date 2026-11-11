@@ -99,7 +99,9 @@ func TestAggregation(t *testing.T) {
 	old := now.Add(-10 * 24 * time.Hour)
 	pending := machine("new-box", time.Time{})
 	pending.Pending, pending.SSHHostKey = true, ""
-	e := env(t, machine("gpu-box", old), machine("desktop", now), machine("sleepy", now), pending)
+	gpu := machine("gpu-box", old)
+	gpu.Facts.Harnesses = []registry.Harness{{Name: "codex"}}
+	e := env(t, gpu, machine("desktop", now), machine("sleepy", now), pending)
 	e.Status.Peers = []tailnet.Peer{peer("gpu-box", true), peer("desktop", true), peer("sleepy", false), peer("new-box", true)}
 	e.Remote = fakeRemote{
 		version: map[string]string{"gpu-box": "0.9.0"},
@@ -207,5 +209,27 @@ func TestAddressChanged(t *testing.T) {
 	c, ok := find(Run(e), "gpu-box", "address")
 	if !ok || c.Status != Fail || !strings.Contains(c.Detail, "record has 100.64.0.2, tailnet has 100.64.0.9") || c.Fix != "yonder remove gpu-box && yonder add gpu-box" {
 		t.Fatalf("got %+v", c)
+	}
+}
+
+func TestRemoteSkillOnlyForFactsHarnesses(t *testing.T) {
+	m := machine("gpu-box", now)
+	m.Facts.Harnesses = []registry.Harness{{Name: "claude-code"}, {Name: "codex"}, {Name: "pi"}}
+	e := env(t, m)
+	e.Status.Peers = []tailnet.Peer{peer("gpu-box", true)}
+	var hs []agents.HarnessStatus
+	for _, n := range []string{"claude-code", "codex", "pi", "hermes"} {
+		// the remote says every harness is detected, e.g. a stray ~/.hermes dir
+		hs = append(hs, agents.HarnessStatus{Name: n, Detected: true, State: agents.StateMissing})
+	}
+	e.Remote = fakeRemote{version: map[string]string{"gpu-box": "1.0.0"}, skills: map[string]agents.Report{"gpu-box": {Harnesses: hs}}}
+	cs := Run(e)
+	for _, n := range []string{"claude-code", "codex", "pi"} {
+		if _, ok := find(cs, "gpu-box", "skill: "+n); !ok {
+			t.Errorf("missing check for %s", n)
+		}
+	}
+	if _, ok := find(cs, "gpu-box", "skill: hermes"); ok {
+		t.Error("hermes isn't in the machine's facts, so no check")
 	}
 }

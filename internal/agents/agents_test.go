@@ -188,3 +188,22 @@ func TestHomeUnderYonderHome(t *testing.T) {
 		t.Fatalf("Home() = %s", Home())
 	}
 }
+
+func TestPrintNotesSymlinkedSkillsDir(t *testing.T) {
+	home := t.TempDir()
+	real := filepath.Join(home, "dotfiles", "skills")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(home, ".claude", "skills")); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	Print(&b, []Result{{Names: []string{"claude-code"}, Path: filepath.Join(home, ".claude", "skills", "yonder"), Action: "installed"}}, home)
+	if !strings.Contains(b.String(), "is a link to ~/dotfiles/skills") {
+		t.Fatalf("want a symlink note, got %q", b.String())
+	}
+}

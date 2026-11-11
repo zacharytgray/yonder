@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -54,8 +55,8 @@ func run(ctx context.Context, timeout time.Duration, bin string, args ...string)
 		return "", false
 	}
 	s := out.String()
-	if s == "" {
+	if strings.TrimSpace(s) == "" {
 		s = errb.String() // some tools print --version to stderr
 	}
-	return s, s != ""
+	return s, strings.TrimSpace(s) != ""
 }

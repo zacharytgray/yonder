@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -143,6 +144,11 @@ func newAgentsStatusCmd() *cobra.Command {
 
 // agentsOnFleet runs `yonder agents <sub> <args>` on every other machine that is online.
 func (a *app) agentsOnFleet(sub string, args []string) bool {
+	return a.agentsOn(sub, args, nil)
+}
+
+// agentsOn is agentsOnFleet limited to the named machines (all when only is empty).
+func (a *app) agentsOn(sub string, args, only []string) bool {
 	self, err := a.selfName()
 	if err != nil {
 		a.warnf("%v", err)
@@ -155,11 +161,10 @@ func (a *app) agentsOnFleet(sub string, args []string) bool {
 	}
 	ok := true
 	for _, m := range ms {
-		if m.Name == self {
+		if m.Name == self || (len(only) > 0 && !slices.Contains(only, m.Name)) {
 			continue
 		}
-		var out bytes.Buffer
-		code, err := a.execOn(m, self, yonderCmd(m, append([]string{"agents", sub}, args...)...), nil, &out, &out)
+		out, code, err := a.runAgents(m, self, sub, args)
 		switch {
 		case err != nil && ExitCode(err) == ExitTempErr:
 			fmt.Fprintf(a.out, "%s: skipped: %v\n", m.Name, err)
@@ -178,6 +183,13 @@ func (a *app) agentsOnFleet(sub string, args []string) bool {
 		}
 	}
 	return ok
+}
+
+// runAgents runs `yonder agents <sub> <args>` on m and returns its combined output.
+func (a *app) runAgents(m registry.Machine, self, sub string, args []string) (bytes.Buffer, int, error) {
+	var out bytes.Buffer
+	code, err := a.execOn(m, self, yonderCmd(m, append([]string{"agents", sub}, args...)...), nil, &out, &out)
+	return out, code, err
 }
 
 // yonderCmd is a shell string that runs m's yonder with args.

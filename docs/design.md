@@ -187,7 +187,7 @@ the local file, dedupes and sorts by time.
 
 `yonder add <m>` requires `m` to be a tailnet peer (not iOS/Android). It probes over ssh with
 BatchMode. If key auth fails and a terminal is attached, it offers `ssh-copy-id`; otherwise it
-prints the `ssh-copy-id` line and stops. It looks for yonder via `sh -lc 'command -v yonder'`,
+prints the `ssh-copy-id` line and stops. It looks for yonder via `sh -lc 'command -v yonder'` (dir resolved with `pwd -P`, path cleaned),
 then `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/home/linuxbrew/.linuxbrew/bin`
 and `~/go/bin`. If yonder is missing and the target's os/arch match this binary, it copies
 itself to `~/.local/bin/yonder` with scp. Otherwise it runs the official install script there
@@ -202,7 +202,10 @@ saved as `pending = true` and `add` exits 75; `yonder refresh` finishes it once 
 A set-up record with no `ssh_host_key` is an error with fix `yonder add <m>`; `refresh` never
 pins a new key for one.
 
-`yonder init --yes` sets up only this machine unless `--machines a,b` names peers.
+`yonder init --yes` sets up only this machine unless `--machines a,b` names peers. After adding
+peers, init also installs the skill on each machine it added that is online and set up (the
+`agents install --all-machines` path), asking once "Install the skill on <names> too?" unless
+`--yes`, and prints one line per machine. Failures there are warnings.
 
 Sync: the caller sends its bundle (`{"machines":[...],"tombstones":[...],"clear_lost":[...]}`) to
 each online machine's `_sync`, merges each reply as coming from that machine (same rules as
@@ -376,6 +379,8 @@ its own `yonder/` folder and never edits a harness's settings file.
 - `agents install --all-machines` also runs `yonder agents install` on each online machine
   through `_exec`, so each target logs it.
 - `init` runs the install for detected harnesses and prints one line per harness.
+- `doctor` checks a remote machine's skill only for harnesses in that machine's `facts.harnesses`
+  (the remote's own detection also counts stray config dirs). Without facts it trusts the remote.
 
 ## Doctor
 
@@ -407,7 +412,8 @@ caller-side entry (`"command":"yonder remove <m>[ --lost]"`).
 - Default: if `m` is online, yonder first runs `yonder agents uninstall && yonder remove
   --forget-local` there through `_exec`. `--forget-local` clears that machine's `machines/`,
   `removed/` and `self`, and keeps the rest of `config.toml`. The binary stays; the output says
-  how to delete it. If `m` is offline, the output gives that line to run there later.
+  how to delete it. If `m` is offline, the output gives that line to run there later. A pending
+  `m` (never set up) only prints `removed <m> (it was never set up)`, plus the tombstone sync.
 - `--lost`: `m` is never contacted. On this machine and every online peer (`yonder remove
   --strip-keys` through `_exec`, keys on stdin, before the sync) yonder removes the `authorized_keys` lines whose
   key type and base64 match one of `m`'s `ssh_client_keys`. Options prefixes and comments don't

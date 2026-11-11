@@ -16,10 +16,8 @@ var (
 	lookPath = exec.LookPath
 )
 
-// runFunc runs bin with env replacing the environment. stdin carries anything
+// execRun runs bin with env replacing the environment. stdin carries anything
 // sensitive; argv never does.
-type runFunc func(ctx context.Context, bin string, args, env []string, stdin []byte) (stdout, stderr []byte, err error)
-
 func execRun(ctx context.Context, bin string, args, env []string, stdin []byte) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = env

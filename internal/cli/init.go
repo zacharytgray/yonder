@@ -79,7 +79,7 @@ func (a *app) initCommand(interactive bool, chosen []string, user string) error 
 		return err
 	}
 
-	var failed []string
+	var failed, added []string
 	for _, p := range picks {
 		o := addOpts{user: user, interactive: interactive}
 		if interactive {
@@ -100,6 +100,7 @@ func (a *app) initCommand(interactive bool, chosen []string, user string) error 
 			continue
 		}
 		fmt.Fprintf(a.out, "added %s (%s/%s, %s@%s)\n", m.Name, m.OS, m.Arch, m.SSHUser, m.TailscaleIP)
+		added = append(added, m.Name)
 	}
 
 	// hook: step 3 sets up a secrets provider here
@@ -112,10 +113,38 @@ func (a *app) initCommand(interactive bool, chosen []string, user string) error 
 	}
 
 	a.syncFleet(self)
+	a.installSkillOn(self, added, interactive)
 	if len(failed) > 0 {
 		return fmt.Errorf("could not add %s; fix the errors above and run `yonder add <machine>`", strings.Join(failed, ", "))
 	}
 	return nil
+}
+
+// installSkillOn installs the skill on machines init just added, the same way
+// `agents install --all-machines` does. failures are warnings.
+func (a *app) installSkillOn(self string, names []string, interactive bool) {
+	if len(names) == 0 {
+		return
+	}
+	if interactive && !a.confirm("Install the skill on "+strings.Join(names, ", ")+" too?") {
+		return
+	}
+	for _, n := range names {
+		m, err := a.store.Machine(n)
+		if err != nil {
+			a.warnf("skill on %s: %v", n, err)
+			continue
+		}
+		out, code, err := a.runAgents(m, self, "install", nil)
+		switch {
+		case err != nil:
+			a.warnf("skill on %s: %v", n, err)
+		case code != 0:
+			a.warnf("skill on %s: exit %d (an older yonder there?): %s", n, code, lastLine(out.String()))
+		default:
+			fmt.Fprintf(a.out, "installed the skill on %s\n", n)
+		}
+	}
 }
 
 // selfRecord builds this machine's record, keeping role and notes from an old one.

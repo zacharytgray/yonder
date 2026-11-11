@@ -38,7 +38,7 @@ func goTool() string {
 	if p, err := exec.LookPath("go"); err == nil {
 		return p
 	}
-	return filepath.Join(runtime.GOROOT(), "bin", "go")
+	return "go"
 }
 
 func build(out, goos, goarch string) error {

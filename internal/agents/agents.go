@@ -400,6 +400,15 @@ func Print(w io.Writer, rs []Result, home string) (failed bool) {
 		} else if r.Detail != "" {
 			line += " (" + r.Detail + ")"
 		}
+		// a symlinked skills dir (dotfiles, a synced folder) means the write lands elsewhere
+		if dir := filepath.Dir(r.Path); r.Action != "skipped" {
+			if st, err := os.Lstat(dir); err == nil && st.Mode()&os.ModeSymlink != 0 {
+				if real, err := filepath.EvalSymlinks(dir); err == nil {
+					realHome, _ := filepath.EvalSymlinks(home)
+					line += "\n  note: " + Tilde(dir, home) + " is a link to " + Tilde(real, realHome) + ", so the skill lives there"
+				}
+			}
+		}
 		if r.Err != nil {
 			line = fmt.Sprintf("skill for %s: failed: %v", names, r.Err)
 			failed = true

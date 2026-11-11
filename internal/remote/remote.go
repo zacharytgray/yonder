@@ -102,7 +102,7 @@ func Sender(ctx context.Context, s *registry.Store, conn string) (string, error)
 	}
 	st, err := tailnet.Get(ctx)
 	if err != nil {
-		return "", fmt.Errorf("can't check who %s is: %v", ip, err)
+		return "", fmt.Errorf("can't check who %s is: %w", ip, err)
 	}
 	p, ok := st.LookupIP(ip)
 	if !ok {
