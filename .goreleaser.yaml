@@ -50,7 +50,7 @@ homebrew_casks:
     # binaries are not notarized, so drop the quarantine flag on macos
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/yonder"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/yonder"]
           end
