@@ -885,8 +885,23 @@ hash or exec bit changed since the last scan and for every file that went missin
 marker). That is how edits made without yonder are caught without a watcher. Delete markers older
 than 90 days are dropped.
 
+The scan reads the store folder through a symlink at its own path (a store moved into a dotfiles
+repo and linked back is the same store). It stops, changing nothing, when the folder is missing
+while files are on record, or when it would delete every tracked file (of two or more) or more
+than half of ten or more: a moved or broken folder looks like that, and the deletes would spread
+to every machine. The error says what it found; `yonder sync --allow-deletes` goes ahead. A peer
+whose scan stops this way fails its part of the sync, and the fix is to run the same there.
+
+**Back after a long absence.** Delete markers are dropped after 90 days, so a machine away longer
+could bring back files the others deleted meanwhile. When a machine loads its store state and its
+last sync with anyone is more than 90 days old, it marks every file it held then, unchanged since,
+as held back (`suspect` in the state). A held-back file is left out of its offers, and it is sent
+only to a machine that already knows the path (whose own version then decides, including a delete
+it still remembers). Editing the file here, or a peer that knows it, clears the mark;
+`yonder sync --stale-ok` on that machine sends them all. `doctor` lists them.
+
 **A sync with one peer** (the caller holds its store lock; the peer takes its own, waiting up to 5
-seconds, else it says busy and the caller skips it):
+seconds, else it exits 4 and the caller skips it with a note, which doesn't fail the sync):
 
 1. The caller scans. `_store-offer <store>` makes the peer scan and print its manifest:
    `{"v":1,"store","machine","files":{path: state},"refused":[...]}`.
@@ -896,7 +911,9 @@ seconds, else it says busy and the caller skips it):
    later edit time stays at the path (a tie goes to the machine name that sorts first), the other
    is written beside it as `<name>.conflict-<machine>-<yyyymmdd>.<ext>` (a dotfile keeps its whole
    name as the stem; `-2`, `-3` when taken). Both new versions get counters that beat both sides,
-   so every machine converges. Nothing stops syncing.
+   so every machine converges. Nothing stops syncing. If the copy can't be written (its name is
+   refused, or too long), neither side changes that path and the sync says so, every time, until
+   one edit is undone by hand: replacing the loser without its copy would lose it.
 3. `_store-send <store>` with `{"paths":[...]}` returns what the caller needs as a bundle. A path
    whose counters changed since the offer is left for the next sync.
 4. The caller applies the changes here, then `_store-recv <store>` applies the rest there.
@@ -906,7 +923,11 @@ then one regular-file entry per path that needs content. The reader takes the wh
 before anything is applied, refuses an entry the metadata doesn't list, a non-regular entry, a
 path that isn't clean and relative, a file over 1 MiB, more than 50 MiB in all, or content that
 doesn't match its hash. Applying a version requires that it beats what is here, and that the file
-on disk is still what the state says (an edit since the last scan is left for the next sync). Files
+on disk is still what the state says (an edit since the last scan is left for the next sync). The
+receiver also checks the store's own limits (50 MiB and 10,000 files in all, counting what it
+holds), refuses a path that differs from one it holds only by case (a Mac stores them as one
+file), and runs the store's check. A version the sender marked allowed is recorded as allowed here
+too, so this machine's own scans take it. Files
 are written through an `os.Root` on the store folder with a temp file and a rename, so no link in
 the store can send a write elsewhere.
 
@@ -931,7 +952,8 @@ timer, not a daemon.
 **Refusals are loud.** A file a store won't sync is a FAIL line in `sync` output (exit 1) and in
 `doctor`, with the reason and the fix. Only regular files sync: a symlink, a folder entry yonder
 can't read, a path with an empty, `.` or `..` part, a file over 1 MiB, or one that would take the
-store over 50 MiB is refused. `.git/`, `.DS_Store` and yonder's own `.yonder-*` temp files are
+store over 50 MiB or 10,000 files is refused, as is a path that differs from another only by
+case. `.git/`, `.DS_Store` and yonder's own `.yonder-*` temp files are
 ignored. A refusal the peer reports, or a file the receiver refuses, is a FAIL too.
 
 **History.** Before a sync, resolve, restore, accept or import replaces or deletes a file, the old
@@ -943,7 +965,10 @@ are not kept until something replaces them.
 not made live: the store's version of the path goes to `sync/pending/<store>/<path>`, the live
 file stays, and the state records what is live. It still syncs on to other machines as the
 store's version. A change made here, a delete, and content that is already live never wait. An
-edit here to a path that waits replaces the waiting change (which goes to history).
+edit here to a path that waits replaces the waiting change (which goes to history). Whether a
+change was made here is decided from this machine's own store, never from a version's origin,
+which the sender writes. A restore (and a resolve that picks a waiting copy) of a path the store
+reviews goes to pending/ too, since history also holds changes that were never accepted.
 
 ## Agents store
 
@@ -965,16 +990,22 @@ over the shared one by name. A machine's own map (`~/CLAUDE.md`) stays out of th
 
 ### What never syncs
 
-A file name that looks like a secret never syncs, on the sending or the receiving side: `.env*`,
-`*.pem`, `*.key`, `id_*`, `auth.json`, `credentials*`, `*.age`, `*token*`, `*secret*` (matched on
-the file name, any case). `skills/yonder/` (each machine installs its own) and `skills/synced/`
-(Claude.ai's own folder) never sync. Content that looks like a key is refused with its line number:
+Every rule below matches paths with case folded, since a Mac stores `Hooks/` and `hooks/` as one
+folder. A file name that looks like a secret never syncs, on the sending or the receiving side:
+`.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_*`, `auth.json`, `credentials*`, `.credentials*`,
+`.git-credentials`, `.netrc`, `_netrc`, `*.age`, `*token*`, `*secret*`. `skills/yonder/` (each
+machine installs its own) and `skills/synced/` (Claude.ai's own folder) never sync. Under
+`files/<key>/`, a harness's own settings, auth and instruction files never sync and are never
+linked: `settings*.json`, `config.toml`, `config.yaml`, `config.yml`, `.claude.json`, `auth.json`,
+credentials, `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `SOUL.md` (instructions go in
+`instructions.md`). An instructions file holding yonder's own marker (`<!-- yonder:`) never
+syncs and is never rendered, since it would break the block it lands in. Content that looks like a key is refused with its line number:
 private key blocks, `sk-...` API keys, GitHub, Slack and AWS key formats, and long runs that mix
 case and digits with near-random entropy (hex hashes don't count). Lines holding `op://` or
 `bws://` references skip the entropy check, since references and secret names are fine. This
 catches common formats, not everything. `yonder agents allow <path>` waives the content check for
 that file's current content (the state carries it, so receivers take it too); a later change is
-checked again. A name refusal can't be waived. Yonder itself never copies a harness's settings,
+checked again. A refusal by name (and the marker one) can't be waived. Yonder itself never copies a harness's settings,
 auth or credential files into the store: `import` takes only the kinds below. An instructions file
 that names an absolute home path (`/Users/<x>/`, `/home/<x>/`) is a doctor WARN, since it points
 at one machine's home; `~/` works everywhere.
@@ -982,10 +1013,12 @@ at one machine's home; `~/` works everywhere.
 ### Review
 
 Hooks run code, so a new or changed hook from another machine waits for `yonder agents accept`
-before it is live here. Executable files and hook configs (`files/<key>/hooks*`) count too. The
+before it is live here. Executable files count too, and so does everything under `files/`: a file
+linked into a harness's own folder (a hook or MCP config, a model catalog) can change what runs. The
 setting is `[sync] review` in `config.toml`: `"executables"` (default), `"all"` (every incoming
 change waits) or `"none"`. `accept [path...]` shows each waiting change as a line diff against
-what is live and asks; it needs a terminal on stdin and stdout and refuses otherwise, so an agent
+what is live (a change to the exec bit as its own line; control, format and bidi characters
+shown escaped) and asks; it needs a terminal on stdin and stdout and refuses otherwise, so an agent
 can't accept on its own. `agents status`, `diff` and `doctor` show what waits.
 
 ### Wiring the harnesses
@@ -1013,17 +1046,27 @@ The rules:
   hooks are linked into `~/.claude/hooks/`, so a `settings.json` entry for `~/.claude/hooks/x.sh`
   keeps working; registering a new hook stays the user's step. So does a session-start hook
   running `yonder sync --background`, which link suggests.
-- It edits a user's instructions file only inside the marked block (`<!-- yonder:begin ... -->` to
-  `<!-- yonder:end -->`), and copies the file to `agents/backup/<ts>/` first. A rendered file starts
-  with a marker line; a file without it is the user's and gets a block instead.
-- Anything already at a link's path (a real skill folder, a file, someone else's link) is moved to
-  `agents/backup/<ts>/<path under ~>` first, never beside it (a folder there would be loaded as a
-  skill).
+- It edits a user's instructions file only inside the marked block, from the first
+  `<!-- yonder:begin` to the last `<!-- yonder:end -->` after it. A begin marker with no end is
+  refused and the file left alone; the error and `doctor` say to delete the begin line or add the
+  end. A rendered file starts with a marker line. Whether a file is yonder's is decided from that
+  line every time, never from what link wrote before: a rendered file the user rewrote is theirs
+  and gets a block. Before changing a file that isn't exactly what yonder last wrote (the entry
+  keeps its hash), link copies it to `agents/backup/<ts>/`, every time.
+- Anything already at a link's path is moved to `agents/backup/<ts>/<path under ~>` first, never
+  beside it (a folder there would be loaded as a skill). Only a symlink to the recorded store
+  target counts as link's own; a real file at a linked path (an editor's save by rename) is backed
+  up too.
 - It never writes through a symlink. An instructions file, or a folder on the way (such as
   `~/.claude/skills`), that is a symlink is refused, naming `--replace-links`. With it, the link is
-  replaced by a real file or folder and its old target recorded; a replaced skills folder gets the
-  yonder skill installed again.
-- Conflict copies, dotfiles and pending changes are not linked. Link is idempotent; a second run
+  replaced and its old target recorded, and what it gave the harness comes along: a file gets the
+  target's text with the block added; a folder becomes a real folder holding one link per entry
+  of the target (a name the store also has goes to the store, with a warning), plus the yonder
+  skill if the target had none. Unlink takes those out and puts the symlink back; a file whose
+  text changed meanwhile is backed up first.
+- `agents/links.lock` serializes link and unlink on one machine, so a relink after a sync and a
+  layer change arriving through `_sync` can't edit `links.json` at once.
+- Conflict copies, dotfiles, pending changes and names that never sync are not linked. Link is idempotent; a second run
   with nothing new changes nothing. Entries no longer wanted (a skill deleted from the store) are
   undone, putting back what they replaced.
 - After a sync changes the store on a linked machine (either side), link runs again, so new skills
@@ -1032,9 +1075,12 @@ The rules:
   nothing more.
 
 `links.json` lists every entry: path, kind (`link`, `block`, `render`, `dir`), the store target,
-the backup, the old symlink target and whether yonder created the file. `yonder agents unlink`
-undoes every entry and puts back what it replaced: backups move back, replaced symlinks come back,
-blocks come out (a file yonder created and that holds only the block is removed). It always
+the backup, the old symlink target, whether yonder created the file and the hash of what it last
+wrote. `yonder agents unlink` undoes every entry and puts back what it replaced: backups move back,
+replaced symlinks come back, blocks come out (a file yonder created and that holds only the block
+is removed). It removes only what is recognisably its own: a symlink to the recorded target, a file
+starting with its marker (backed up first if changed since yonder wrote it), the text between its
+markers. A file without the marker is left alone and named. It always
 restores, so there is no `--restore` flag: removing the links without putting the originals back
 would leave a harness with neither. `doctor` warns for an entry that no longer matches
 (a link changed, a block deleted by hand, rendered text behind the store).
@@ -1049,8 +1095,9 @@ copies config into the store. Kinds: `instructions`, `skills`, `subagents`, `com
 `SKILL.md` is one skill. A single file needs `--kind` unless its name is one of the instruction
 names. `--harness` turns instructions into that harness's overlay and is required for `files`;
 `--machine` puts everything under `machines/<m>/`. Symlinks in the source are followed to regular
-files; `.git/`, dotfiles in kind folders, `skills/yonder` and `skills/synced` are skipped with a
-note. A store file that differs is left alone unless `--replace` (the old one goes to history).
+files; `.git/`, dotfiles in kind folders, `skills/yonder`, `skills/synced` and the harness
+settings names above are skipped with a note. An instructions file that holds yonder's block
+(a linked `CLAUDE.md`) gives only the text outside it; a file yonder rendered is skipped. A store file that differs is left alone unless `--replace` (the old one goes to history).
 Every file passes the secret check first; a refused one is a FAIL line and exit 1.
 
 ### The other commands
@@ -1061,10 +1108,11 @@ Every file passes the secret check first; a refused one is a FAIL line and exit 
 - `agents diff <path> [--version N]`: a line diff between the file now and the version it
   replaced (or kept version N); for a waiting change, between live and incoming.
 - `agents restore <path> [--version N | --list]`: put a kept version back; it syncs like an edit.
+  For a reviewed path it waits for `accept` here first.
 - `agents status [--json]` adds `"store"` to the skill report: `layer_on`, `dir`, `files`, `bytes`,
   `review`, `linked`, `paused`, `pending`, `conflicts`, `refused`, `last_sync` (per machine),
-  `notices` (deletes that lost to an edit, 7 days), `home_paths`, `link_problems` and
-  `large_instructions` (rendered instructions over 25 KB).
+  `notices` (deletes that lost to an edit, 7 days), `home_paths`, `link_problems`,
+  `large_instructions` (rendered instructions over 25 KB), `held_back` and `missing`.
 
 `import`, `link`, `accept`, `restore` and `allow` need the layer on; `log`, `diff`, `status` and
 `unlink` work either way.
@@ -1086,8 +1134,10 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   machine; a FAIL per file that can't sync; a WARN per conflict (fix `yonder sync --resolve <path>
   --keep mine|theirs|<machine>`), per change waiting for review (fix `yonder agents accept`), per
   delete that lost to an edit in the last 7 days, per instructions file naming an absolute home
-  path, per link entry that no longer matches (fix `yonder agents link`), and per harness whose
-  rendered instructions are over 25 KB.
+  path, per link entry that no longer matches or block with no end marker (fix `yonder agents
+  link`), per harness whose rendered instructions are over 25 KB, and for files held back after a
+  long absence (fix `yonder sync --stale-ok`); a FAIL when the store folder is missing while files
+  are on record.
 - Each fleet machine, in parallel: in tailscale status; online (offline is a WARN with last seen
   and notes, and its other checks are skipped); pending (WARN; with no held pin the detail is
   "<m> is online now; run `yonder add <m>` to finish setup", with a pin the fix is `yonder refresh <m>`); no pinned host key (fix `yonder add
@@ -1212,10 +1262,12 @@ way, such as the same LAN.
   that name, never a key any live record lists. A machine that never held the record strips
   nothing through sync; `yonder remove <m> --lost` run there still strips the tombstone's keys.
 - `_store-offer`, `_store-send` and `_store-recv` name their sender the same way and refuse an
-  unknown or removed one. They also refuse when this machine has no registry yet, and with exit 3
-  when the store's layer is off here. A peer's bundle is checked entry by entry before anything is
-  written, and only inside the store folder (see Store sync). Each machine runs the secret check on
-  what it receives, not only on what it sends.
+  unknown or removed one. They also refuse when this machine has no registry yet, with exit 3
+  when the store's layer is off here, and with exit 4 when the store is busy. A peer's bundle is
+  checked entry by entry before anything is written, and only inside the store folder (see Store
+  sync). Each machine runs the store's checks (secrets, settings names, limits, case) on what it
+  receives, not only on what it sends, and decides review from its own state, not from fields
+  the sender wrote.
 - Incoming hooks and executables wait for a person to accept them (see Agents store). Every change
   records its origin, so `agents log` and `agents diff` say which machine changed what.
 - Output, the log and `jobs/<id>.json` scrub secret values, command text included. Values that

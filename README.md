@@ -367,10 +367,14 @@ How sync behaves:
   `<name>.conflict-<machine>-<date>.<ext>`. Settle it with
   `yonder sync --resolve <path> --keep mine|theirs`.
 - Hooks run code, so new or changed ones from another machine wait until you run
-  `yonder agents accept` in a terminal. `[sync] review` in `~/.config/yonder/config.toml` changes
-  that: `executables` (the default), `all` or `none`.
-- Secrets never sync. Names like `.env` or `*.pem` are refused, and so are files that look like
-  they hold a key, with the line number.
+  `yonder agents accept` in a terminal. So do executables and files linked into a harness's own
+  folder. `[sync] review` in `~/.config/yonder/config.toml` changes that: `executables` (the
+  default), `all` or `none`.
+- Secrets and settings never sync. Names like `.env`, `*.pem` or a harness's `settings.json` and
+  `config.toml` are refused, and so are files that look like they hold a key, with the line
+  number.
+- If a sync would delete most of the store, it stops and asks for `--allow-deletes`: a moved
+  or missing folder looks like that.
 - Replaced and deleted versions are kept: `yonder agents restore <path>`. `yonder agents log`
   and `yonder agents diff` show which machine changed what.
 - There is no daemon. Sync runs on `yonder sync`, `refresh` and `add`, and after a change made
@@ -378,6 +382,8 @@ How sync behaves:
   `yonder sync --background`; for Claude Code, a SessionStart hook does it.
 - Two machines that are never awake at the same time only meet through a third one. A cron
   entry running `yonder sync` on an always-on machine covers that.
+- A machine away for more than 90 days holds back its old files, since the others may have
+  deleted them meanwhile. `yonder doctor` lists them, and `yonder sync --stale-ok` sends them.
 
 ## Commands
 
