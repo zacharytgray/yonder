@@ -13,7 +13,7 @@ import (
 // extraDirs are searched after PATH; ssh shells often have a thin PATH.
 func extraDirs() []string {
 	home, _ := os.UserHomeDir()
-	dirs := []string{"/opt/homebrew/bin", "/usr/local/bin", "/usr/sbin", "/sbin", "/usr/bin", "/bin"}
+	dirs := []string{"/opt/homebrew/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin", "/usr/sbin", "/sbin", "/usr/bin", "/bin"}
 	if home != "" {
 		dirs = append([]string{
 			filepath.Join(home, ".local/bin"),
@@ -60,3 +60,7 @@ func run(ctx context.Context, timeout time.Duration, bin string, args ...string)
 	}
 	return s, strings.TrimSpace(s) != ""
 }
+
+// Find is find for other packages: PATH first, then the usual install dirs,
+// since ssh and launchd shells start with a bare PATH.
+func Find(name string) string { return find(name) }

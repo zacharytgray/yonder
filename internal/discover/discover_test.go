@@ -244,3 +244,19 @@ func TestRunVersionOnStderr(t *testing.T) {
 		t.Fatalf("got %q ok=%v", out, ok)
 	}
 }
+
+func TestFindPastBarePath(t *testing.T) {
+	home := t.TempDir()
+	bin := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "yonder-fake-tool"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	if got := Find("yonder-fake-tool"); got != filepath.Join(bin, "yonder-fake-tool") {
+		t.Fatalf("got %q", got)
+	}
+}

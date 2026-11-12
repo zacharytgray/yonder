@@ -8,13 +8,23 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/zacharytgray/yonder/internal/discover"
 )
 
 // test hooks: tests swap these for fakes so nothing real runs.
 var (
 	run      = execRun
-	lookPath = exec.LookPath
+	lookPath = findTool
 )
+
+// findTool looks past a bare PATH (ssh, launchd) into the usual install dirs.
+func findTool(name string) (string, error) {
+	if p := discover.Find(name); p != "" {
+		return p, nil
+	}
+	return "", exec.ErrNotFound
+}
 
 // execRun runs bin with env replacing the environment. stdin carries anything
 // sensitive; argv never does.
