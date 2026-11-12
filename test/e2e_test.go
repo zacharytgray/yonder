@@ -135,6 +135,20 @@ func TestLocalEndToEnd(t *testing.T) {
 		t.Fatalf("show --json should carry the record: %s", r.stdout)
 	}
 
+	// set changes role and notes in place: this machine, and a pending peer here only
+	if r := f.must("set", "laptop", "--role", "desktop", "--notes", "always on"); !strings.Contains(r.stdout, `set laptop: role desktop, notes "always on"`) {
+		t.Fatalf("set self: %+v", r)
+	}
+	if r := f.must("set", "gpu-box", "--notes", ""); !strings.Contains(r.stdout, "set gpu-box: role gpu, notes -") {
+		t.Fatalf("set pending: %+v", r)
+	}
+	if r := f.must("show", "laptop"); !strings.Contains(r.stdout, "always on") || !strings.Contains(r.stdout, "desktop") {
+		t.Fatalf("show after set: %s", r.stdout)
+	}
+	if r := f.run("", "set", "laptop", "--role", "toaster"); r.code != 2 {
+		t.Fatalf("bad role: %+v", r)
+	}
+
 	// the log merges target-side runs and the caller-side failure
 	var entries []struct {
 		To, Harness, Side, Command string

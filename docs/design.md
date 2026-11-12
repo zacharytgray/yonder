@@ -71,7 +71,7 @@ yonder_path = "/home/me/.local/bin/yonder"
 ssh_host_key = "ssh-ed25519 AAAA..."   # this machine's sshd host key, pinned at add time
 ssh_client_keys = ["ssh-ed25519 AAAA... me@gpu-box"]  # keys this machine uses to reach others
 role = "gpu"                  # optional, user-given: laptop | desktop | server | gpu | other
-notes = "sleeps at night, heavy jobs only"
+notes = "sleeps at night, heavy jobs only"  # role and notes change with `yonder set`
 secrets_account = "yonder-gpu-box"  # optional: the 1Password service account its token belongs to
 secrets_write = true          # optional: that account may also write the agent vault
 updated_at = 2026-11-11T20:00:00Z
@@ -349,6 +349,22 @@ A pending record with no pin is never finished by `refresh`; it prints "<m> is o
 refuses to finish a pending peer the account doesn't own (fix `yonder add <dns> --allow-shared`).
 A set-up record with no `ssh_host_key` is an error with fix `yonder add <m>`; `refresh` never
 pins a new key for one.
+
+### Changing role and notes
+
+`yonder set <m> [--role R] [--notes TEXT]` changes those two fields and `updated_at`, nothing
+else. An empty value clears one; a role outside the list above is a usage error, and so is giving
+neither flag. `set` was picked over `edit`, which reads like opening an editor.
+
+Sync never lets a peer change a machine's own record (see Trust model), and a machine refreshing
+itself keeps the role and notes it holds, so a change made only here would be lost. So for a set-up
+peer, `set` runs `yonder set <m> --here <flags>` on that machine through `_exec` (it logs it), which
+changes its own record and nothing more, then syncs as usual: the peer's reply brings the record
+here and the second pass sends it on. A peer that is offline or unreachable is an exit 75 and
+nothing changes. For this machine, and for a pending peer (it holds no record of itself yet, and
+`add` finishes it with these values), the record is changed here and synced. It prints
+`set <m>: role server, notes "always on"`. An older peer without `set` gets "too old for set;
+upgrade it there".
 
 `yonder init --yes` sets up only this machine unless `--machines a,b` names peers (short or full
 names, resolved like `add`). Its peer list shows a peer the account doesn't own with a note and

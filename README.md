@@ -126,8 +126,9 @@ yonder init
 `init` finds the machines on your tailnet, lets you pick which ones join, checks SSH to each one
 (offering to copy your key if it is missing), installs Yonder on them, and discovers what each
 one has. It asks for each machine's role and any notes, such as "sleeps at night" or "heavy jobs
-only". These are optional. Your agents read them when they choose a machine. Last, it puts the
-skill into every agent harness it finds.
+only". These are optional. Your agents read them when they choose a machine. Change them later
+with `yonder set <machine> --role server --notes "always on"`. Last, it puts the skill into every
+agent harness it finds.
 
 Every prompt has a flag, so an agent can run setup too:
 
@@ -295,6 +296,7 @@ approval, Yonder will support it as another mode.
 | `yonder jobs <machine> [id] [--follow\|--kill]` | List detached jobs, or print one job's output. `--follow` waits for it and exits with its code. `--kill` stops it |
 | `yonder log` | What ran where, across every machine |
 | `yonder add <machine>` | Add one more machine |
+| `yonder set <machine> [--role R] [--notes TEXT]` | Change a machine's role or notes |
 | `yonder refresh [machine]` | Rediscover facts and sync the registry everywhere |
 | `yonder doctor` | Check everything and print the fix for each problem |
 | `yonder secret set\|add\|ls\|rm\|test\|setup\|token` | Manage secrets. `set` stores one in the vault. `setup` makes hands-free 1Password for your machines |
