@@ -190,7 +190,7 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 		return errors.Is(err, store.ErrBusy) && o.quiet // a sync already running is fine for a ride-along
 	}
 	defer s.Unlock()
-	_, refused, err := s.Scan()
+	scanned, refused, err := s.Scan()
 	if err != nil {
 		a.warnf("%s: %v", name, err)
 		return false
@@ -203,6 +203,10 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 		if err := s.Save(); err != nil {
 			a.warnf("%s: %v", name, err)
 			return false
+		}
+		// edits made here re-render this machine's instructions too
+		if len(scanned) > 0 && s.Kind.AfterChange != nil {
+			s.Kind.AfterChange(s, scanned)
 		}
 	}
 	peers, err := a.onlinePeers(self)

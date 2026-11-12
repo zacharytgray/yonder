@@ -130,8 +130,7 @@ func TestLinkAndUnlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	claude := read(filepath.Join(f.home, ".claude/CLAUDE.md"))
-	if !strings.HasPrefix(claude, "my own rules\n\n"+blockBegin) || !strings.Contains(claude, "@"+filepath.Join(f.storeDir, "instructions.md")) ||
-		!strings.Contains(claude, "instructions.claude.md") || strings.Contains(claude, "instructions.codex.md") {
+	if claude != "my own rules\n\n"+blockBegin+"\nshared rules\n\nclaude extra\n"+blockEnd+"\n" || strings.Contains(claude, "@") {
 		t.Fatalf("CLAUDE.md:\n%s", claude)
 	}
 	codex := read(filepath.Join(f.home, ".codex/AGENTS.md"))
@@ -159,8 +158,28 @@ func TestLinkAndUnlink(t *testing.T) {
 			t.Errorf("%s should not be linked", p)
 		}
 	}
-	if len(l.Problems()) != 0 {
-		t.Fatalf("problems: %v", l.Problems())
+	if len(l.Problems()) != 0 || len(l.LargeTexts()) != 0 {
+		t.Fatalf("problems: %v %v", l.Problems(), l.LargeTexts())
+	}
+	// the text is a copy, so an edit in the store shows as behind until link runs again
+	f.put(f.storeDir, "instructions.md", "shared rules, edited\n")
+	if ps := l.Problems(); len(ps) != 3 || !strings.Contains(ps[0], "is behind the store") {
+		t.Fatalf("stale render: %v", ps)
+	}
+	if err := l.Link(nil); err != nil {
+		t.Fatal(err)
+	}
+	claude = read(filepath.Join(f.home, ".claude/CLAUDE.md"))
+	if !strings.Contains(claude, "shared rules, edited\n") || len(l.Problems()) != 0 {
+		t.Fatalf("re-render: %s %v", claude, l.Problems())
+	}
+	f.put(f.storeDir, "instructions.claude.md", strings.Repeat("long line of claude text\n", 1200))
+	if big := l.LargeTexts(); len(big) != 1 || !strings.Contains(big[0], "~/.claude/CLAUDE.md gets 29 KB") {
+		t.Fatalf("large: %v", big)
+	}
+	f.put(f.storeDir, "instructions.claude.md", "claude extra\n")
+	if err := l.Link(nil); err != nil {
+		t.Fatal(err)
 	}
 
 	// again: nothing changes, and removing a skill drops its link

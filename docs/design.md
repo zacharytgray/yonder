@@ -993,10 +993,17 @@ harness found here (the same detection as the skill install), or the ones named:
 
 | Harness | Instructions | Skills | Other |
 |---|---|---|---|
-| Claude Code | A marked block in `~/.claude/CLAUDE.md` with `@` imports of `instructions.md`, `instructions.claude.md` and the machine's two, where they exist. The user's own text stays. | One link per skill in `~/.claude/skills/<name>`. | One link per file in `~/.claude/agents/`, `~/.claude/commands/` and `~/.claude/hooks/`; `files/claude/*` into `~/.claude/`. |
+| Claude Code | A marked block in `~/.claude/CLAUDE.md` holding the text of `instructions.md`, `instructions.claude.md` and the machine's two, where they exist, joined with blank lines. The user's own text stays. | One link per skill in `~/.claude/skills/<name>`. | One link per file in `~/.claude/agents/`, `~/.claude/commands/` and `~/.claude/hooks/`; `files/claude/*` into `~/.claude/`. |
 | Codex | `~/.codex/AGENTS.md` rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/`. |
 | Pi | Same as Codex, into `~/.pi/agent/AGENTS.md`. | `~/.agents/skills` (shared with Codex). | `files/pi/*` into `~/.pi/agent/`. |
 | Hermes | Not wired. | Not wired: link prints that the store's skills folder can be added to `skills.external_dirs` in its config. | `files/hermes/*` into `~/.hermes/`. |
+
+The text is copied in, never `@`-imported. Claude Code asks once per project before it imports a
+file outside the project, and keeps the import off if declined; a headless session can't answer,
+so an import from the user-level file would be unreliable. Codex and Pi have no imports anyway.
+The copy means a store edit reaches a harness only when it is rendered again (below); doctor
+warns while a rendered file is behind the store. There is no hard size limit, but every session
+loads the whole text, so doctor warns when one harness's rendered instructions pass 25 KB.
 
 The rules:
 
@@ -1018,8 +1025,9 @@ The rules:
   with nothing new changes nothing. Entries no longer wanted (a skill deleted from the store) are
   undone, putting back what they replaced.
 - After a sync changes the store on a linked machine (either side), link runs again, so new skills
-  get links and rendered files pick up new text. Links point into the store, so edits to linked
-  files need nothing.
+  get links and rendered text is rendered again. That includes edits made here: the caller runs it
+  after its own scan finds changes. Links point into the store, so edits to linked files need
+  nothing more.
 
 `links.json` lists every entry: path, kind (`link`, `block`, `render`, `dir`), the store target,
 the backup, the old symlink target and whether yonder created the file. `yonder agents unlink`
@@ -1027,7 +1035,7 @@ undoes every entry and puts back what it replaced: backups move back, replaced s
 blocks come out (a file yonder created and that holds only the block is removed). It always
 restores, so there is no `--restore` flag: removing the links without putting the originals back
 would leave a harness with neither. `doctor` warns for an entry that no longer matches
-(a link changed, a block deleted by hand).
+(a link changed, a block deleted by hand, rendered text behind the store).
 
 ### Importing
 
@@ -1053,7 +1061,8 @@ Every file passes the secret check first; a refused one is a FAIL line and exit 
 - `agents restore <path> [--version N | --list]`: put a kept version back; it syncs like an edit.
 - `agents status [--json]` adds `"store"` to the skill report: `layer_on`, `dir`, `files`, `bytes`,
   `review`, `linked`, `paused`, `pending`, `conflicts`, `refused`, `last_sync` (per machine),
-  `notices` (deletes that lost to an edit, 7 days), `home_paths` and `link_problems`.
+  `notices` (deletes that lost to an edit, 7 days), `home_paths`, `link_problems` and
+  `large_instructions` (rendered instructions over 25 KB).
 
 `import`, `link`, `accept`, `restore` and `allow` need the layer on; `log`, `diff`, `status` and
 `unlink` work either way.
@@ -1075,7 +1084,8 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   machine; a FAIL per file that can't sync; a WARN per conflict (fix `yonder sync --resolve <path>
   --keep mine|theirs|<machine>`), per change waiting for review (fix `yonder agents accept`), per
   delete that lost to an edit in the last 7 days, per instructions file naming an absolute home
-  path, and per link entry that no longer matches (fix `yonder agents link`).
+  path, per link entry that no longer matches (fix `yonder agents link`), and per harness whose
+  rendered instructions are over 25 KB.
 - Each fleet machine, in parallel: in tailscale status; online (offline is a WARN with last seen
   and notes, and its other checks are skipped); pending (WARN; with no held pin the detail is
   "<m> is online now; run `yonder add <m>` to finish setup", with a pin the fix is `yonder refresh <m>`); no pinned host key (fix `yonder add

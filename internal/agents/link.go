@@ -21,7 +21,7 @@ import (
 type wiring struct {
 	key          string
 	instructions string // file under ~ that gets the instructions
-	render       bool   // render the text into it (no imports), else an @import block
+	wholeFile    bool   // the file is yonder's when missing or rendered before; else a marked block
 	skills       string // folder under ~ that gets one link per skill; "" for none
 	files        string // folder under ~ that files/<key>/* link into
 	claudeDirs   bool   // also claude/agents, claude/commands and hooks
@@ -30,8 +30,8 @@ type wiring struct {
 
 var wirings = map[string]wiring{
 	"claude-code": {key: "claude", instructions: ".claude/CLAUDE.md", skills: ".claude/skills", files: ".claude", claudeDirs: true},
-	"codex":       {key: "codex", instructions: ".codex/AGENTS.md", render: true, skills: ".agents/skills", files: ".codex"},
-	"pi":          {key: "pi", instructions: ".pi/agent/AGENTS.md", render: true, skills: ".agents/skills", files: ".pi/agent"},
+	"codex":       {key: "codex", instructions: ".codex/AGENTS.md", wholeFile: true, skills: ".agents/skills", files: ".codex"},
+	"pi":          {key: "pi", instructions: ".pi/agent/AGENTS.md", wholeFile: true, skills: ".agents/skills", files: ".pi/agent"},
 	"hermes": {key: "hermes", files: ".hermes",
 		note: "hermes: yonder leaves its config alone; to give it the shared skills, add %s to skills.external_dirs in ~/.hermes/config.yaml"},
 }
@@ -177,6 +177,29 @@ func (l *Linker) instructionFiles(key string) []string {
 	return out
 }
 
+// renderText is the shared text, the harness overlay and the machine's two,
+// joined with blank lines. empty when the store has none.
+func (l *Linker) renderText(key string) string {
+	var parts []string
+	for _, f := range l.instructionFiles(key) {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		if t := strings.TrimSpace(string(data)); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "\n\n") + "\n"
+}
+
+// BlockWarn is the rendered text size doctor warns past. there is no hard
+// limit, but every session loads all of it.
+const BlockWarn = 25 << 10
+
 const (
 	blockBegin = "<!-- yonder:begin (written by `yonder agents link`; edit the store, not this block) -->"
 	blockEnd   = "<!-- yonder:end -->"
@@ -199,26 +222,14 @@ func (l *Linker) wants(harnesses []string) ([]want, []string) {
 			continue
 		}
 		if w.instructions != "" {
-			files := l.instructionFiles(w.key)
-			dest := filepath.Join(l.Home, w.instructions)
-			if len(files) > 0 && w.render {
-				var b strings.Builder
-				for _, f := range files {
-					data, err := os.ReadFile(f)
-					if err != nil {
-						continue
-					}
-					b.WriteString("\n")
-					b.WriteString(strings.TrimRight(string(data), "\n"))
-					b.WriteString("\n")
+			// the text itself, never an @import: claude code asks once per project
+			// before importing a file outside it, which a headless session can't answer
+			if text := l.renderText(w.key); text != "" {
+				kind := kindBlock
+				if w.wholeFile {
+					kind = kindRender
 				}
-				add(want{path: dest, kind: kindRender, content: b.String()})
-			} else if len(files) > 0 {
-				var b strings.Builder
-				for _, f := range files {
-					b.WriteString("@" + l.tilde(f) + "\n") // ~/... when under home
-				}
-				add(want{path: dest, kind: kindBlock, content: b.String()})
+				add(want{path: filepath.Join(l.Home, w.instructions), kind: kind, content: text})
 			}
 		}
 		if w.skills != "" {
@@ -247,8 +258,8 @@ func (l *Linker) wants(harnesses []string) ([]want, []string) {
 	return out, notes
 }
 
-// Link wires the store into the harnesses: an @import block (Claude Code) or a
-// rendered AGENTS.md (Codex, Pi), and one symlink per skill, subagent, command,
+// Link wires the store into the harnesses: the instructions rendered into a
+// marked block (Claude Code) or a rendered AGENTS.md (Codex, Pi), and one symlink per skill, subagent, command,
 // hook and passthrough file. settings files are never touched. anything in the
 // way is backed up first, and unlink puts it back. it is safe to run again.
 func (l *Linker) Link(harnesses []string) error {
@@ -506,7 +517,7 @@ func (l *Linker) writeText(w want, es []Entry, i int) ([]Entry, error) {
 	switch {
 	case w.kind == kindRender && (!exists || strings.HasPrefix(string(old), renderMark) || (i >= 0 && es[i].Kind == kindRender)):
 		e.Kind = kindRender
-		next = renderMark + "\n" + w.content
+		next = renderMark + "\n\n" + w.content
 	default:
 		e.Kind = kindBlock
 		next = withBlock(string(old), w.content)
@@ -729,6 +740,30 @@ func afterChange(s *store.Store, _ []string) {
 	}
 }
 
+// upToDate: the file holds exactly the rendered text.
+func upToDate(data, kind, content string) bool {
+	if kind == kindRender {
+		return data == renderMark+"\n\n"+content
+	}
+	return withBlock(data, content) == data
+}
+
+// LargeTexts names the rendered instructions past BlockWarn, with their size.
+func (l *Linker) LargeTexts() []string {
+	st, err := l.State()
+	if err != nil || st.Paused {
+		return nil
+	}
+	ws, _ := l.wants(st.Harnesses)
+	var out []string
+	for _, w := range ws {
+		if (w.kind == kindBlock || w.kind == kindRender) && len(w.content) > BlockWarn {
+			out = append(out, fmt.Sprintf("%s gets %d KB of instructions", l.tilde(w.path), len(w.content)>>10))
+		}
+	}
+	return out
+}
+
 // Problems reports entries that no longer match what link made.
 func (l *Linker) Problems() []string {
 	st, err := l.State()
@@ -736,7 +771,18 @@ func (l *Linker) Problems() []string {
 		return []string{err.Error()}
 	}
 	var out []string
+	wanted := map[string]want{}
+	if ws, _ := l.wants(st.Harnesses); !st.Paused {
+		for _, w := range ws {
+			wanted[w.path] = w
+		}
+	}
 	for _, e := range st.Entries {
+		if w, ok := wanted[e.Path]; ok && (e.Kind == kindBlock || e.Kind == kindRender) {
+			if data, err := os.ReadFile(e.Path); err == nil && strings.Contains(string(data), "<!-- yonder:") && !upToDate(string(data), e.Kind, w.content) {
+				out = append(out, l.tilde(e.Path)+" is behind the store's instructions (yonder sync re-renders it)")
+			}
+		}
 		switch e.Kind {
 		case kindLink:
 			if t, ok := isLink(e.Path); !ok || t != e.Target {

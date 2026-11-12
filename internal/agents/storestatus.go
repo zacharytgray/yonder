@@ -26,6 +26,7 @@ type StoreStatus struct {
 	Notices   []store.Notice       `json:"notices"`    // from the last 7 days
 	HomePaths []string             `json:"home_paths"` // instruction files that name an absolute home path
 	Problems  []string             `json:"link_problems"`
+	Large     []string             `json:"large_instructions"` // rendered instructions over 25 KB
 }
 
 // StoreReport reads the store's state without changing anything.
@@ -33,7 +34,7 @@ func StoreReport(self string) (StoreStatus, error) {
 	r := StoreStatus{
 		LayerOn: registry.Open().LayerOn(registry.LayerAgents), Review: ReviewMode(),
 		Linked: []string{}, Pending: []string{}, Conflicts: []string{}, Refused: []store.Refusal{},
-		LastSync: map[string]time.Time{}, Notices: []store.Notice{}, HomePaths: []string{}, Problems: []string{},
+		LastSync: map[string]time.Time{}, Notices: []store.Notice{}, HomePaths: []string{}, Problems: []string{}, Large: []string{},
 	}
 	s, err := store.Open(StoreName, self)
 	if err != nil {
@@ -84,6 +85,7 @@ func StoreReport(self string) (StoreStatus, error) {
 		}
 	}
 	r.Problems = append(r.Problems, l.Problems()...)
+	r.Large = append(r.Large, l.LargeTexts()...)
 	sort.Strings(r.Pending)
 	sort.Strings(r.Conflicts)
 	sort.Strings(r.HomePaths)

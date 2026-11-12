@@ -355,9 +355,10 @@ yonder sync                                   # send it to every online machine
 `instructions.md` is shared by every harness, and `instructions.claude.md` or
 `instructions.codex.md` add text for one. `machines/<name>/` holds what only one machine gets.
 
-`link` never edits a settings file. In `~/.claude/CLAUDE.md` it adds a marked block that imports
-the store and keeps your own text. It renders `~/.codex/AGENTS.md` and `~/.pi/agent/AGENTS.md`, and
-links each skill, subagent, command and hook. Anything in the way is backed up first.
+`link` never edits a settings file. In `~/.claude/CLAUDE.md` it writes the instructions into a
+marked block and keeps your own text. It renders `~/.codex/AGENTS.md` and `~/.pi/agent/AGENTS.md`
+the same way, and links each skill, subagent, command and hook. After you edit the store, the
+next `yonder sync` renders the new text in on every machine. Anything in the way is backed up first.
 `yonder agents unlink` puts it all back.
 
 How sync behaves:

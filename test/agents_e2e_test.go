@@ -61,9 +61,20 @@ func TestAgentsStoreLocal(t *testing.T) {
 		t.Fatalf("link: %s", r.stdout)
 	}
 	claude, _ := os.ReadFile(filepath.Join(home, ".claude/CLAUDE.md"))
-	if !strings.HasPrefix(string(claude), "my rules\n") || !strings.Contains(string(claude), "@"+filepath.Join(store, "instructions.md")) {
+	if !strings.HasPrefix(string(claude), "my rules\n") || !strings.Contains(string(claude), "\nbe brief\n<!-- yonder:end -->") {
 		t.Fatalf("CLAUDE.md: %s", claude)
 	}
+	// an edit in the store is rendered in at the next sync
+	write(filepath.Join(store, "instructions.md"), "be briefer\n", 0o644)
+	if r := f.must("doctor", "--json"); !strings.Contains(r.stdout, "is behind the store") {
+		t.Fatalf("doctor should see the stale block: %s", r.stdout)
+	}
+	f.must("sync")
+	if b, _ := os.ReadFile(filepath.Join(home, ".claude/CLAUDE.md")); !strings.Contains(string(b), "\nbe briefer\n<!-- yonder:end -->") {
+		t.Fatalf("sync should re-render: %s", b)
+	}
+	write(filepath.Join(store, "instructions.md"), "be brief\n", 0o644)
+	f.must("sync")
 	if l, _ := os.Readlink(filepath.Join(home, ".claude/hooks/guard.sh")); l != filepath.Join(store, "hooks/guard.sh") {
 		t.Fatalf("hook link: %q", l)
 	}

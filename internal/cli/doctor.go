@@ -215,6 +215,10 @@ func agentsChecks(self string) []doctor.Check {
 	for _, p := range r.Problems {
 		add("link", doctor.Warn, p, "yonder agents link")
 	}
+	for _, p := range r.Large {
+		add("size", doctor.Warn, p+", over 25 KB; every session loads all of it",
+			"move rarely needed text into a skill, or into instructions.<harness>.md for the one harness that needs it")
+	}
 	switch {
 	case r.Paused:
 		add("link", doctor.Warn, "links are paused although the layer is on", "yonder sync")
