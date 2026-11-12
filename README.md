@@ -88,6 +88,18 @@ agent  $ yonder ls
       without being told.</p>
     </td>
   </tr>
+  <tr>
+    <td valign="top">
+      <h3>Syncs agent config</h3>
+      <p>Optional: one set of instructions, skills, subagents and hooks on every machine, wired
+      into each harness. Peer to peer over the same SSH, with history and no server.</p>
+    </td>
+    <td valign="top">
+      <h3>Takes only what you turn on</h3>
+      <p>Connecting machines is always on. Secrets and agent config are layers you switch on or
+      off for the whole fleet with one command.</p>
+    </td>
+  </tr>
 </table>
 
 Yonder connects machines. It does not decide what your agent may do. Your harness already does
@@ -157,6 +169,29 @@ Each side is a local path or `<machine>:<path>`, like scp. Folders copy whole, s
 or an app bundle just works. `~` is the home on the receiving machine. An existing file or folder
 is never replaced without `--force`. A copy between two other machines passes through the one you
 run it on. The receiving machine logs each copy, and `yonder log` shows it with its size.
+
+## Layers
+
+Connecting your machines is always on. On top of it sit optional layers, each one fleet-wide:
+
+| Layer | What it adds |
+|---|---|
+| `secrets` | Commands that use secrets from 1Password or Bitwarden |
+| `agents` | Agent instructions, skills, subagents and hooks, synced between machines |
+| `memory` | Shared agent memory. Not in this version yet |
+
+`yonder init` asks which ones you want, or takes `--layers secrets,agents`. Change them any time:
+
+```sh
+yonder layers              # what is on
+yonder enable agents       # on for every machine
+yonder disable secrets     # off for every machine; nothing is deleted
+```
+
+Machines that are offline pick up the change at their next sync. Turning a layer off keeps its
+data. With `secrets` off, `--secret` is refused with a note on how to turn it back on. With
+`agents` off, each machine unlinks its harnesses and puts back what linking replaced. If you used
+secrets before layers existed, secrets stays on.
 
 ## Secrets
 
@@ -306,6 +341,44 @@ choose the provider, then `yonder secret token set`. To name the agent vault by 
 Approval happens only in the desktop app on the machine asking. When 1Password adds phone
 approval, Yonder will support it as another mode.
 
+## Agent config
+
+With the `agents` layer on, one folder, `~/.local/share/yonder/agents`, holds your agent config and
+syncs between your machines:
+
+```sh
+yonder agents import ~/.claude                # CLAUDE.md, skills/, agents/, commands/, hooks/
+yonder agents link                            # wire it into Claude Code, Codex and Pi here
+yonder sync                                   # send it to every online machine
+```
+
+`instructions.md` is shared by every harness, and `instructions.claude.md` or
+`instructions.codex.md` add text for one. `machines/<name>/` holds what only one machine gets.
+
+`link` never edits a settings file. In `~/.claude/CLAUDE.md` it adds a marked block that imports
+the store and keeps your own text. It renders `~/.codex/AGENTS.md` and `~/.pi/agent/AGENTS.md`, and
+links each skill, subagent, command and hook. Anything in the way is backed up first.
+`yonder agents unlink` puts it all back.
+
+How sync behaves:
+
+- Every file carries a version counter per machine. If two machines edit a file before they sync,
+  both versions are kept. The later one stays, and the other sits beside it as
+  `<name>.conflict-<machine>-<date>.<ext>`. Settle it with
+  `yonder sync --resolve <path> --keep mine|theirs`.
+- Hooks run code, so new or changed ones from another machine wait until you run
+  `yonder agents accept` in a terminal. `[sync] review` in `~/.config/yonder/config.toml` changes
+  that: `executables` (the default), `all` or `none`.
+- Secrets never sync. Names like `.env` or `*.pem` are refused, and so are files that look like
+  they hold a key, with the line number.
+- Replaced and deleted versions are kept: `yonder agents restore <path>`. `yonder agents log`
+  and `yonder agents diff` show which machine changed what.
+- There is no daemon. Sync runs on `yonder sync`, `refresh` and `add`, and after a change made
+  through yonder. To sync at the start of each agent session, have the harness run
+  `yonder sync --background`; for Claude Code, a SessionStart hook does it.
+- Two machines that are never awake at the same time only meet through a third one. A cron
+  entry running `yonder sync` on an always-on machine covers that.
+
 ## Commands
 
 | Command | What it does |
@@ -323,6 +396,9 @@ approval, Yonder will support it as another mode.
 | `yonder doctor` | Check everything and print the fix for each problem |
 | `yonder secret set\|add\|ls\|rm\|test\|setup\|token` | Manage secrets. `set` stores one in the vault. `setup` makes hands-free 1Password for your machines |
 | `yonder agents install\|uninstall\|status` | Manage the skill in each agent harness. `--all-machines` does every machine |
+| `yonder layers` / `yonder enable\|disable <layer>` | See and switch the optional layers for the whole fleet |
+| `yonder sync [store] [machine...]` | Sync the registry and the stores of the layers that are on. `--resolve` settles a conflict |
+| `yonder agents import\|link\|unlink\|log\|diff\|accept\|restore\|allow` | Agent config: put it in the store, wire it into the harnesses, see and undo changes, review hooks |
 | `yonder remove <machine> [--lost]` | Take a machine out of the fleet |
 
 ## How agents learn it
@@ -375,7 +451,8 @@ against another. See the [trust model](docs/design.md#trust-model).
 `yonder ls` refreshes any online machine whose facts are more than a day old. `yonder doctor`
 flags machines that are unreachable or offline, facts more than a week old, Yonder versions that
 don't match, skills that are out of date, a machine that can't SSH into another one, machines that
-still trust a removed machine's key, and secrets that won't unlock. Each problem
+still trust a removed machine's key, secrets that won't unlock, and agent config that won't sync,
+is in conflict or waits for review. Each problem
 comes with the command that fixes it.
 
 ## Limits

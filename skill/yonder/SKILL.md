@@ -1,6 +1,6 @@
 ---
 name: yonder
-description: Use the user's other machines through Yonder. Use when a task needs or mentions another computer (a laptop, desktop, server, GPU box), when the user asks what machines they have, which one has a GPU, a model, free disk or a tool, when something is broken on another machine and needs fixing, when a job should run somewhere else, or when a command needs a secret such as an API token.
+description: Use the user's other machines through Yonder. Use when a task needs or mentions another computer (a laptop, desktop, server, GPU box), when the user asks what machines they have, which one has a GPU, a model, free disk or a tool, when something is broken on another machine and needs fixing, when a job should run somewhere else, when a command needs a secret such as an API token, or when the user's shared agent instructions, skills or hooks need changing on all their machines.
 ---
 
 # Yonder: the user's machines
@@ -93,6 +93,27 @@ stop.
 
 If a secret the task needs is missing from `yonder secret ls`, tell the user its name and stop. The
 user stores it with `yonder secret set NAME`.
+
+## Layers and agent config
+
+Some parts of Yonder are optional layers: `yonder layers` shows which are on. If a command says a
+layer is off, tell the user the `yonder enable <layer>` line it gives; don't turn layers on or off
+yourself unless they ask.
+
+With the `agents` layer on, `~/.local/share/yonder/agents` holds the user's shared agent
+instructions, skills, subagents and hooks, and syncs between machines:
+
+- To change shared instructions or a skill, edit the file in that folder, then run
+  `yonder sync`. Don't edit the links or rendered files in `~/.claude`, `~/.codex` or `~/.pi`;
+  they come from the store.
+- `yonder agents log` and `yonder agents diff <path>` show which machine changed what.
+  `yonder agents restore <path>` puts an earlier version back.
+- A `.conflict-<machine>-<date>` file means two machines edited the same file. Show the user both
+  versions and ask which to keep, then `yonder sync --resolve <path> --keep mine|theirs`.
+- Never put a secret in the store. A FAIL line from `yonder sync` names the file and the line;
+  take the value out and use a secret name instead.
+- Hooks from other machines wait for review. Only the user can run `yonder agents accept`, in a
+  terminal. Tell them when something waits.
 
 ## Other commands
 
