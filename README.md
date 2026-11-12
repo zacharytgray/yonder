@@ -9,7 +9,7 @@
 ### Text one agent. Fix any machine.
 
 Yonder connects your own computers so the AI agents on any of them can use all of them.<br>
-Ask Claude Code on your laptop why the GPU box is out of disk, and it goes and looks.
+Ask Claude Code on your laptop why the PC is out of disk, and it goes and looks.
 
 [![CI][badge-ci]][ci]
 [![Latest release][badge-release]][releases]
@@ -24,30 +24,28 @@ Ask Claude Code on your laptop why the GPU box is out of disk, and it goes and l
 **[<kbd> <br> Design <br> </kbd>](docs/design.md)**
 
 <a href="docs/demo/yonder-demo.mp4">
-  <img src="docs/demo/hero.gif" width="100%" alt="A text from a phone says ollama on the gpu box is down. The agent on mini runs yonder ls, checks the service on gpu-box with yonder run, restarts it, and texts back that all three models are up. Then a secret prints as [HF_TOKEN], and yonder log shows what ran where.">
+  <img src="docs/demo/hero.gif" width="100%" alt="Text one agent, fix any machine. From a phone: I forgot my presentation on my Mac Mini, can you send it to my laptop? The agent on the Mac Mini runs yonder ls, sees the laptop, PC and a sleeping Raspberry Pi, copies Talk.key to the laptop with yonder cp, and starts a fine-tune on the PC because it has the free GPU. Then yonder secret setup with 1Password, a secret that prints as [HF_TOKEN], yonder log, a Homebrew install, and the skill going into Claude Code, Codex, Pi and Hermes.">
 </a>
 
-**[▶ Watch the one-minute demo, with sound](docs/demo/yonder-demo.mp4)**
+**[▶ Watch the 33-second demo, with sound](docs/demo/yonder-demo.mp4)**
 
 </div>
 
 ```
-you    ollama on the gpu box is down, can you fix it?
+you    I'm about to give a presentation but I forgot to download it on my laptop!
+       It's on my Mac Mini. Can you send it over?
 
 agent  $ yonder ls
-       NAME     ROLE    STATE         HARDWARE                 MODELS  HARNESSES
-       laptop   laptop  this machine  M3 Pro · 36 GB           2       claude-code,codex
-       mini     server  online        M4 · 16 GB               0       claude-code,hermes
-       gpu-box  gpu     online        RTX 4090 24 GB · 64 GB   3       -
+       NAME          ROLE     STATE           HARDWARE                MODELS  HARNESSES
+       laptop        laptop   online          M3 Pro · 36 GB          0       claude-code,codex
+       mac-mini      server   this machine    M4 · 16 GB              0       claude-code,hermes
+       pc            desktop  online          RTX 4090 24 GB · 64 GB  3       -
+       raspberry-pi  other    offline 2h ago  Cortex-A76 · 8 GB       0       -
 
-       $ yonder run gpu-box -- 'systemctl --user status ollama'
-       ● ollama.service - failed (out of memory)
-       $ yonder run gpu-box -- 'systemctl --user restart ollama && ollama list'
-       NAME              SIZE
-       qwen3-coder:30b   18 GB  ...
+       $ yonder cp ~/Documents/Talk.key laptop:~/Desktop/
+       copied Talk.key (folder, 23 files, 18.4 MB) to laptop:/Users/me/Desktop/Talk.key
 
-       Ollama on gpu-box ran out of memory and stopped. I restarted it and all
-       three models are back.
+       Sent. Talk.key is on your laptop's Desktop.
 ```
 
 ## What it does
@@ -61,7 +59,7 @@ agent  $ yonder ls
     </td>
     <td width="50%" valign="top">
       <h3>Runs anywhere</h3>
-      <p><code>yonder run gpu-box -- &lt;cmd&gt;</code> over plain SSH on your tailnet. Output
+      <p><code>yonder run pc -- &lt;cmd&gt;</code> over plain SSH on your tailnet. Output
       streams back. The exit code is the command's own.</p>
     </td>
   </tr>
@@ -134,7 +132,7 @@ skill into every agent harness it finds.
 Every prompt has a flag, so an agent can run setup too:
 
 ```sh
-yonder init --yes --machines mini,gpu-box
+yonder init --yes --machines mac-mini,pc
 ```
 
 ## Send files
@@ -156,7 +154,7 @@ Secrets stay in your password manager. Yonder stores only names and references, 
 ```sh
 yonder secret setup                                  # pick a provider for this machine
 yonder secret add HF_TOKEN op://Agents/huggingface/token
-yonder run gpu-box --secret HF_TOKEN -- 'huggingface-cli download ...'
+yonder run pc --secret HF_TOKEN -- 'huggingface-cli download ...'
 ```
 
 With 1Password you can skip the mapping. Yonder records one vault for agent secrets. An item
@@ -247,8 +245,8 @@ it. Without prompts:
 
 ```sh
 yonder secret setup --yes                       # the default machines
-yonder secret setup --machines gpu-box          # one machine, e.g. one that was offline
-yonder secret setup --machines gpu-box --replace  # give it a new token
+yonder secret setup --machines raspberry-pi     # one machine, e.g. one that was offline
+yonder secret setup --machines pc --replace     # give it a new token
 ```
 
 Agents on those machines can read everything in that vault, so put only agent secrets in it.
@@ -258,7 +256,7 @@ without prompts, add `--allow-write`. `yonder doctor` says whether a machine is 
 read and write.
 
 ```sh
-yonder secret setup --machines gpu-box --replace --allow-write
+yonder secret setup --machines pc --replace --allow-write
 ```
 
 **Secrets only some machines should read.** Give those machines read access to one more vault
@@ -325,7 +323,7 @@ Tailscale cannot tell a sleeping laptop from one that is switched off, so Yonder
 It says `offline`, shows when the machine was last seen, and adds your notes:
 
 ```
-yonder: gpu-box is offline (last seen 2h ago) — notes: sleeps at night
+yonder: raspberry-pi is offline (last seen 2h ago) — notes: sleeps at night
 ```
 
 If a laptop is lost or stolen, first remove it from your tailnet in the Tailscale admin console.

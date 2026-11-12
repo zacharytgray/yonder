@@ -4,317 +4,451 @@
 <meta charset="utf-8">
 <title>yonder demo</title>
 <style>
-  /* brand: docs/brand.md, dark variant. fonts are bundled so the render works offline. */
+  /* brand: docs/brand.md. fonts are bundled so the render works offline. */
   @font-face { font-family: "Fraunces"; src: url(fonts/fraunces-latin.woff2) format("woff2"); font-weight: 100 900; }
   @font-face { font-family: "Instrument Sans"; src: url(fonts/instrument-sans-latin.woff2) format("woff2"); font-weight: 400 700; }
   @font-face { font-family: "JetBrains Mono"; src: url(fonts/jetbrains-mono-latin.woff2) format("woff2"); font-weight: 400 700; }
   :root {
-    --bg: #1a1828; --raised: #221f33; --line: #36314a; --text: #f3eada; --dim: #aba3b8;
-    --accent: #f08a55; --online: #9fbf8c; --warn: #f2b54e; --info: #a9c8da;
+    --night: #1a1828; --ink: #26223d; --rule-dk: #36314a; --cream: #f3eada; --muted-dk: #aba3b8;
+    --paper: #f6f0e4; --raised: #fbf7ef; --band: #efe6d5; --rule: #ddd0ba; --muted: #5e5870;
+    --sun: #d2602f; --sun-dk: #f08a55; --sun-text: #a3431a;
+    --online: #4f6b42; --online-dk: #9fbf8c; --lantern: #e3a23a; --warn: #8a5a12; --warn-dk: #f2b54e;
+    --sky-dk: #a9c8da;
     --display: "Fraunces", "Iowan Old Style", Georgia, serif;
     --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
     --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
-  #stage {
-    position: relative; width: 1920px; height: 1080px; overflow: hidden; color: var(--text);
-    font-family: var(--sans);
-    /* the one gradient the brand allows: night at the top, dusk at the horizon */
-    background: linear-gradient(180deg, #1a1828 0%, #1a1828 25%, #2e2440 78%, #2a2139 100%);
-  }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: var(--sans); }
+  .disp { font-family: var(--display); font-weight: 600; font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144; letter-spacing: -0.01em; line-height: 1.1; }
 
-  /* phone */
-  #phone {
-    position: absolute; left: 0; top: 0; width: 400px; height: 820px; transform-origin: 0 0;
-    border-radius: 58px; background: #110f1b; padding: 12px;
-    box-shadow: 0 0 0 2px var(--line), 0 40px 120px rgba(10,8,18,0.6);
-  }
-  #screen {
-    position: relative; width: 100%; height: 100%; border-radius: 47px; overflow: hidden;
-    background: var(--bg);
-  }
+  /* dusk ground: hook and outro */
+  #dusk { position: absolute; inset: 0; color: var(--cream); }
+  #dusk svg { position: absolute; inset: 0; }
+  .hook { position: absolute; left: 150px; transform-origin: 0 70%; }
+  #h1 { top: 190px; font-size: 132px; }
+  #h2 { top: 345px; font-size: 132px; color: var(--sun-dk); }
+  .mlabel { position: absolute; top: 788px; font: 600 36px var(--sans); text-align: center; color: var(--cream); transform: translateX(-50%); white-space: nowrap; }
+  .mlabel small { display: block; font: 500 20px var(--mono); color: var(--muted-dk); margin-top: 4px; }
+  #agenttag { position: absolute; top: 676px; font: 600 22px var(--sans); color: var(--night); background: var(--sun-dk);
+    border-radius: 999px; padding: 5px 14px; transform: translateX(-50%); white-space: nowrap; }
+  #lockup { position: absolute; left: 150px; top: 190px; width: 760px; transform-origin: 0 50%; }
+  #o1 { position: absolute; left: 150px; top: 420px; font-size: 76px; transform-origin: 0 70%; }
+  #o2 { position: absolute; left: 154px; top: 530px; font: 500 30px var(--mono); color: var(--muted-dk); }
+
+  /* paper ground */
+  #paper { position: absolute; inset: 0; background: var(--paper); color: var(--ink); }
+
+  #phone { position: absolute; left: 0; top: 0; width: 400px; height: 820px; transform-origin: 0 0;
+    border-radius: 58px; background: var(--ink); padding: 12px; box-shadow: 0 30px 80px rgba(38,34,61,0.22); }
+  #screen { position: relative; width: 100%; height: 100%; border-radius: 47px; overflow: hidden; background: var(--raised); }
   .ph-status { height: 52px; display: flex; justify-content: space-between; align-items: center;
-    padding: 6px 34px 0; font-size: 17px; font-weight: 600; color: var(--text); }
-  .ph-island { position: absolute; top: 12px; left: 50%; width: 112px; height: 32px; margin-left: -56px;
-    border-radius: 18px; background: #08070d; }
-  .ph-head { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0 14px;
-    border-bottom: 1px solid var(--line); }
+    padding: 6px 34px 0; font-size: 17px; font-weight: 600; color: var(--ink); }
+  .ph-island { position: absolute; top: 12px; left: 50%; width: 112px; height: 32px; margin-left: -56px; border-radius: 18px; background: var(--ink); }
+  .ph-head { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0 14px; border-bottom: 1px solid var(--rule); }
   .avatar { width: 52px; height: 52px; display: block; }
   .ph-name { font-size: 17px; font-weight: 600; }
-  .ph-sub { font-size: 13px; color: var(--dim); margin-top: -4px; font-family: var(--mono); }
-  #thread { position: absolute; left: 0; right: 0; top: 168px; bottom: 86px; padding: 18px 16px;
+  .ph-sub { font-size: 13px; color: var(--muted); margin-top: -4px; font-family: var(--mono); }
+  #thread { position: absolute; left: 0; right: 0; top: 168px; bottom: 86px; padding: 18px 16px; overflow: hidden;
     display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; }
-  .bubble { max-width: 300px; padding: 12px 17px; border-radius: 22px; font-size: 24px; line-height: 1.3; }
-  .me { align-self: flex-end; background: #3d6680; color: var(--text); border-bottom-right-radius: 6px; }
-  .them { align-self: flex-start; background: #2c2840; color: var(--text); border-bottom-left-radius: 6px; }
+  .bubble { max-width: 310px; padding: 11px 16px; border-radius: 22px; font-size: 22px; line-height: 1.3; transform-origin: 100% 100%; }
+  .me { align-self: flex-end; background: var(--sun-text); color: #fff; border-bottom-right-radius: 6px; }
+  .them { align-self: flex-start; background: var(--band); color: var(--ink); border-bottom-left-radius: 6px; transform-origin: 0 100%; }
   .dots { display: flex; gap: 6px; padding: 16px 18px; }
-  .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); display: block; }
+  .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: block; }
   #compose { position: absolute; left: 14px; right: 14px; bottom: 26px; height: 48px; border-radius: 24px;
-    border: 1px solid var(--line); padding: 0 18px; display: flex; align-items: center; font-size: 19px; color: var(--text); }
-  #compose .ph { color: #6f6884; }
-  .caret { display: inline-block; width: 2px; height: 22px; background: var(--info); margin-left: 1px; vertical-align: -4px; }
+    border: 1px solid var(--rule); padding: 0 18px; display: flex; align-items: center; font-size: 19px; color: #9a92a8; }
 
-  /* fleet chips */
-  #fleet { position: absolute; left: 540px; top: 190px; width: 1300px; height: 92px; }
-  #fleet svg { position: absolute; inset: 0; overflow: visible; }
-  .chip { position: absolute; top: 14px; width: 250px; height: 64px; border-radius: 14px; background: var(--raised);
-    border: 1px solid var(--line); display: flex; align-items: center; gap: 14px; padding: 0 18px; }
-  .chip .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--dim); flex: none; }
-  .chip .nm { font: 500 22px var(--mono); }
-  .chip .rl { font-size: 15px; color: var(--dim); margin-top: 2px; }
-  .chip .tag { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--accent); border: 1px solid rgba(240,138,85,0.45);
+  #strip { position: absolute; height: 92px; }
+  #strip svg { position: absolute; inset: 0; overflow: visible; }
+  .chip { position: absolute; top: 14px; width: 260px; height: 64px; border-radius: 14px; background: var(--raised);
+    border: 1.5px solid var(--rule); display: flex; align-items: center; gap: 14px; padding: 0 18px; }
+  .chip .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
+  .chip .nm { font: 600 23px var(--sans); white-space: nowrap; }
+  .chip .rl { font-size: 16px; color: var(--muted); margin-top: 1px; white-space: nowrap; }
+  .chip .tag { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--sun-text); border: 1.5px solid rgba(163,67,26,0.4);
     border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+  .pills { position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; gap: 22px; }
+  .pill { height: 70px; border-radius: 16px; background: var(--raised); border: 1.5px solid var(--rule); padding: 0 26px;
+    display: flex; align-items: center; gap: 14px; }
+  .pill b { font: 600 30px var(--sans); color: var(--ink); }
+  .pill span { font-size: 18px; color: var(--muted); }
+  .pill i { width: 12px; height: 12px; border-radius: 50%; background: var(--sun); display: block; }
 
-  /* terminal */
-  #term { position: absolute; top: 310px; height: 450px; border-radius: 14px; background: var(--raised);
-    border: 1px solid var(--line); box-shadow: 0 30px 90px rgba(10,8,18,0.45); overflow: hidden; }
-  .tbar { height: 46px; display: flex; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid var(--line); }
-  .tbar i { width: 13px; height: 13px; border-radius: 50%; display: block; background: var(--line); }
-  .tbar span { margin-left: 14px; font-size: 16px; color: var(--dim); font-family: var(--mono); }
-  #tbody { padding: 24px 28px; font: 24px/1.5 var(--mono); white-space: pre; color: var(--text); }
-  #term.wide #tbody { font-size: 26px; }
-  #term.big #tbody { font-size: 42px; padding: 40px 44px; }
-  .p { color: var(--dim); }
-  .c { color: var(--text); }
-  .d { color: var(--dim); }
-  .r { color: var(--warn); }
-  .g { color: var(--online); }
-  .a { color: var(--accent); }
+  #term { position: absolute; border-radius: 16px; background: var(--ink); color: var(--cream);
+    box-shadow: 0 26px 70px rgba(38,34,61,0.25); overflow: hidden; }
+  .tbar { height: 46px; display: flex; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid var(--rule-dk); }
+  .tbar i { width: 13px; height: 13px; border-radius: 50%; display: block; background: var(--rule-dk); }
+  .tbar span { margin-left: 14px; font-size: 16px; color: var(--muted-dk); font-family: var(--mono); }
+  #tbody { padding: 22px 28px; font: 22px/1.5 var(--mono); white-space: pre; font-variant-ligatures: none; }
+  #term.narrow #tbody { font-size: 23px; }
+  #term.small #tbody { font-size: 19px; }
+  #term.big #tbody { font-size: 40px; padding: 40px 44px; }
+  .p { color: var(--sun-dk); }
+  .d { color: var(--muted-dk); }
+  .r { color: var(--warn-dk); }
+  .g { color: var(--online-dk); }
+  .a { color: var(--sun-dk); }
   .ln { display: block; }
-  .hl { background: rgba(240,138,85,0.13); box-shadow: -10px 0 0 rgba(240,138,85,0.13), 10px 0 0 rgba(240,138,85,0.13); border-radius: 4px; }
-  .sec { color: #1a1828; background: var(--accent); border-radius: 5px; padding: 0 4px; }
-  .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--text); vertical-align: -0.22em; }
+  .hl { background: rgba(240,138,85,0.16); box-shadow: -10px 0 0 rgba(240,138,85,0.16), 10px 0 0 rgba(240,138,85,0.16); border-radius: 4px; }
+  .sec { display: inline-block; color: var(--night); background: var(--sun-dk); border-radius: 6px; padding: 0 6px; transform-origin: 30% 60%; }
+  .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--cream); vertical-align: -0.22em; }
 
-  /* captions and titles: fraunces, soft and wonky */
-  .disp { font-family: var(--display); font-weight: 600; font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144; letter-spacing: -0.01em; }
-  #caption { position: absolute; left: 0; width: 1920px; top: 826px; text-align: center; font-size: 50px; line-height: 1.1;
-    font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 72; }
-  #caption em { font-style: normal; color: var(--accent); }
-  #title { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 34px; }
-  .mark { width: 880px; display: block; }
-  .tline { font-size: 72px; line-height: 1.1; }
-  .tsub { font-size: 30px; color: var(--dim); }
+  #caption { position: absolute; text-align: center; font-size: 50px;
+    font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 72; color: var(--ink); }
+  #caption em { font-style: normal; color: var(--sun); }
+  #caption em.m { font: 500 0.82em var(--mono); color: var(--sun-text); }
 </style>
 </head>
 <body>
 <div id="stage">
-  <div id="fleet">
-    <svg width="1300" height="92">
-      <line id="l-lap" x1="250" y1="46" x2="525" y2="46" stroke="#36314a" stroke-width="2" stroke-dasharray="6 8"/>
-      <line id="l-gpu" x1="775" y1="46" x2="1050" y2="46" stroke="#36314a" stroke-width="2" stroke-dasharray="6 8"/>
-      <line id="l-gpu-on" x1="775" y1="46" x2="1050" y2="46" stroke="#a9c8da" stroke-width="3"/>
-      <circle id="pkt" cx="775" cy="46" r="7" fill="#a9c8da"/>
+
+  <div id="dusk">
+    <svg width="1920" height="1080" viewBox="0 0 1920 1080">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#1a1828"/><stop offset="0.25" stop-color="#1a1828"/><stop offset="0.7" stop-color="#2e2440"/>
+        </linearGradient>
+        <clipPath id="above"><rect width="1920" height="760"/></clipPath>
+      </defs>
+      <rect width="1920" height="760" fill="url(#sky)"/>
+      <rect y="760" width="1920" height="320" fill="#16141f"/>
+      <g clip-path="url(#above)"><g id="sun"><path d="M1230 760a150 150 0 0 1 300 0z" fill="#f08a55"/></g></g>
+      <path d="M0 760 C 160 742 300 738 470 748 C 640 758 760 736 930 744 C 1100 752 1180 740 1290 748 C 1420 757 1600 738 1760 746 C 1840 750 1890 752 1920 754 L1920 762 L0 762 Z" fill="#2e2a45"/>
+      <path d="M0 762 C 220 752 380 756 560 754 C 760 752 980 758 1160 755 C 1380 752 1600 757 1920 756 L1920 764 L0 764 Z" fill="#1f1c30"/>
+      <rect id="hz" x="0" y="757" width="1920" height="6" rx="3" fill="#f3eada"/>
+      <g id="refl">
+        <rect x="1270" y="784" width="220" height="11" rx="5.5" fill="#f08a55" opacity=".55"/>
+        <rect x="1310" y="808" width="140" height="11" rx="5.5" fill="#f08a55" opacity=".35"/>
+        <rect x="1345" y="832" width="70" height="11" rx="5.5" fill="#f08a55" opacity=".2"/>
+      </g>
+      <circle id="lantern" cx="1650" cy="230" r="7" fill="#e3a23a"/>
+      <path id="arc1" d="M620 748 Q 425 540 232 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
+      <path id="arc2" d="M620 748 Q 1170 410 1718 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
+      <path id="arc3" d="M620 748 Q 810 640 998 748" fill="none" stroke="#5e5870" stroke-width="3" stroke-linecap="round"/>
+      <circle id="d-laptop" cx="230" cy="760" r="13" fill="#9fbf8c"/>
+      <circle id="d-mini" cx="620" cy="760" r="13" fill="#9fbf8c"/>
+      <circle id="d-pi" cx="1000" cy="760" r="11" fill="#1a1828" stroke="#aba3b8" stroke-width="3"/>
+      <circle id="d-pc" cx="1720" cy="760" r="13" fill="#9fbf8c"/>
     </svg>
-    <div class="chip" id="c-laptop" style="left:0"><div class="dot"></div><div><div class="nm">laptop</div><div class="rl">M3 Pro · 36 GB</div></div></div>
-    <div class="chip" id="c-mini" style="left:525px"><div class="dot"></div><div><div class="nm">mini</div><div class="rl">M4 · 16 GB</div></div><div class="tag">agent here</div></div>
-    <div class="chip" id="c-gpu" style="left:1050px"><div class="dot"></div><div><div class="nm">gpu-box</div><div class="rl" id="gpu-rl">RTX 4090 · 64 GB</div></div></div>
+    <div class="mlabel" id="lb-laptop" style="left:230px">Laptop</div>
+    <div class="mlabel" id="lb-mini" style="left:620px">Mac Mini</div>
+    <div class="mlabel" id="lb-pi" style="left:1000px">Raspberry Pi<small>asleep · seen 2h ago</small></div>
+    <div class="mlabel" id="lb-pc" style="left:1720px">PC</div>
+    <div id="agenttag" style="left:620px">your agent</div>
+    <div class="hook disp" id="h1">Text one agent.</div>
+    <div class="hook disp" id="h2">Fix any machine.</div>
+    <img id="lockup" src="../brand/yonder-logo-dark.svg" alt="yonder">
+    <div class="disp" id="o1">Text one agent. Fix any machine.</div>
+    <div id="o2">github.com/zacharytgray/yonder  ·  macOS &amp; Linux  ·  MIT</div>
   </div>
 
-  <div id="term"><div class="tbar"><i></i><i></i><i></i><span>hermes · mini</span></div><div id="tbody"></div></div>
-
-  <div id="phone"><div id="screen">
-    <div class="ph-island"></div>
-    <div class="ph-status"><span>9:41</span><span>●●●</span></div>
-    <div class="ph-head"><img class="avatar" src="../brand/yonder-icon.svg" alt=""><div class="ph-name">agent</div><div class="ph-sub">on mini</div></div>
-    <div id="thread">
-      <div class="bubble me" id="m1">ollama on the gpu box is down, can you fix it?</div>
-      <div class="bubble them dots" id="typing"><i></i><i></i><i></i></div>
-      <div class="bubble them" id="m2">Ollama on gpu-box ran out of memory and stopped. I restarted it. All three models are back.</div>
+  <div id="paper">
+    <div id="strip">
+      <svg width="1600" height="92">
+        <line class="lk" id="l-0" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>
+        <line class="lk" id="l-1" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>
+        <line class="lk" id="l-2" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>
+        <line id="l-on" y1="46" y2="46" stroke="#d2602f" stroke-width="4" stroke-linecap="round"/>
+        <circle id="pkt" cy="46" r="8" fill="#d2602f"/>
+      </svg>
+      <div id="chips">
+        <div class="chip" id="c-laptop"><div class="dot"></div><div><div class="nm">Laptop</div><div class="rl" id="lap-rl">M3 Pro · 36 GB</div></div></div>
+        <div class="chip" id="c-mini"><div class="dot"></div><div><div class="nm">Mac Mini</div><div class="rl">M4 · 16 GB</div></div><div class="tag">agent here</div></div>
+        <div class="chip" id="c-pc"><div class="dot"></div><div><div class="nm">PC</div><div class="rl" id="pc-rl">RTX 4090 · 64 GB</div></div></div>
+        <div class="chip" id="c-pi"><div class="dot"></div><div><div class="nm">Raspberry Pi</div><div class="rl">offline · 2h ago</div></div></div>
+      </div>
+      <div class="pills" id="providers">
+        <div class="pill"><i></i><b>1Password</b><span>Touch ID or a service account</span></div>
+        <div class="pill"><i></i><b>Bitwarden</b><span>Secrets Manager</span></div>
+      </div>
+      <div class="pills" id="harnesses">
+        <div class="pill"><i></i><b>Claude Code</b></div>
+        <div class="pill"><i></i><b>Codex</b></div>
+        <div class="pill"><i></i><b>Pi</b></div>
+        <div class="pill"><i></i><b>Hermes</b></div>
+      </div>
     </div>
-    <div id="compose"></div>
-  </div></div>
 
-  <div id="caption" class="disp"></div>
+    <div id="term"><div class="tbar"><i></i><i></i><i></i><span id="ttl">hermes · mini</span></div><div id="tbody"></div></div>
 
-  <div id="title">
-    <img class="mark" src="../brand/yonder-logo-dark.svg" alt="yonder">
-    <div class="tline disp" id="tline">Text one agent. Fix any machine.</div>
-    <div class="tsub" id="tsub">github.com/zacharytgray/yonder</div>
+    <div id="phone"><div id="screen">
+      <div class="ph-island"></div>
+      <div class="ph-status"><span>9:41</span><span>●●●</span></div>
+      <div class="ph-head"><img class="avatar" src="../brand/yonder-icon.svg" alt=""><div class="ph-name">agent</div><div class="ph-sub">on mac-mini</div></div>
+      <div id="thread">
+        <div class="bubble me" id="m1">I'm about to give a presentation but I forgot to download it on my laptop! It's on my Mac Mini. Can you send it over?</div>
+        <div class="bubble them" id="m2">Sent. Talk.key is on your laptop's Desktop.</div>
+        <div class="bubble me" id="m3">also start the fine-tune wherever there's a free GPU</div>
+        <div class="bubble them" id="m4">Started on the PC. Its RTX 4090 was free.</div>
+        <div class="bubble them dots" id="typing"><i></i><i></i><i></i></div>
+      </div>
+      <div id="compose">Message</div>
+    </div></div>
+
+    <div id="caption" class="disp"></div>
   </div>
 </div>
 
 <script>
-// every frame is a pure function of t (seconds). 100 bpm: beat 0.6s, bar 2.4s.
+// every frame is a pure function of t (seconds). 120 bpm: beat 0.5s, bar 2s.
+// event times here match the cues in music.py.
 const $ = id => document.getElementById(id);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const eo = x => 1 - Math.pow(1 - clamp(x), 3);
-const ei = x => Math.pow(clamp(x), 3);
 const eio = x => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const back = x => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
 const lerp = (a, b, k) => a + (b - a) * k;
-// fade in over [a,b], out over [c,d]
-const win = (t, a, b, c = 1e9, d = 1e9) => Math.min(eo((t - a) / (b - a)), 1 - ei((t - c) / (d - c)));
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const typed = (s, t, t0, cps = 26) => s.slice(0, clamp(Math.floor((t - t0) * cps), 0, s.length));
+const typed = (s, t, t0, cps) => s.slice(0, clamp(Math.floor((t - t0) * cps), 0, s.length));
+// pop: opacity + scale with a little overshoot, starting at t0
+function pop(el, t, t0, dur = 0.28, from = 0.7) {
+  const k = clamp((t - t0) / dur);
+  el.style.opacity = t < t0 ? 0 : eo(k * 1.6);
+  el.style.transform = `scale(${lerp(from, 1, back(k))})`;
+  return k;
+}
 
-const PHONE_C = { x: 736, y: 80, s: 1.12 };
-const PHONE_L = { x: 120, y: 190, s: 0.88 };
+const DUSK_OUT = 4.0, DUSK_IN = 30.0;
 
-// terminal scenes. lines are prebuilt html; out = time the first line lands, gap = per line.
+// terminal scenes: each step types a command, then its lines land
 const SCENES = [
-  { from: 9.6, to: 16.8, cmd: 'yonder ls', type: 10.6, out: 11.4, gap: 0.3, lines: [
-      '<span class="d">NAME     ROLE    STATE         HARDWARE                MODELS  HARNESSES</span>',
-      'gpu-box  gpu     <span class="g">online</span>        RTX 4090 24 GB · 64 GB  3       -',
-      'laptop   laptop  <span class="g">online</span>        M3 Pro · 36 GB          2       claude-code,codex',
-      'mini     server  <span class="a">this machine</span>  M4 · 16 GB              0       claude-code,hermes',
-    ], hl: { line: 1, at: 13.4 } },
-  { from: 16.8, to: 24.0, cmd: 'yonder run gpu-box -- systemctl --user status ollama', type: 17.1, out: 19.8, gap: 0.3, lines: [
-      '<span class="r">×</span> ollama.service - Ollama Service',
-      '     Loaded: loaded (~/.config/systemd/user/ollama.service; enabled)',
-      '     Active: <span class="r">failed (Result: oom-kill)</span> since Wed 09:12:44 UTC',
-      '   Main PID: 1843 (code=killed, signal=KILL)',
-    ], hl: { line: 2, at: 21.0 } },
-  { from: 24.0, to: 31.2, cmd: "yonder run gpu-box -- 'systemctl --user restart ollama && ollama list'", type: 24.3, out: 28.2, gap: 0.3, lines: [
-      '<span class="d">NAME                       ID              SIZE      MODIFIED</span>',
-      'qwen3-coder:30b            06c1097efce0    18 GB     2 weeks ago',
-      'llama3.3:70b               a6eb4748fd29    42 GB     3 weeks ago',
-      'nomic-embed-text:latest    0a109f422b47    274 MB    2 months ago',
-    ] },
-  { from: 38.4, to: 45.6, cmd: "yonder run gpu-box --secret HF_TOKEN -- 'echo $HF_TOKEN'", type: 39.4, out: 42.0, gap: 0.2, lines: [
-      '<span class="sec">[HF_TOKEN]</span>',
-    ] },
-  { from: 45.6, to: 52.8, cmd: 'yonder log', type: 45.9, out: 46.5, gap: 0.3, lines: [
-      '<span class="d">TIME                 FROM  TO       HARNESS  EXIT  MS    COMMAND</span>',
-      '2026-11-11 09:41:12  mini  gpu-box  hermes   <span class="r">3</span>     187   systemctl --user status ollama',
-      '2026-11-11 09:41:19  mini  gpu-box  hermes   <span class="g">0</span>     2310  systemctl --user restart ollama &amp;&amp; ollama list',
-      '2026-11-11 09:42:05  mini  gpu-box  hermes   <span class="g">0</span>     96    echo $HF_TOKEN  <span class="a">[secrets: [HF_TOKEN]]</span>',
-    ] },
+  { from: 4.0, title: 'hermes · mac-mini', steps: [
+    { cmd: 'yonder ls', type: 4.5, cps: 40, out: 5.0, gap: 0.25, lines: [
+      '<span class="d">NAME          ROLE     STATE           HARDWARE                MODELS  HARNESSES</span>',
+      'laptop        laptop   <span class="g">online</span>          M3 Pro · 36 GB          0       claude-code,codex',
+      'mac-mini      server   <span class="a">this machine</span>    M4 · 16 GB              0       claude-code,hermes',
+      'pc            desktop  <span class="g">online</span>          RTX 4090 24 GB · 64 GB  3       -',
+      'raspberry-pi  other    <span class="d">offline 2h ago</span>  Cortex-A76 · 8 GB       0       -',
+    ], hl: { line: 1, at: 6.5 } }] },
+  { from: 8.0, title: 'hermes · mac-mini', steps: [
+    { cmd: 'ls ~/Documents/*.key', type: 8.25, cps: 50, out: 8.75, lines: ['/Users/me/Documents/Talk.key'] },
+    { cmd: 'yonder cp ~/Documents/Talk.key laptop:~/Desktop/', type: 9.0, cps: 60, out: 10.0, gap: 0.25, lines: [
+      'copied Talk.key (folder, 23 files, 18.4 MB) to laptop:/Users/me/Desktop/Talk.key',
+    ] }] },
+  { from: 12.0, title: 'hermes · mac-mini', steps: [
+    { cmd: "yonder run pc --detach -- 'python train.py'", type: 12.75, cps: 60, out: 13.75, gap: 0.25, lines: [
+      '<span class="d">yonder: started on pc; output: yonder jobs pc 20261111-094112-a0</span>',
+    ] }] },
+  { from: 16.0, title: 'you · laptop', wide: true, steps: [
+    { cmd: 'yonder secret setup --yes', type: 16.5, cps: 60, out: 17.0, gap: 0.22, lines: [
+      '<span class="d">raspberry-pi: skipped, offline; later: yonder secret setup --machines raspberry-pi</span>',
+      'Agent secrets go in the 1Password vault "Yonder Agents". The agents on mac-mini, pc can read everything in it.',
+      '1Password asks you to approve once (Touch ID or your system password).',
+      'created the vault "Yonder Agents"',
+      'mac-mini: <span class="g">ok</span>, service account yonder-mac-mini reads "Yonder Agents", token in macOS Keychain',
+      'pc: <span class="g">ok</span>, service account yonder-pc reads "Yonder Agents", token in secret service (secret-tool)',
+      'laptop: 1password (desktop), you approve reads here with Touch ID or system auth',
+    ] }] },
+  { from: 20.0, title: 'hermes · mac-mini', wide: true, big: true, steps: [
+    { cmd: "yonder run pc --secret HF_TOKEN -- 'echo $HF_TOKEN'", type: 20.25, cps: 60, out: 21.5, gap: 0.25, lines: [
+      '<span class="sec" id="sec">[HF_TOKEN]</span>',
+    ] }] },
+  { from: 23.0, title: 'hermes · mac-mini', wide: true, small: true, steps: [
+    { cmd: 'yonder log', type: 23.25, cps: 40, out: 23.75, gap: 0.25, lines: [
+      '<span class="d">TIME                 FROM      TO      HARNESS  EXIT  MS    COMMAND</span>',
+      '2026-11-11 09:40:31  mac-mini  laptop  hermes   <span class="g">0</span>     1840  cp mac-mini:~/Documents/Talk.key -&gt; laptop:~/Desktop/  <span class="d">(23 files, 18.4 MB)</span>',
+      '2026-11-11 09:41:12  mac-mini  pc      hermes   <span class="a">bg</span>    140   python train.py',
+      '2026-11-11 09:42:05  mac-mini  pc      hermes   <span class="g">0</span>     96    echo $HF_TOKEN  <span class="a">[secrets: [HF_TOKEN]]</span>',
+    ] }] },
+  { from: 26.0, title: 'you · laptop', wide: true, steps: [
+    { cmd: 'brew trust --cask zacharytgray/yonder/yonder', type: 26.25, cps: 70, out: 26.95, lines: [] },
+    { cmd: 'brew install --cask zacharytgray/yonder/yonder', type: 27.0, cps: 70, out: 27.7, lines: [] },
+    { cmd: 'yonder agents install', type: 27.75, cps: 60, out: 28.25, gap: 0.25, lines: [
+      'skill installed for claude-code: ~/.claude/skills/yonder',
+      'skill installed for codex, pi: ~/.agents/skills/yonder',
+      'skill installed for hermes: ~/.hermes/skills/yonder',
+    ] }] },
 ];
-const SWITCHES = [16.8, 24.0, 45.6];
+const SWITCHES = [8.0, 12.0, 16.0, 20.0, 23.0, 26.0];
 
 const CAPTIONS = [
-  { a: 10.4, b: 16.6, html: 'It sees <em>every machine</em>.' },
-  { a: 17.2, b: 23.8, html: 'It runs commands there, over <em>your own tailnet</em>.' },
-  { a: 24.4, b: 31.0, html: 'It <em>fixes it</em>, and checks.' },
-  { a: 39.0, b: 45.4, html: 'Secrets go by name. <em>If a command prints one, you see the name.</em>' },
-  { a: 46.0, b: 52.6, html: 'Every command, <em>logged where it ran</em>.' },
+  { a: 4.5, b: 7.85, html: 'One agent sees <em>every machine</em>.' },
+  { a: 8.25, b: 11.85, html: 'It sends files <em>between your machines</em>.' },
+  { a: 12.25, b: 15.85, html: 'It picks the machine with <em>the free GPU</em>.' },
+  { a: 16.15, b: 17.85, html: 'Secrets stay in <em>1Password</em> or <em>Bitwarden</em>.' },
+  { a: 18.0, b: 19.85, html: '<em>One approval</em> sets up your machines.' },
+  { a: 20.25, b: 22.85, html: 'If a command prints a secret, you see <em class="m">[HF_TOKEN]</em>.' },
+  { a: 23.25, b: 25.85, html: 'Every command, <em>logged where it ran</em>.' },
+  { a: 26.25, b: 29.85, html: 'Install with Homebrew. Works in <em>Claude Code, Codex, Pi and Hermes</em>.' },
 ];
 
-const MSG1 = 'ollama on the gpu box is down, can you fix it?';
-const SEND = 2.1, REPLY = 32.4;
-const LS_LAND = 11.4, LS_GAP = 0.3;
-const STATUS_RUN = 19.2, RESTART_RUN = 27.3;
+const MSGS = [['m1', 4.25], ['m2', 10.75], ['m3', 12.0], ['m4', 14.5]];
+const TYPING = [[4.6, 10.75], [12.4, 14.5]];
+// remote commands: when they start and which chip the link from the mac mini runs to
+const RUNS = [[9.85, 'laptop'], [13.55, 'pc'], [21.2, 'pc']];
+const ROWS = { laptop: 5.25, mini: 5.5, pc: 5.75 };
 
-function cursorOn(t) { return (t % 1.0) < 0.55; }
+const cursorOn = t => (t % 0.8) < 0.45;
 
-function termBody(t) {
-  const sc = SCENES.filter(s => t >= s.from).pop();
-  if (!sc) return '';
-  const cmd = typed(sc.cmd, t, sc.type);
-  const typing = t < sc.out;
-  let html = '<span class="ln"><span class="p">$</span> ' + esc(cmd) + (typing && cursorOn(t) ? '<span class="cur"></span>' : (typing ? '<span class="cur" style="opacity:0"></span>' : '')) + '</span>';
-  sc.lines.forEach((l, i) => {
-    const k = eo((t - (sc.out + i * sc.gap)) / 0.18);
-    if (k <= 0) return;
-    const hl = sc.hl && sc.hl.line === i && t >= sc.hl.at ? ' hl' : '';
-    html += `<span class="ln${hl}" style="opacity:${k};transform:translateY(${(1 - k) * 8}px)">${l}</span>`;
+function termBody(sc, t) {
+  let html = '';
+  sc.steps.forEach((st, si) => {
+    if (si > 0 && t < st.type) return;
+    const active = t < st.out;
+    const last = si === sc.steps.length - 1;
+    const cur = active ? (cursorOn(t) ? '<span class="cur"></span>' : '<span class="cur" style="opacity:0"></span>') : '';
+    html += '<span class="ln"><span class="p">$</span> ' + esc(typed(st.cmd, t, st.type, st.cps)) + cur + '</span>';
+    st.lines.forEach((l, i) => {
+      const k = eo((t - (st.out + i * (st.gap || 0))) / 0.14);
+      if (k <= 0) return;
+      const hl = st.hl && st.hl.line === i && t >= st.hl.at ? ' hl' : '';
+      html += `<span class="ln${hl}" style="opacity:${k};transform:translateX(${(1 - k) * -14}px)">${l}</span>`;
+    });
+    if (last && t >= st.out + Math.max(0, st.lines.length - 1) * (st.gap || 0) + 0.3)
+      html += '<span class="ln"><span class="p">$</span> ' + (cursorOn(t) ? '<span class="cur"></span>' : '') + '</span>';
   });
-  const done = sc.out + (sc.lines.length - 1) * sc.gap + 0.4;
-  if (t >= done) html += '<span class="ln"><span class="p">$</span> ' + (cursorOn(t) ? '<span class="cur"></span>' : '') + '</span>';
   return html;
 }
 
-function render(t) {
-  // phone
-  const ph = $('phone');
-  let g = PHONE_C;
-  if (t >= 9.6) g = PHONE_L;
-  if (t >= 31.4) { const k = eio((t - 31.4) / 0.8); g = { x: lerp(PHONE_L.x, PHONE_C.x, k), y: lerp(PHONE_L.y, PHONE_C.y, k), s: lerp(PHONE_L.s, PHONE_C.s, k) }; }
-  let po = Math.max(win(t, 0, 0.5, 4.8, 5.1), win(t, 9.7, 10.2, 38.4, 38.7));
-  const rise = t < 4.8 ? (1 - eo(t / 0.6)) * 40 : (t < 20 ? (1 - eo((t - 9.7) / 0.5)) * -40 : 0);
-  ph.style.opacity = po;
-  ph.style.transform = `translate(${g.x + (t >= 9.6 && t < 20 ? rise : 0)}px, ${g.y + (t < 4.8 ? rise : 0)}px) scale(${g.s})`;
-
-  // compose field and thread
-  const sent = t >= SEND;
-  const draft = sent ? '' : typed(MSG1, t, 0.5, 31);
-  $('compose').innerHTML = draft ? esc(draft) + '<span class="caret"></span>' : '<span class="ph">Message</span>';
-  const m1 = $('m1');
-  m1.style.display = sent ? '' : 'none';
-  const k1 = eo((t - SEND) / 0.3);
-  m1.style.opacity = k1; m1.style.transform = `translateY(${(1 - k1) * 20}px) scale(${0.96 + 0.04 * k1})`;
-  const typingOn = t >= 10.4 && t < REPLY;
-  const ty = $('typing');
-  ty.style.display = typingOn ? '' : 'none';
-  ty.style.opacity = eo((t - 10.4) / 0.3);
-  [...ty.children].forEach((d, i) => { d.style.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((t * 2 * Math.PI / 1.2) - i * 0.9)); });
-  const m2 = $('m2');
-  m2.style.display = t >= REPLY ? '' : 'none';
-  const k2 = eo((t - REPLY) / 0.3);
-  m2.style.opacity = k2; m2.style.transform = `translateY(${(1 - k2) * 20}px)`;
-
-  // terminal
-  const term = $('term');
-  const wide = t >= 38.4;
-  term.className = wide ? (t < 45.6 ? 'wide big' : 'wide') : '';
-  term.style.left = wide ? '120px' : '540px';
-  term.style.width = wide ? '1680px' : '1300px';
-  term.style.top = wide ? '290px' : '310px';
-  term.style.height = wide ? '460px' : '450px';
-  const to = Math.max(win(t, 9.9, 10.4, 31.2, 31.5), win(t, 38.7, 39.2, 52.8, 53.1));
-  term.style.opacity = to;
-  term.style.transform = `translateY(${(1 - to) * 16}px)`;
-  let bo = 1;
-  for (const s of SWITCHES) { const d = Math.abs(t - s); if (d < 0.22) bo = Math.min(bo, d / 0.22); }
-  const body = $('tbody');
-  body.style.opacity = bo;
-  body.innerHTML = termBody(t);
-
-  // fleet
-  $('fleet').style.opacity = win(t, 10.0, 10.4, 31.2, 31.5);
-  const lit = (name, i) => {
-    const el = $('c-' + name);
-    const k = eo((t - (LS_LAND + i * LS_GAP)) / 0.25);
-    el.style.borderColor = k > 0 ? `rgba(159,191,140,${0.15 + 0.35 * k})` : '';
-    const dot = el.querySelector('.dot');
-    dot.style.background = k > 0.01 ? '#9fbf8c' : 'transparent';
-    dot.style.borderColor = k > 0.01 ? '#9fbf8c' : '';
-    return k;
-  };
-  lit('gpu', 1); lit('laptop', 2); lit('mini', 3);
-  const gpu = $('c-gpu'), gdot = gpu.querySelector('.dot'), grl = $('gpu-rl');
-  if (t >= 28.2) { gdot.style.background = gdot.style.borderColor = '#9fbf8c'; gpu.style.borderColor = 'rgba(159,191,140,0.6)'; grl.innerHTML = '<span class="g">ollama: running</span>'; }
-  else if (t >= 19.8) { gdot.style.background = gdot.style.borderColor = '#f2b54e'; gpu.style.borderColor = 'rgba(242,181,78,0.6)'; grl.innerHTML = '<span class="r">ollama: failed</span>'; }
-  else grl.textContent = 'RTX 4090 · 64 GB';
-  // link mini -> gpu-box while a remote command is in flight
-  const link = (t0) => clamp((t - t0) / 0.5);
-  let lk = 0, active = false;
-  for (const r of [STATUS_RUN, RESTART_RUN]) if (t >= r) { lk = link(r); active = true; }
-  const on = $('l-gpu-on'), pkt = $('pkt');
-  on.setAttribute('x2', 775 + 275 * eo(lk));
-  on.style.opacity = active ? 1 : 0;
-  pkt.setAttribute('cx', 775 + 275 * eo(lk));
-  pkt.style.opacity = active && lk < 1 ? 1 : 0;
-
-  // caption
-  const cap = CAPTIONS.find(c => t >= c.a - 0.01 && t < c.b + 0.3);
-  const ce = $('caption');
-  if (cap) { const k = win(t, cap.a, cap.a + 0.35, cap.b, cap.b + 0.25); ce.innerHTML = cap.html; ce.style.opacity = k; ce.style.transform = `translateY(${(1 - k) * 14}px)`; }
-  else ce.style.opacity = 0;
-  ce.style.left = wide ? '0px' : '540px';
-  ce.style.width = wide ? '1920px' : '1300px';
-
-  // titles: scene 2 and the outro
-  const ti = $('title'), mk = ti.querySelector('.mark'), tl = $('tline'), ts = $('tsub');
-  const intro = t >= 4.8 && t < 9.6, outro = t >= 53.1;
-  ti.style.display = intro || outro ? '' : 'none';
-  if (intro) {
-    const km = win(t, 5.0, 5.6, 9.2, 9.6), kl = win(t, 5.8, 6.3, 9.2, 9.6);
-    mk.style.opacity = km; mk.style.transform = `scale(${0.94 + 0.06 * km})`;
-    tl.style.opacity = kl; tl.style.transform = `translateY(${(1 - kl) * 16}px)`;
-    ts.textContent = 'Your own machines, over Tailscale and SSH.'; ts.style.fontFamily = 'var(--sans)'; ts.style.letterSpacing = '0';
-    ts.style.opacity = win(t, 6.8, 7.3, 9.2, 9.6);
+function renderDusk(t) {
+  const outro = t >= DUSK_IN;
+  const lt = outro ? t - DUSK_IN : t;
+  // horizon draws in on the hook; it is already there for the outro
+  $('hz').setAttribute('width', outro ? 1920 : 1920 * eo(lt / 0.35));
+  const sk = outro ? 1 : back(clamp(lt / 0.4));
+  $('sun').setAttribute('transform', `translate(1380 ${760 + Math.min(lt, 3) * 3}) scale(${sk}) translate(-1380 -760)`);
+  $('refl').style.opacity = outro ? 1 : eo((lt - 0.2) / 0.4);
+  $('lantern').style.opacity = outro ? 1 : eo((lt - 0.75) / 0.6);
+  for (const [n, at] of [['mini', 1.5], ['laptop', 2.0], ['pc', 2.5], ['pi', 2.75]]) {
+    const k = outro ? 1 : clamp((lt - at) / 0.28);
+    const d = $('d-' + n);
+    d.setAttribute('r', Math.max(0, (n === 'pi' ? 11 : 13) * back(k)));
+    d.style.opacity = k > 0 ? 1 : 0;
+    const lb = $('lb-' + n);
+    lb.style.opacity = eo(k * 1.5);
+    lb.style.transform = `translateX(-50%) translateY(${(1 - eo(k)) * 16}px)`;
   }
-  if (outro) {
-    const km = eo((t - 53.3) / 0.6), kl = eo((t - 53.9) / 0.5), ks = eo((t - 54.6) / 0.5);
-    mk.style.opacity = km; mk.style.transform = `scale(${0.94 + 0.06 * km})`;
-    tl.style.opacity = kl; tl.style.transform = `translateY(${(1 - kl) * 16}px)`;
-    ts.textContent = 'github.com/zacharytgray/yonder  ·  macOS & Linux  ·  MIT'; ts.style.fontFamily = 'var(--mono)';
-    ts.style.opacity = ks;
+  const tag = $('agenttag');
+  const kt = outro ? 1 : clamp((lt - 1.6) / 0.28);
+  tag.style.opacity = eo(kt * 1.5);
+  tag.style.transform = `translateX(-50%) scale(${lerp(0.7, 1, back(kt))})`;
+  for (const [id, at] of [['arc1', 2.75], ['arc2', 3.0], ['arc3', 3.1]]) {
+    const p = $(id), L = p.getTotalLength();
+    const k = outro ? 1 : eo((lt - at) / 0.45);
+    p.style.strokeDasharray = `${L} ${L}`;
+    p.style.strokeDashoffset = L * (1 - k);
+    p.style.opacity = k > 0 ? 0.9 : 0;
+    if (id === 'arc3') { p.style.strokeDasharray = k >= 1 ? '4 12' : `${L} ${L}`; if (k >= 1) p.style.strokeDashoffset = 0; }
+  }
+  $('h1').style.display = $('h2').style.display = outro ? 'none' : '';
+  $('lockup').style.display = $('o1').style.display = $('o2').style.display = outro ? '' : 'none';
+  if (!outro) {
+    pop($('h1'), t, 0.25, 0.32, 0.8);
+    pop($('h2'), t, 1.0, 0.32, 0.8);
+  } else {
+    pop($('lockup'), t, 30.1, 0.34, 0.85);
+    pop($('o1'), t, 30.45, 0.3, 0.85);
+    const k = eo((t - 30.85) / 0.3);
+    $('o2').style.opacity = k; $('o2').style.transform = `translateY(${(1 - k) * 12}px)`;
   }
 }
 
-window.DURATION = 60.0;
+function renderPaper(t) {
+  const sc = SCENES.filter(s => t >= s.from).pop();
+  // geometry: narrow beside the phone until 16s, then wide
+  const kw = eio((t - 16.0) / 0.3);
+  const left = lerp(505, 160, kw), width = lerp(1355, 1600, kw);
+  const term = $('term');
+  term.style.left = left + 'px'; term.style.width = width + 'px';
+  // vertical layout: strip, terminal, caption, centered as a group
+  const th = lerp(345, 390, kw), top0 = (1080 - (92 + 28 + th + 40 + 60)) / 2;
+  term.style.top = (top0 + 120) + 'px'; term.style.height = th + 'px';
+  $('strip').style.top = top0 + 'px';
+  $('caption').style.top = (top0 + 120 + th + 34) + 'px';
+  term.className = sc.big ? 'big' : (sc.small ? 'small' : (sc.wide ? '' : 'narrow'));
+  $('ttl').textContent = sc.title;
+  const ki = back(clamp((t - 4.0) / 0.3));
+  term.style.opacity = eo((t - 4.0) / 0.18);
+  term.style.transform = `translateY(${(1 - ki) * 40}px)`;
+  let bo = 1;
+  for (const s of SWITCHES) { const d = t - s; if (d > -0.12 && d < 0.12) bo = Math.min(bo, Math.abs(d) / 0.12); }
+  $('tbody').style.opacity = bo;
+  $('tbody').innerHTML = termBody(sc, t);
+  const sec = $('sec');
+  if (sec) { const k = clamp((t - 21.5) / 0.3); sec.style.transform = `scale(${lerp(0.5, 1, back(k))})`; }
+
+  // phone pops in at 4.0 and slides off left at 16.0
+  const ph = $('phone');
+  const kin = clamp((t - 4.0) / 0.3), kout = eio((t - 16.0) / 0.3);
+  ph.style.opacity = t < 4.0 ? 0 : 1;
+  ph.style.transform = `translate(${110 - kout * 560}px, ${171 + (1 - back(kin)) * 120}px) scale(0.9)`;
+  for (const [id, at] of MSGS) {
+    const el = $(id);
+    el.style.display = t >= at ? '' : 'none';
+    pop(el, t, at, 0.26, 0.6);
+  }
+  const ty = $('typing');
+  ty.style.display = TYPING.some(([a, b]) => t >= a && t < b) ? '' : 'none';
+  [...ty.children].forEach((d, i) => { d.style.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI / 0.5 - i * 1.0)); });
+
+  // strip: fleet chips, provider pills (16-20) or harness pills (26-30)
+  const strip = $('strip');
+  strip.style.left = left + 'px'; strip.style.width = width + 'px';
+  const mode = t >= 26 ? 'harnesses' : (t >= 16 && t < 20 ? 'providers' : 'chips');
+  $('chips').style.display = mode === 'chips' ? '' : 'none';
+  strip.querySelector('svg').style.display = mode === 'chips' ? '' : 'none';
+  $('providers').style.display = mode === 'providers' ? '' : 'none';
+  $('harnesses').style.display = mode === 'harnesses' ? '' : 'none';
+  [...$('providers').children].forEach((p, i) => pop(p, t, 16.25 + i * 0.25, 0.28, 0.6));
+  [...$('harnesses').children].forEach((p, i) => pop(p, t, [28.25, 28.5, 28.58, 28.75][i], 0.28, 0.6));
+  strip.style.opacity = eo((t - 4.05) / 0.25);
+  const cw = 260, sp = (width - cw) / 3;
+  const xs = [0, sp, 2 * sp, 3 * sp];
+  ['laptop', 'mini', 'pc', 'pi'].forEach((n, i) => { $('c-' + n).style.left = xs[i] + 'px'; });
+  for (let i = 0; i < 3; i++) { const l = $('l-' + i); l.setAttribute('x1', xs[i] + cw); l.setAttribute('x2', xs[i + 1]); }
+  const lon = $('l-on'), pkt = $('pkt');
+  let lk = 0, run = null;
+  for (const r of RUNS) if (t >= r[0]) { lk = clamp((t - r[0]) / 0.25); run = r; }
+  if (run) {
+    const [x0, x1] = run[1] === 'laptop' ? [xs[1], xs[0] + cw] : [xs[1] + cw, xs[2]];
+    lon.setAttribute('x1', x0); lon.setAttribute('x2', x0 + (x1 - x0) * eo(lk));
+    pkt.setAttribute('cx', x0 + (x1 - x0) * eo(lk));
+  }
+  lon.style.opacity = run ? 1 : 0;
+  pkt.style.opacity = run && lk < 1 ? 1 : 0;
+  for (const [n, at] of Object.entries(ROWS)) {
+    const el = $('c-' + n), dot = el.querySelector('.dot');
+    const k = clamp((t - at) / 0.25);
+    dot.style.background = k > 0 ? '#4f6b42' : 'transparent';
+    dot.style.borderColor = k > 0 ? '#4f6b42' : '';
+    el.style.borderColor = k > 0 ? 'rgba(79,107,66,0.45)' : '';
+    el.style.transform = `scale(${t >= at ? lerp(1.08, 1, eo(k)) : 1})`;
+  }
+  const pi = $('c-pi'), kp = clamp((t - 6.0) / 0.25);
+  pi.style.opacity = 0.55 + 0.45 * (t >= 6.0 ? 1 - eo(kp) * 0.25 : 1);
+  pi.style.transform = `scale(${t >= 6.0 ? lerp(1.06, 1, eo(kp)) : 1})`;
+  const chipState = (n, rl, c, html) => {
+    const el = $('c-' + n), d = el.querySelector('.dot');
+    d.style.background = d.style.borderColor = c; el.style.borderColor = c; $(rl).innerHTML = html;
+  };
+  if (t >= 10.0) chipState('laptop', 'lap-rl', '#d2602f', '<span style="color:#a3431a">Desktop/Talk.key</span>');
+  else $('lap-rl').textContent = 'M3 Pro · 36 GB';
+  if (t >= 13.75) chipState('pc', 'pc-rl', '#d2602f', '<span style="color:#a3431a">training · RTX 4090</span>');
+  else $('pc-rl').textContent = 'RTX 4090 · 64 GB';
+
+  // caption, centered under the terminal
+  const cap = CAPTIONS.find(c => t >= c.a && t < c.b + 0.15);
+  const ce = $('caption');
+  ce.style.left = (kw > 0.5 ? 0 : 505) + 'px';
+  ce.style.width = (kw > 0.5 ? 1920 : 1355) + 'px';
+  if (cap) {
+    const k = clamp((t - cap.a) / 0.24), ko = clamp((t - cap.b) / 0.15);
+    ce.innerHTML = cap.html;
+    ce.style.opacity = eo(k * 1.5) * (1 - ko);
+    ce.style.transform = `translateY(${(1 - back(k)) * 22}px)`;
+  } else ce.style.opacity = 0;
+}
+
+function render(t) {
+  const dusk = t < DUSK_OUT || t >= DUSK_IN;
+  $('dusk').style.display = dusk ? '' : 'none';
+  $('paper').style.display = dusk ? 'none' : '';
+  if (dusk) renderDusk(t); else renderPaper(t);
+}
+
+window.DURATION = 33.0;
 window.render = render;
 render(Number(new URLSearchParams(location.search).get('t') || 0));
 </script>
