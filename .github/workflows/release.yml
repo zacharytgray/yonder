@@ -3,21 +3,40 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # dry run: signs, notarizes and checks a snapshot, publishes nothing
+  workflow_dispatch:
 
 # actions are pinned by commit sha, tag in the comment; dependabot bumps them.
 permissions: {}
 
+env:
+  # the developer id team every darwin binary must be signed by
+  APPLE_TEAM_ID: WYY8494SWG
+
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
-    # GITHUB_TOKEN publishes the github release.
+    # GITHUB_TOKEN publishes the github release (as a draft; verify-macos publishes it).
     # TAP_DEPLOY_KEY is the private half of a write deploy key on zacharytgray/homebrew-yonder.
+    # MACOS_* sign and notarize the darwin binaries; scripts/macos-signing-secrets.sh sets them.
     # id-token and attestations sign the build provenance.
     permissions:
       contents: write
       id-token: write
       attestations: write
     steps:
+      # .goreleaser.yaml skips signing when these are absent, so a release must not run without them
+      - name: require signing secrets
+        run: |
+          for v in MACOS_SIGN_P12 MACOS_SIGN_PASSWORD MACOS_NOTARY_KEY MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID; do
+            [ -n "${!v:-}" ] || { echo "::error::secret $v is not set"; exit 1; }
+          done
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -28,13 +47,51 @@ jobs:
         with:
           distribution: goreleaser
           version: v2.20.1 # exact; dependabot does not bump this, so update it by hand
-          args: release --clean
+          args: ${{ github.event_name == 'push' && 'release --clean' || 'release --snapshot --clean --skip=publish' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
       # provenance for each archive: gh attestation verify <archive> --repo zacharytgray/yonder
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      - if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/*.tar.gz
             dist/checksums.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: darwin-archives
+          path: dist/*_darwin_*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # the release stays a draft unless every darwin binary is signed by APPLE_TEAM_ID,
+  # has hardened runtime and a timestamp, and is notarized. goreleaser has already pushed
+  # the cask by then, so a failed check leaves it pointing at the draft's 404s (fails closed):
+  # fix it and delete the draft, or tag again.
+  verify-macos:
+    needs: goreleaser
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: darwin-archives
+          path: darwin
+      - name: check signatures
+        run: |
+          set -- darwin/*_darwin_*.tar.gz
+          [ "$#" -eq 2 ] || { echo "::error::expected 2 darwin archives, got $#"; exit 1; }
+          scripts/check-darwin-signature.sh "$APPLE_TEAM_ID" "$@"
+      - name: publish the draft release
+        if: github.event_name == 'push'
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

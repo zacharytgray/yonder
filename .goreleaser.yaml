@@ -15,6 +15,22 @@ builds:
     ldflags:
       - -s -w -X github.com/zacharytgray/yonder/internal/version.Version={{.Version}}
 
+# signs the darwin binaries with the developer id cert and notarizes them with apple (quill,
+# so it runs on linux). bare binaries can't be stapled; gatekeeper checks the ticket online.
+# off when the secrets are absent (pull request snapshots); release.yml requires them.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
+
 # install.sh builds these names by hand; keep them in sync
 archives:
   - formats: [tar.gz]
@@ -27,6 +43,10 @@ checksum:
 
 changelog:
   sort: asc
+
+# release.yml publishes the draft once a mac runner has checked the signatures
+release:
+  draft: true
 
 # homebrew_casks replaces brews (deprecated since goreleaser v2.16, casks cover linuxbrew too)
 homebrew_casks:
@@ -47,10 +67,3 @@ homebrew_casks:
     skip_upload: auto
     caveats: |
       next: run `yonder init` to set up this machine.
-    # binaries are not notarized, so drop the quarantine flag on macos
-    hooks:
-      post:
-        install_steps: |
-          on_macos do
-            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/yonder"]
-          end
