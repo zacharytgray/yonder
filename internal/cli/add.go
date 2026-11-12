@@ -401,7 +401,7 @@ func checkIdentity(id string) error {
 	st, err := os.Stat(registry.ExpandHome(id))
 	switch {
 	case err != nil:
-		return fmt.Errorf("identity %s: %v", id, err)
+		return fmt.Errorf("identity %s: %w", id, err)
 	case st.IsDir():
 		return fmt.Errorf("identity %s is a directory, not a private key", id)
 	}

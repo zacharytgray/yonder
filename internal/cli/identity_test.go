@@ -24,7 +24,7 @@ func (p *pinSSH) Pin(_ context.Context, t transport.Target, _ string, stdio tran
 	if p.authFail {
 		return "ssh-ed25519 AAAAhost", 255, &transport.UnreachableError{Target: t.Name, Detail: "me@100.64.0.9: Permission denied (publickey)."}
 	}
-	stdio.Stdout.Write([]byte("yonder=/home/me/.local/bin/yonder\nos=Linux\narch=x86_64\nhome=/home/me\n"))
+	_, _ = stdio.Stdout.Write([]byte("yonder=/home/me/.local/bin/yonder\nos=Linux\narch=x86_64\nhome=/home/me\n"))
 	return "ssh-ed25519 AAAAhost", 0, nil
 }
 
@@ -33,7 +33,7 @@ func newPinApp(t *testing.T, authFail bool) (*app, *pinSSH) {
 	p := &pinSSH{authFail: authFail}
 	p.yonder = func(_ transport.Target, args []string, stdio transport.IO) (int, error) {
 		if args[0] == "_facts" {
-			stdio.Stdout.Write([]byte(`{"hostname":"gpu-box"}`))
+			_, _ = stdio.Stdout.Write([]byte(`{"hostname":"gpu-box"}`))
 		}
 		return 0, nil
 	}
