@@ -186,6 +186,15 @@ yonder secret set HF_TOKEN --replace                 # change one that exists
 In desktop mode you approve once. A service account can store secrets only if you let it at
 setup (`--allow-write`, below). Bitwarden can't: `bws` takes the value on its command line.
 
+**Hand a key to a program.** Some programs want a key printed on stdout, such as an auth
+helper in a config file. `yonder secret read NAME` prints the value and one newline, like
+`op read`. It resolves on this machine, and the read is logged by name. Agents should use
+`run --secret`, which keeps the value out of what they see.
+
+```toml
+auth_command = "yonder secret read MODEL_API_KEY"   # in some program's config
+```
+
 The machine your agent runs on unlocks the value. The value travels over SSH stdin into the
 remote command's environment. Yonder never puts it in a command line or a log (a program your
 command runs could still pass it on its own command line). If a command prints
@@ -216,6 +225,7 @@ Not protected:
   reversed, and the scrubber can't know.
 - Anything the agent can read as you. Agents run as your user, so they can read your keychain
   entry or token file for the service account, and the environment of your other programs.
+- `yonder secret read` doesn't change this: an agent allowed a secret could already read it.
 
 What one approval reaches depends on the mode:
 

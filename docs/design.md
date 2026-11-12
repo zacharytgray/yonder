@@ -685,10 +685,25 @@ Commands: `yonder secret add NAME <ref>`, `set NAME [--replace]`, `ls [--json]` 
 `secrets.toml` and from vault titles that are valid names, agent vault then extra vaults, never
 values; a name shows once, from where it resolves; with extra vaults each vault item names its
 vault; in desktop mode the vault list asks for approval like any read),
-`rm NAME`, `test NAME` (resolves, prints only `NAME: ok, N chars`), `setup [--provider p --mode m]`
+`rm NAME`, `test NAME` (resolves, prints only `NAME: ok, N chars`), `read NAME` (below), `setup [--provider p --mode m]`
 and `token set` (hidden prompt, or stdin: `yonder secret token set < tokenfile`). The manual path
 (`setup --provider ... --mode service-account`, then `token set` on each machine) stays for bws and
 for people who make service accounts themselves.
+
+`yonder secret read NAME` prints the value to stdout, then one newline, like `op read`. It is for
+programs that need a key on stdout, such as an auth helper in a config file
+(`auth_command = "yonder secret read MODEL_API_KEY"`). Agents use `run --secret` instead, which
+scrubs output. It takes no machine: it resolves here, with the same rules as `run --secret` from
+this machine, so a name only an extra vault holds resolves only where this machine's account reads
+that vault, and desktop mode may ask for approval. Nothing is scrubbed, since printing the value is
+the point. It changes nothing in "What this protects": an agent allowed a secret can already read
+it (`run self --secret N -- 'echo $N | rev'`). There is no tty check; one would be easy to get
+around and would only get in a person's way. Each read is logged here, side target, from and to
+this machine, command `secret read NAME`, `secrets` `["NAME"]`, the harness, and the exit with
+`error` on failure. A name that isn't valid is a usage error (2) and isn't logged. Exit codes are
+those of `secret test`: 1 for an unknown name or any provider error, such as a locked app, a
+declined approval or a provider it can't reach. No `secret` command exits 75, which is for
+machines.
 
 ### Provisioning hands-free 1Password
 
