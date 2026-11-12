@@ -753,7 +753,10 @@ the point. It changes nothing in "What this protects": an agent allowed a secret
 it (`run self --secret N -- 'echo $N | rev'`). There is no tty check; one would be easy to get
 around and would only get in a person's way. Each read is logged here, side target, from and to
 this machine, command `secret read NAME`, `secrets` `["NAME"]`, the harness, and the exit with
-`error` on failure. A name that isn't valid is a usage error (2) and isn't logged. Exit codes are
+`error` on failure. Like `_exec`, it writes a start entry (`"status":"started"`, `"exit":null`)
+before resolving, so a read killed or cancelled while it waits for approval still shows in
+`yonder log`. The harness comes from the environment yonder inherits, so a read an auth helper
+runs for an agent logs that agent's harness: yonder can't tell a program from the agent's shell. A name that isn't valid is a usage error (2) and isn't logged. Exit codes are
 those of `secret test`: 1 for an unknown name or any provider error, such as a locked app, a
 declined approval or a provider it can't reach. No `secret` command exits 75, which is for
 machines.
