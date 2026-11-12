@@ -26,6 +26,7 @@ var Commands = map[string]transport.Handler{
 	"_exec":      Exec,
 	"_job":       Job,
 	"_jobs":      Jobs,
+	"_kill":      Kill,
 	"_sync":      Sync,
 	"_log":       Log,
 	"_facts":     FactsCmd,
@@ -184,11 +185,22 @@ func InitSelf(_ context.Context, args []string, _ io.Reader, _, errw io.Writer) 
 	return 0
 }
 
-// Jobs is `yonder _jobs [id]`: a JSON list of jobs, or one job's raw log.
-func Jobs(_ context.Context, args []string, _ io.Reader, out, errw io.Writer) int {
+// Jobs is `yonder _jobs [id [--follow]]`: a JSON list of jobs, or one job's
+// raw log. --follow keeps streaming the log until the job ends, then exits
+// with its code.
+func Jobs(ctx context.Context, args []string, _ io.Reader, out, errw io.Writer) int {
 	dir := registry.JobsDir()
-	if len(args) == 1 {
-		id := args[0]
+	follow := false
+	var rest []string
+	for _, a := range args {
+		if a == "--follow" {
+			follow = true
+		} else {
+			rest = append(rest, a)
+		}
+	}
+	if len(rest) == 1 {
+		id := rest[0]
 		if !ValidID(id) {
 			fmt.Fprintf(errw, "yonder: bad job id %q\n", id)
 			return 2
@@ -199,13 +211,16 @@ func Jobs(_ context.Context, args []string, _ io.Reader, out, errw io.Writer) in
 			return 1
 		}
 		defer f.Close()
+		if follow {
+			return followJob(ctx, dir, id, f, out, errw)
+		}
 		if _, err := io.Copy(out, f); err != nil {
 			return 1
 		}
 		return 0
 	}
-	if len(args) > 1 {
-		fmt.Fprintln(errw, "usage: yonder _jobs [id]")
+	if len(rest) > 1 || follow {
+		fmt.Fprintln(errw, "usage: yonder _jobs [id [--follow]]")
 		return 2
 	}
 	list, err := ListJobs(dir)
@@ -217,6 +232,58 @@ func Jobs(_ context.Context, args []string, _ io.Reader, out, errw io.Writer) in
 		return 1
 	}
 	return 0
+}
+
+// how often --follow and --kill look at a job
+var jobPoll = 200 * time.Millisecond
+
+// followJob copies the log as it grows. the status is read before each copy:
+// _job writes "exited" only after the command's output is flushed, so the
+// copy after that read gets everything.
+func followJob(ctx context.Context, dir, id string, f *os.File, out, errw io.Writer) int {
+	started := time.Now()
+	for {
+		st, serr := loadStatus(dir, id)
+		if _, err := io.Copy(out, f); err != nil {
+			return 1
+		}
+		if serr == nil && st.State == "exited" {
+			if st.Exit == nil {
+				return 1
+			}
+			return *st.Exit
+		}
+		if serr == nil && st.State == "lost" {
+			fmt.Fprintf(errw, "yonder: job %s was lost: its supervisor died before the command finished\n", id)
+			return 1
+		}
+		if errors.Is(serr, os.ErrNotExist) && time.Since(started) > 10*time.Second {
+			fmt.Fprintf(errw, "yonder: job %s has no status file; its supervisor never started\n", id)
+			return 1
+		}
+		// no status yet means _job is still starting
+		select {
+		case <-ctx.Done():
+			return 1
+		case <-time.After(jobPoll):
+		}
+	}
+}
+
+// loadStatus reads jobs/<id>.json. a running job whose pid is gone is "lost".
+func loadStatus(dir, id string) (JobStatus, error) {
+	var st JobStatus
+	data, err := os.ReadFile(filepath.Join(dir, id+".json"))
+	if err != nil {
+		return st, err
+	}
+	if err := json.Unmarshal(data, &st); err != nil {
+		return st, err
+	}
+	if st.State == "running" && st.PID > 0 && errors.Is(syscall.Kill(st.PID, 0), syscall.ESRCH) {
+		st.State = "lost"
+	}
+	return st, nil
 }
 
 // ListJobs reads every jobs/*.json, newest first. a running job whose pid is gone is "lost".
@@ -233,16 +300,9 @@ func ListJobs(dir string) ([]JobStatus, error) {
 		if !strings.HasSuffix(e.Name(), ".json") || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		st, err := loadStatus(dir, strings.TrimSuffix(e.Name(), ".json"))
 		if err != nil {
 			continue
-		}
-		var st JobStatus
-		if json.Unmarshal(data, &st) != nil {
-			continue
-		}
-		if st.State == "running" && st.PID > 0 && errors.Is(syscall.Kill(st.PID, 0), syscall.ESRCH) {
-			st.State = "lost"
 		}
 		out = append(out, st)
 	}

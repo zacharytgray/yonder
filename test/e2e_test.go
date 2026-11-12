@@ -87,6 +87,20 @@ func TestLocalEndToEnd(t *testing.T) {
 	if r := f.must("jobs", "laptop", id); r.stdout != "started\n" {
 		t.Fatalf("job log: %q", r.stdout)
 	}
+	if r := f.run("", "jobs", "laptop", id, "--follow"); r.code != 4 || r.stdout != "started\n" {
+		t.Fatalf("follow a finished job: %+v", r)
+	}
+	r = f.must("run", "--detach", "laptop", "--", "sleep 30")
+	long := strings.TrimSpace(r.stdout)
+	if r := f.must("jobs", "laptop", long, "--kill"); !strings.Contains(r.stdout, "stopped job "+long+" with SIGTERM") {
+		t.Fatalf("kill: %+v", r)
+	}
+	if r := f.run("", "jobs", "laptop", long, "--follow"); r.code != 143 {
+		t.Fatalf("follow a killed job: %+v", r)
+	}
+	if r := f.run("", "jobs", "laptop", "--kill"); r.code != 2 {
+		t.Fatalf("--kill without an id: %+v", r)
+	}
 
 	// ls --json: stable shape agents parse
 	var ls struct {
@@ -119,6 +133,20 @@ func TestLocalEndToEnd(t *testing.T) {
 	}
 	if r := f.must("show", "gpu-box", "--json"); !strings.Contains(r.stdout, `"record"`) {
 		t.Fatalf("show --json should carry the record: %s", r.stdout)
+	}
+
+	// set changes role and notes in place: this machine, and a pending peer here only
+	if r := f.must("set", "laptop", "--role", "desktop", "--notes", "always on"); !strings.Contains(r.stdout, `set laptop: role desktop, notes "always on"`) {
+		t.Fatalf("set self: %+v", r)
+	}
+	if r := f.must("set", "gpu-box", "--notes", ""); !strings.Contains(r.stdout, "set gpu-box: role gpu, notes -") {
+		t.Fatalf("set pending: %+v", r)
+	}
+	if r := f.must("show", "laptop"); !strings.Contains(r.stdout, "always on") || !strings.Contains(r.stdout, "desktop") {
+		t.Fatalf("show after set: %s", r.stdout)
+	}
+	if r := f.run("", "set", "laptop", "--role", "toaster"); r.code != 2 {
+		t.Fatalf("bad role: %+v", r)
 	}
 
 	// the log merges target-side runs and the caller-side failure

@@ -57,13 +57,10 @@ homebrew_casks:
       owner: zacharytgray
       name: homebrew-yonder
       branch: main
-      # pushed over ssh with a write deploy key on the tap repo; GITHUB_TOKEN can't push there
-      git:
-        url: git@github.com:zacharytgray/homebrew-yonder.git
-        private_key: "{{ .Env.TAP_DEPLOY_KEY }}"
     homepage: https://github.com/zacharytgray/yonder
     description: Connect your own machines so the agents on any of them can use all of them
-    # no cask while the release is a prerelease (v0.1.0-rc1 and the like)
-    skip_upload: auto
+    # goreleaser only writes dist/homebrew/Casks/yonder.rb. release.yml pushes it to the tap
+    # after the mac check has published the release, so the cask never points at a draft.
+    skip_upload: true
     caveats: |
       next: run `yonder init` to set up this machine.

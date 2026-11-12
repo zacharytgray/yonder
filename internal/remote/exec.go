@@ -86,7 +86,16 @@ func entry(env Envelope, start time.Time) runlog.Entry {
 
 // RunCommand runs env.Command with secrets in its environment and scrubbed output.
 func RunCommand(ctx context.Context, env Envelope, stdin io.Reader, out, errw io.Writer) (int, error) {
+	return runCommand(ctx, env, stdin, out, errw, nil)
+}
+
+// runCommand is RunCommand. with started set, the command gets its own process
+// group (so a job can be killed whole) and started gets its pid once it runs.
+func runCommand(ctx context.Context, env Envelope, stdin io.Reader, out, errw io.Writer, started func(pid int)) (int, error) {
 	cmd := shellCommand(ctx, env.Command)
+	if started != nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	}
 	// provider tokens stay out unless asked for by name with --secret
 	cmd.Env = secrets.WithoutProviderVars(os.Environ())
 	for _, name := range env.SecretNames() {
@@ -113,6 +122,9 @@ func RunCommand(ctx context.Context, env Envelope, stdin io.Reader, out, errw io
 	}
 	if err != nil {
 		return 127, fmt.Errorf("start %s: %w", cmd.Path, err)
+	}
+	if started != nil {
+		started(cmd.Process.Pid)
 	}
 	err = cmd.Wait()
 	_ = so.Flush()
@@ -165,8 +177,9 @@ type JobStatus struct {
 	From      string     `json:"from"`
 	Harness   string     `json:"harness"`
 	Secrets   []string   `json:"secrets"`
-	PID       int        `json:"pid"`
-	State     string     `json:"state"` // running | exited | lost
+	PID       int        `json:"pid"`            // the _job supervisor
+	PGID      int        `json:"pgid,omitempty"` // the command's process group; 0 before yonder recorded it
+	State     string     `json:"state"`          // running | exited | lost
 	StartedAt time.Time  `json:"started_at"`
 	EndedAt   *time.Time `json:"ended_at"`
 	Exit      *int       `json:"exit"`
@@ -235,9 +248,12 @@ func Job(ctx context.Context, _ []string, in io.Reader, _, errw io.Writer) int {
 		ID: env.ID, Command: secrets.ScrubText(env.Command, env.Secrets), From: env.From, Harness: env.Harness,
 		Secrets: env.SecretNames(), PID: os.Getpid(), State: "running", StartedAt: time.Now().UTC(),
 	}
-	_ = writeStatus(dir, st)
 	w := &lockedWriter{w: logf}
-	code, runErr := RunCommand(ctx, env, nil, w, w)
+	// "running" is written once the command has its group, so a running job always has a pgid
+	code, runErr := runCommand(ctx, env, nil, w, w, func(pid int) {
+		st.PGID = pid
+		_ = writeStatus(dir, st)
+	})
 	if runErr != nil {
 		fmt.Fprintf(w, "yonder: %v\n", runErr)
 	}
@@ -268,4 +284,149 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.w.Write(p)
+}
+
+// how long --kill waits after SIGTERM before SIGKILL
+var killGrace = 10 * time.Second
+
+// Kill is `yonder _kill <id>`: envelope line on stdin (for the log), then it
+// stops a running job: SIGTERM to the command's process group, SIGKILL if
+// anything in it is still there after killGrace. the kill is logged here.
+func Kill(ctx context.Context, args []string, in io.Reader, out, errw io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(errw, "usage: yonder _kill <id>")
+		return 2
+	}
+	id := args[0]
+	if !ValidID(id) {
+		fmt.Fprintf(errw, "yonder: bad job id %q\n", id)
+		return 2
+	}
+	env, err := ReadEnvelope(bufio.NewReader(in))
+	if err != nil {
+		fmt.Fprintf(errw, "yonder _kill: %v\n", err)
+		return 1
+	}
+	fillDefaults(&env)
+	start := time.Now()
+	msg, command, err := killJob(ctx, registry.JobsDir(), id)
+	e := entry(env, start)
+	e.Command = "kill job " + id
+	if command != "" {
+		e.Command += ": " + command
+	}
+	code := 0
+	if err != nil {
+		code = 1
+		e.Error = err.Error()
+		fmt.Fprintf(errw, "yonder: %v\n", err)
+	} else {
+		fmt.Fprintln(out, msg)
+	}
+	e.Exit = runlog.Exit(code)
+	if err := runlog.Append(registry.LogPath(), e); err != nil {
+		fmt.Fprintf(errw, "yonder: could not write log: %v\n", err)
+	}
+	return code
+}
+
+// killJob stops job id and says how. command is the job's (scrubbed) command.
+func killJob(ctx context.Context, dir, id string) (msg, command string, err error) {
+	st, err := waitStatus(ctx, dir, id)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", fmt.Errorf("no job %s", id)
+	}
+	if err != nil {
+		return "", "", err
+	}
+	command = st.Command
+	if st.State != "running" {
+		how := st.State
+		if st.Exit != nil {
+			how = fmt.Sprintf("exited %d", *st.Exit)
+		}
+		return "", command, fmt.Errorf("job %s is not running (%s)", id, how)
+	}
+	// jobs from before pgid was recorded: the supervisor leads its own session
+	pg := st.PGID
+	if pg == 0 {
+		pg = st.PID
+	}
+	if pg <= 1 {
+		return "", command, fmt.Errorf("job %s has no process group on record", id)
+	}
+	if err := syscall.Kill(-pg, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return "", command, fmt.Errorf("stop job %s: %w", id, err)
+	}
+	sig := syscall.SIGTERM
+	deadline := time.Now().Add(killGrace)
+	for groupAlive(pg) && time.Now().Before(deadline) {
+		if !sleepCtx(ctx, jobPoll) {
+			return "", command, ctx.Err()
+		}
+	}
+	if groupAlive(pg) {
+		sig = syscall.SIGKILL
+		if err := syscall.Kill(-pg, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			return "", command, fmt.Errorf("kill job %s: %w", id, err)
+		}
+	}
+	// the supervisor records the exit; give it a moment
+	for wait := time.Now().Add(3 * time.Second); time.Now().Before(wait); {
+		if cur, err := loadStatus(dir, id); err == nil && cur.State != "running" {
+			st = cur
+			break
+		}
+		if !sleepCtx(ctx, jobPoll) {
+			break
+		}
+	}
+	if st.State == "lost" {
+		// the supervisor died with the group (an older job): record the end ourselves
+		end := time.Now().UTC()
+		st.State, st.EndedAt, st.Exit = "exited", &end, runlog.Exit(128+int(sig))
+		_ = writeStatus(dir, st)
+	}
+	name := "SIGTERM"
+	if sig == syscall.SIGKILL {
+		name = fmt.Sprintf("SIGKILL after %s", killGrace)
+	}
+	exit := "?"
+	if st.Exit != nil {
+		exit = fmt.Sprint(*st.Exit)
+	}
+	return fmt.Sprintf("stopped job %s with %s (exit %s)", id, name, exit), command, nil
+}
+
+// waitStatus is loadStatus, but waits a few seconds for a job whose log is
+// there and whose status isn't yet (it is still starting).
+func waitStatus(ctx context.Context, dir, id string) (JobStatus, error) {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st, err := loadStatus(dir, id)
+		if !errors.Is(err, os.ErrNotExist) || time.Now().After(deadline) {
+			return st, err
+		}
+		if _, lerr := os.Stat(filepath.Join(dir, id+".log")); lerr != nil {
+			return st, err
+		}
+		if !sleepCtx(ctx, jobPoll) {
+			return st, err
+		}
+	}
+}
+
+// groupAlive says whether any process is left in group pg.
+func groupAlive(pg int) bool {
+	err := syscall.Kill(-pg, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
 }

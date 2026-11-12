@@ -36,7 +36,7 @@ test/                  end-to-end tests against the built binary (+ docker integ
 ```
 
 The hidden commands a caller runs on a target are `_exec`, `_job` (the detached supervisor),
-`_jobs`, `_send` and `_recv` (see Copying files), `_sync`, `_log`, `_facts`, `_init-self <name>`, and `_secret-probe [--verify]` and
+`_jobs [id [--follow]]`, `_kill <id>`, `_send` and `_recv` (see Copying files), `_sync`, `_log`, `_facts`, `_init-self <name>`, and `_secret-probe [--verify]` and
 `_secret-provision <account> <vault> [--write] [--extra-vault V]...` (both run through `_exec`;
 see Secrets).
 
@@ -49,7 +49,7 @@ see Secrets).
 ~/.config/yonder/secrets.toml          NAME = "op://vault/item/field" references, never values
 ~/.local/state/yonder/log.jsonl        commands this machine received
 ~/.local/state/yonder/jobs/<id>.log    output of detached runs (scrubbed)
-~/.local/state/yonder/jobs/<id>.json   detached run status: pid, state, exit
+~/.local/state/yonder/jobs/<id>.json   detached run status: pid, pgid, state, exit
 ~/.local/state/yonder/lost-keys-applied  lost tombstones already stripped here: "<name> <removed_at>[ shared]"
 ```
 
@@ -71,7 +71,7 @@ yonder_path = "/home/me/.local/bin/yonder"
 ssh_host_key = "ssh-ed25519 AAAA..."   # this machine's sshd host key, pinned at add time
 ssh_client_keys = ["ssh-ed25519 AAAA... me@gpu-box"]  # keys this machine uses to reach others
 role = "gpu"                  # optional, user-given: laptop | desktop | server | gpu | other
-notes = "sleeps at night, heavy jobs only"
+notes = "sleeps at night, heavy jobs only"  # role and notes change with `yonder set`
 secrets_account = "yonder-gpu-box"  # optional: the 1Password service account its token belongs to
 secrets_write = true          # optional: that account may also write the agent vault
 updated_at = 2026-11-11T20:00:00Z
@@ -207,8 +207,25 @@ or shell history. The target:
 Detached runs use `setsid`/`nohup`, write output to `jobs/<id>.log`, and return the id at once.
 Concretely, `_exec` re-runs its own binary as `yonder _job` in a new session (`Setsid`, SIGHUP
 ignored), hands it the envelope on a pipe, logs the launch with `"exit": null`, prints the id,
-and exits 0. `_job` runs the command with output scrubbed into the log file and writes
-`jobs/<id>.json`. A job whose pid has gone while still marked running shows as `lost`.
+and exits 0. `_job` runs the command in its own process group with output scrubbed into the log
+file, and writes `jobs/<id>.json` once the command has started: `pid` is the `_job` supervisor,
+`pgid` the command's group. A job whose pid has gone while still marked running shows as `lost`.
+
+`yonder jobs <m>` lists the jobs, and `yonder jobs <m> <id>` prints one job's log so far.
+`--follow` (`_jobs <id> --follow`) prints the log, keeps printing what is added every 200 ms, and
+when the status says `exited` it prints the rest and exits with the job's code (`lost`: exit 1
+with a note). It reads the status before each read of the log, and `_job` writes `exited` only
+after the command's output is in the file, so nothing is cut off. Stopping the follow leaves the
+job running. A job whose status file is not there yet counts as starting, for up to 10 seconds.
+
+`--kill` runs `_kill <id>` with an envelope line on stdin, so the target can log who asked. It
+sends SIGTERM to the command's process group, waits up to 10 seconds for the group to empty, then
+sends SIGKILL to whatever is left. The supervisor is outside that group, so it survives and
+records the exit (143 for SIGTERM, 137 for SIGKILL). A job from an older yonder has no `pgid`;
+its supervisor leads its own session, so that group is signalled instead, and `_kill` writes the
+`exited` status itself. A job that is not running is refused with exit 1. The target logs one
+entry per kill attempt, command `kill job <id>: <job command>`, exit 0 or 1 with `error`. An
+older target gets "too old for jobs --follow" (or `--kill`); upgrade it there.
 
 Envelope fields, one JSON object on one line:
 
@@ -332,6 +349,22 @@ A pending record with no pin is never finished by `refresh`; it prints "<m> is o
 refuses to finish a pending peer the account doesn't own (fix `yonder add <dns> --allow-shared`).
 A set-up record with no `ssh_host_key` is an error with fix `yonder add <m>`; `refresh` never
 pins a new key for one.
+
+### Changing role and notes
+
+`yonder set <m> [--role R] [--notes TEXT]` changes those two fields and `updated_at`, nothing
+else. An empty value clears one; a role outside the list above is a usage error, and so is giving
+neither flag. `set` was picked over `edit`, which reads like opening an editor.
+
+Sync never lets a peer change a machine's own record (see Trust model), and a machine refreshing
+itself keeps the role and notes it holds, so a change made only here would be lost. So for a set-up
+peer, `set` runs `yonder set <m> --here <flags>` on that machine through `_exec` (it logs it), which
+changes its own record and nothing more, then syncs as usual: the peer's reply brings the record
+here and the second pass sends it on. A peer that is offline or unreachable is an exit 75 and
+nothing changes. For this machine, and for a pending peer (it holds no record of itself yet, and
+`add` finishes it with these values), the record is changed here and synced. It prints
+`set <m>: role server, notes "always on"`. An older peer without `set` gets "too old for set;
+upgrade it there".
 
 `yonder init --yes` sets up only this machine unless `--machines a,b` names peers (short or full
 names, resolved like `add`). Its peer list shows a peer the account doesn't own with a note and

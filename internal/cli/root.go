@@ -108,6 +108,7 @@ func newRoot() *cobra.Command {
 		newInitCmd(),
 		newAddCmd(),
 		newSSHKeyCmd(),
+		newSetCmd(),
 		newLsCmd(),
 		newShowCmd(),
 		newRunCmd(),
