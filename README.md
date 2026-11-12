@@ -1,17 +1,31 @@
 <div align="center">
 
-# Yonder
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/yonder-logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/brand/yonder-logo-light.svg">
+  <img src="docs/brand/yonder-logo-light.svg" width="300" alt="Yonder">
+</picture>
 
-**Text one agent. Fix any machine.**
+### Text one agent. Fix any machine.
 
-Yonder connects your own computers so the AI agents on any of them can use all of them.
+Yonder connects your own computers so the AI agents on any of them can use all of them.<br>
 Ask Claude Code on your laptop why the GPU box is out of disk, and it goes and looks.
 
-[![CI](https://github.com/zacharytgray/yonder/actions/workflows/ci.yml/badge.svg)](https://github.com/zacharytgray/yonder/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)
+[![CI][badge-ci]][ci]
+[![Latest release][badge-release]][releases]
+[![MIT license][badge-license]](LICENSE)
+[![macOS and Linux][badge-platform]](#limits)
 
-[Install](#install) · [What it does](#what-it-does) · [Secrets](#secrets) · [Commands](#commands) · [Design](docs/design.md)
+**[<kbd> <br> Install <br> </kbd>](#install)**&nbsp;
+**[<kbd> <br> What it does <br> </kbd>](#what-it-does)**&nbsp;
+**[<kbd> <br> Secrets <br> </kbd>](#secrets)**&nbsp;
+**[<kbd> <br> Commands <br> </kbd>](#commands)**&nbsp;
+**[<kbd> <br> Limits <br> </kbd>](#limits)**&nbsp;
+**[<kbd> <br> Design <br> </kbd>](docs/design.md)**
+
+<!-- DEMO SLOT: the demo video goes here. Replace this comment with a linked GIF or MP4, e.g.
+<a href="docs/readme/demo.mp4"><img src="docs/readme/demo.gif" width="100%" alt="..."></a>
+Keep the text transcript below as the fallback. -->
 
 </div>
 
@@ -36,14 +50,45 @@ agent  $ yonder ls
 
 ## What it does
 
-| | |
-|---|---|
-| **Sees every machine** | Hardware, GPUs, free disk, local models (Ollama, LM Studio, llama.cpp, vLLM, MLX) and installed agents. Discovered, not typed. |
-| **Runs anywhere** | `yonder run gpu-box -- <cmd>` over plain SSH on your tailnet. Output streams back. The exit code is the command's own. |
-| **Keeps secrets off the command line** | Secrets come from 1Password or Bitwarden. The agent asks for a name like `HF_TOKEN`. The value stays out of command lines, logs and accidental output. [What that does and doesn't cover](#what-secrets-protect). |
-| **Says when a machine is asleep** | An offline machine fails fast with exit code 75, when it was last seen, and your notes about it. No hanging, no retry loops. |
-| **Logs what crossed machines** | Every remote command is recorded on the machine that ran it. `yonder log` merges them all. |
-| **Works in every agent** | One skill, installed into Claude Code, Codex, Pi and Hermes. Each agent knows the drill without being told. |
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Sees every machine</h3>
+      <p>Hardware, GPUs, free disk, local models (Ollama, LM Studio, llama.cpp, vLLM, MLX) and
+      installed agents. Discovered, not typed.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>Runs anywhere</h3>
+      <p><code>yonder run gpu-box -- &lt;cmd&gt;</code> over plain SSH on your tailnet. Output
+      streams back. The exit code is the command's own.</p>
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h3>Keeps secrets off the command line</h3>
+      <p>Secrets come from 1Password or Bitwarden. The agent asks for a name like
+      <code>HF_TOKEN</code>. The value stays out of command lines, logs and accidental output.
+      <a href="#what-secrets-protect">What that does and doesn't cover</a>.</p>
+    </td>
+    <td valign="top">
+      <h3>Says when a machine is asleep</h3>
+      <p>An offline machine fails fast with exit code 75, when it was last seen, and your notes
+      about it. No hanging, no retry loops.</p>
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h3>Logs what crossed machines</h3>
+      <p>Every remote command is recorded on the machine that ran it. <code>yonder log</code>
+      merges them all.</p>
+    </td>
+    <td valign="top">
+      <h3>Works in every agent</h3>
+      <p>One skill, installed into Claude Code, Codex, Pi and Hermes. Each agent knows the drill
+      without being told.</p>
+    </td>
+  </tr>
+</table>
 
 Yonder connects machines. It does not decide what your agent may do. Your harness already does
 that, with its own permission modes.
@@ -293,9 +338,20 @@ comes with the command that fixes it.
 
 ## Contributing
 
-`make test` runs the unit and end-to-end tests. `make integration` starts two SSH containers as a
-fake fleet (needs Docker). See [docs/design.md](docs/design.md) for how the pieces fit together.
+Bug reports, ideas and pull requests are welcome. `make test` runs the unit and end-to-end
+tests. `make integration` starts two SSH containers as a fake fleet (needs Docker). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the ground rules, [docs/design.md](docs/design.md) for
+how the pieces fit together, and [docs/brand.md](docs/brand.md) for the look.
+
+Found a security problem? Please report it privately. See [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)
+
+[ci]: https://github.com/zacharytgray/yonder/actions/workflows/ci.yml
+[releases]: https://github.com/zacharytgray/yonder/releases
+[badge-ci]: https://img.shields.io/github/actions/workflow/status/zacharytgray/yonder/ci.yml?branch=main&style=flat-square&label=ci&labelColor=26223d
+[badge-release]: https://img.shields.io/github/v/release/zacharytgray/yonder?style=flat-square&label=release&labelColor=26223d&color=d2602f
+[badge-license]: https://img.shields.io/github/license/zacharytgray/yonder?style=flat-square&label=license&labelColor=26223d&color=d2602f
+[badge-platform]: https://img.shields.io/badge/platform-macOS%20%7C%20Linux-d2602f?style=flat-square&labelColor=26223d

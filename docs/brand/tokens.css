@@ -1,0 +1,129 @@
+/* yonder design tokens. source of truth: docs/brand.md. keep tokens.json in sync. */
+
+:root {
+  /* palette */
+  --y-dusk-900: #1a1828;   /* night */
+  --y-dusk-800: #26223d;   /* dusk ink */
+  --y-dusk-700: #36314a;
+  --y-dusk-600: #5e5870;
+  --y-dusk-300: #aba3b8;
+  --y-horizon-600: #a3431a; /* sundown, for text and buttons on light */
+  --y-horizon-500: #d2602f; /* sundown, the sun in the mark */
+  --y-horizon-300: #f08a55; /* sundown on dark */
+  --y-prairie-600: #4f6b42;
+  --y-prairie-400: #6f8f5e;
+  --y-prairie-200: #9fbf8c;
+  --y-sky-600: #3d6680;
+  --y-sky-400: #7fa6bf;
+  --y-sky-200: #a9c8da;
+  --y-lantern-700: #8a5a12;
+  --y-lantern-500: #e3a23a;
+  --y-lantern-300: #f2b54e;
+  --y-paper-50: #fbf7ef;
+  --y-paper-100: #f6f0e4;  /* paper */
+  --y-paper-200: #efe6d5;
+  --y-paper-300: #ddd0ba;
+  --y-cream: #f3eada;
+
+  /* type */
+  --y-font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --y-font-display-settings: "SOFT" 100, "WONK" 1, "opsz" 144;
+  --y-font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --y-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --y-text-sm: 0.875rem;
+  --y-text-base: 1rem;
+  --y-text-lg: 1.25rem;
+  --y-text-xl: 1.75rem;
+  --y-text-2xl: 2.5rem;
+  --y-text-3xl: 3.75rem;
+  --y-leading-tight: 1.1;
+  --y-leading-body: 1.6;
+  --y-measure: 40rem;
+
+  /* shape and space */
+  --y-radius-sm: 4px;
+  --y-radius: 8px;
+  --y-radius-lg: 14px;
+  --y-rule: 1px;
+  --y-space-1: 0.25rem;
+  --y-space-2: 0.5rem;
+  --y-space-3: 0.75rem;
+  --y-space-4: 1rem;
+  --y-space-6: 1.5rem;
+  --y-space-8: 2rem;
+  --y-space-12: 3rem;
+  --y-space-16: 4rem;
+  --y-wrap: 68rem;
+  --y-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --y-slow: 600ms;
+
+  /* light theme */
+  color-scheme: light;
+  --y-bg: var(--y-paper-100);
+  --y-bg-raised: var(--y-paper-50);
+  --y-band: var(--y-paper-200);
+  --y-line: var(--y-paper-300);
+  --y-text: var(--y-dusk-800);
+  --y-text-muted: var(--y-dusk-600);
+  --y-accent: var(--y-horizon-500);
+  --y-link: var(--y-horizon-600);
+  --y-button-bg: var(--y-horizon-600);
+  --y-button-text: #ffffff;
+  --y-focus: var(--y-sky-600);
+  --y-online: var(--y-prairie-600);
+  --y-info: var(--y-sky-600);
+  --y-warn: var(--y-lantern-700);
+  --y-offline: var(--y-dusk-600);
+  --y-code-bg: var(--y-paper-200);
+  --y-code-text: var(--y-dusk-800);
+  --y-ridge-far: var(--y-sky-400);
+  --y-ridge-near: var(--y-prairie-400);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --y-bg: var(--y-dusk-900);
+    --y-bg-raised: #221f33;
+    --y-band: #201d30;
+    --y-line: var(--y-dusk-700);
+    --y-text: var(--y-cream);
+    --y-text-muted: var(--y-dusk-300);
+    --y-accent: var(--y-horizon-300);
+    --y-link: var(--y-horizon-300);
+    --y-button-bg: var(--y-horizon-300);
+    --y-button-text: var(--y-dusk-900);
+    --y-focus: var(--y-sky-200);
+    --y-online: var(--y-prairie-200);
+    --y-info: var(--y-sky-200);
+    --y-warn: var(--y-lantern-300);
+    --y-offline: var(--y-dusk-300);
+    --y-code-bg: #221f33;
+    --y-code-text: var(--y-cream);
+    --y-ridge-far: #2e2a45;
+    --y-ridge-near: #1f1c30;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --y-bg: var(--y-dusk-900);
+  --y-bg-raised: #221f33;
+  --y-band: #201d30;
+  --y-line: var(--y-dusk-700);
+  --y-text: var(--y-cream);
+  --y-text-muted: var(--y-dusk-300);
+  --y-accent: var(--y-horizon-300);
+  --y-link: var(--y-horizon-300);
+  --y-button-bg: var(--y-horizon-300);
+  --y-button-text: var(--y-dusk-900);
+  --y-focus: var(--y-sky-200);
+  --y-online: var(--y-prairie-200);
+  --y-info: var(--y-sky-200);
+  --y-warn: var(--y-lantern-300);
+  --y-offline: var(--y-dusk-300);
+  --y-code-bg: #221f33;
+  --y-code-text: var(--y-cream);
+  --y-ridge-far: #2e2a45;
+  --y-ridge-near: #1f1c30;
+}

@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in yonder did the wrong thing, or broke.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for writing this up. Please leave out real hostnames, IPs, tailnet names and
+        secret values; names like `gpu-box`, `100.64.0.x` and `example.ts.net` are fine.
+
+        Found a security problem? Don't file it here. See [SECURITY.md](https://github.com/zacharytgray/yonder/blob/main/SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran and what it printed. Paste output as text, not a screenshot.
+      render: console
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. yonder init --yes --machines gpu-box
+        2. yonder run gpu-box -- ...
+  - type: input
+    id: version
+    attributes:
+      label: yonder version
+      description: Output of `yonder version`, on each machine involved if they differ.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Machines involved
+      multiple: true
+      options: [macOS, Linux]
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed it
+      options: [Homebrew, install.sh, release archive, built from source]
+  - type: textarea
+    id: doctor
+    attributes:
+      label: yonder doctor
+      description: Output of `yonder doctor`, if it says anything useful. Scrub names first.
+      render: console
