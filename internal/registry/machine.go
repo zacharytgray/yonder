@@ -8,23 +8,26 @@ import (
 
 // Machine is one fleet record, stored at machines/<name>.toml on every machine.
 type Machine struct {
-	Name          string    `toml:"name" json:"name"`
-	OS            string    `toml:"os" json:"os"`
-	Arch          string    `toml:"arch" json:"arch"`
-	TailscaleIP   string    `toml:"tailscale_ip" json:"tailscale_ip"`
-	DNSName       string    `toml:"dns_name" json:"dns_name"`
-	SSHUser       string    `toml:"ssh_user" json:"ssh_user"`
-	SSHPort       int       `toml:"ssh_port" json:"ssh_port"`
-	YonderPath    string    `toml:"yonder_path" json:"yonder_path"`
-	SSHHostKey    string    `toml:"ssh_host_key" json:"ssh_host_key"`
-	SSHClientKeys []string  `toml:"ssh_client_keys" json:"ssh_client_keys"`
-	Role          string    `toml:"role,omitempty" json:"role"`
-	Notes         string    `toml:"notes,omitempty" json:"notes"`
-	Pending       bool      `toml:"pending,omitempty" json:"pending"`
-	UpdatedAt     time.Time `toml:"updated_at" json:"updated_at"`
-	DiscoveredAt  time.Time `toml:"discovered_at" json:"discovered_at"`
-	AddedAt       time.Time `toml:"added_at,omitempty" json:"added_at"` // last `yonder add`; only this beats a tombstone
-	Facts         Facts     `toml:"facts" json:"facts"`
+	Name          string   `toml:"name" json:"name"`
+	OS            string   `toml:"os" json:"os"`
+	Arch          string   `toml:"arch" json:"arch"`
+	TailscaleIP   string   `toml:"tailscale_ip" json:"tailscale_ip"`
+	DNSName       string   `toml:"dns_name" json:"dns_name"`
+	SSHUser       string   `toml:"ssh_user" json:"ssh_user"`
+	SSHPort       int      `toml:"ssh_port" json:"ssh_port"`
+	YonderPath    string   `toml:"yonder_path" json:"yonder_path"`
+	SSHHostKey    string   `toml:"ssh_host_key" json:"ssh_host_key"`
+	SSHClientKeys []string `toml:"ssh_client_keys" json:"ssh_client_keys"`
+	Role          string   `toml:"role,omitempty" json:"role"`
+	Notes         string   `toml:"notes,omitempty" json:"notes"`
+	Pending       bool     `toml:"pending,omitempty" json:"pending"`
+	// the 1password service account whose token this machine holds, set by
+	// `yonder secret setup` provisioning. a name, never a secret
+	SecretsAccount string    `toml:"secrets_account,omitempty" json:"secrets_account,omitempty"`
+	UpdatedAt      time.Time `toml:"updated_at" json:"updated_at"`
+	DiscoveredAt   time.Time `toml:"discovered_at" json:"discovered_at"`
+	AddedAt        time.Time `toml:"added_at,omitempty" json:"added_at"` // last `yonder add`; only this beats a tombstone
+	Facts          Facts     `toml:"facts" json:"facts"`
 }
 
 // Facts is written by discovery and owned by the machine itself.
@@ -92,6 +95,8 @@ type Tombstone struct {
 	// set by `remove --lost`: the keys to strip from authorized_keys everywhere
 	Lost          bool     `toml:"lost,omitempty" json:"lost,omitempty"`
 	SSHClientKeys []string `toml:"ssh_client_keys,omitempty" json:"ssh_client_keys,omitempty"`
+	// the record's secrets_account, so a rerun of remove --lost can name it
+	SecretsAccount string `toml:"secrets_account,omitempty" json:"secrets_account,omitempty"`
 	// keys of the record this machine held for that name. local only, never synced
 	HeldKeys []string `toml:"held_keys,omitempty" json:"-"`
 }

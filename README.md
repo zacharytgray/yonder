@@ -113,6 +113,37 @@ You choose how secrets unlock on each machine:
 Tokens for the hands-free modes are kept in the macOS Keychain, the Linux secret service, or a
 file only you can read, in that order.
 
+**Hands-free 1Password in one command.** Run this on the machine you sit at, the one with the
+1Password app:
+
+```sh
+yonder secret setup
+```
+
+Choose the hands-free option. Yonder creates a vault for agent secrets, "Yonder Agents" by
+default. Then it creates one read-only service account per machine, named `yonder-<machine>`,
+and stores each token in that machine's keychain. You approve once, with Touch ID or your
+password. You don't visit the 1Password website. Each token goes straight to its own machine. It
+never lands on a command line, in a log or on another machine's disk.
+
+By default it sets up every other online machine. The machine you sit at keeps Touch ID. Every
+machine needs the 1Password CLI, `op`; yonder skips one without it and tells you how to install
+it. Without prompts:
+
+```sh
+yonder secret setup --yes                       # the default machines
+yonder secret setup --machines gpu-box          # one machine, e.g. one that was offline
+yonder secret setup --machines gpu-box --replace  # give it a new token
+```
+
+Agents on those machines can read everything in that vault, so put only agent secrets in it.
+Yonder can't revoke a service account; `op` has no command for that. To cut a machine off, go to
+1Password.com, then Developer > Service accounts. `yonder remove <machine> --lost` names the
+account to revoke.
+
+If you'd rather do it by hand, or you use Bitwarden, run `yonder secret setup` on each machine,
+choose the provider, then `yonder secret token set`.
+
 **About phone approval.** 1Password cannot yet approve a command-line request from its phone app.
 Approval happens only in the desktop app on the machine asking. When 1Password adds phone
 approval, Yonder will support it as another mode.
@@ -129,7 +160,7 @@ approval, Yonder will support it as another mode.
 | `yonder add <machine>` | Add one more machine |
 | `yonder refresh [machine]` | Rediscover facts and sync the registry everywhere |
 | `yonder doctor` | Check everything and print the fix for each problem |
-| `yonder secret add\|ls\|rm\|test\|setup\|token` | Manage secret references and this machine's provider |
+| `yonder secret add\|ls\|rm\|test\|setup\|token` | Manage secret references. `setup` makes hands-free 1Password for your machines |
 | `yonder agents install\|uninstall\|status` | Manage the skill in each agent harness. `--all-machines` does every machine |
 | `yonder remove <machine> [--lost]` | Take a machine out of the fleet |
 

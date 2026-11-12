@@ -32,7 +32,8 @@ test/                  end-to-end tests against the built binary (+ docker integ
 ```
 
 The hidden commands a caller runs on a target are `_exec`, `_job` (the detached supervisor),
-`_jobs`, `_sync`, `_log`, `_facts` and `_init-self <name>`.
+`_jobs`, `_sync`, `_log`, `_facts`, `_init-self <name>`, and `_secret-probe [--verify]` and
+`_secret-provision <account> <vault>` (both run through `_exec`; see Secrets).
 
 ## Files on each machine
 
@@ -66,6 +67,7 @@ ssh_host_key = "ssh-ed25519 AAAA..."   # this machine's sshd host key, pinned at
 ssh_client_keys = ["ssh-ed25519 AAAA... me@gpu-box"]  # keys this machine uses to reach others
 role = "gpu"                  # optional, user-given: laptop | desktop | server | gpu | other
 notes = "sleeps at night, heavy jobs only"
+secrets_account = "yonder-gpu-box"  # optional: the 1Password service account its token belongs to
 updated_at = 2026-11-11T20:00:00Z
 discovered_at = 2026-11-11T20:00:00Z
 added_at = 2026-11-11T20:00:00Z  # last `yonder add` (or first `init` here); only this beats a tombstone
@@ -90,7 +92,7 @@ disk_free_gb = 512.0
 ```
 
 A tombstone is `removed/<name>.toml` with `name`, `removed_at`, an optional `reason`, the
-machine's `ssh_client_keys`, and `lost = true` after `remove --lost`. It also keeps `held_keys`:
+machine's `ssh_client_keys` and `secrets_account`, and `lost = true` after `remove --lost`. It also keeps `held_keys`:
 the `ssh_client_keys` of the record this machine held for that name when the tombstone replaced
 it. `held_keys` stays local and is never synced.
 
@@ -316,6 +318,8 @@ same names on each machine an agent runs from with `yonder secret add`.
 provider = "1password"        # 1password | bws
 mode = "desktop"              # 1password only: desktop | service-account
 token_store = "file"          # optional: keychain | secret-service | file (default: picked per OS)
+service_account = "yonder-gpu-box"  # service-account mode, set by provisioning: names, never secrets
+vault = "Yonder Agents"
 ```
 
 Providers:
@@ -349,7 +353,60 @@ environment it wins over the store. The store, by OS:
 
 Commands: `yonder secret add NAME <ref>`, `ls [--json]` (names and references, never values),
 `rm NAME`, `test NAME` (resolves, prints only `NAME: ok, N chars`), `setup [--provider p --mode m]`
-and `token set` (hidden prompt, or stdin: `yonder secret token set < tokenfile`).
+and `token set` (hidden prompt, or stdin: `yonder secret token set < tokenfile`). The manual path
+(`setup --provider ... --mode service-account`, then `token set` on each machine) stays for bws and
+for people who make service accounts themselves.
+
+### Provisioning hands-free 1Password
+
+`yonder secret setup [--machines a,b | --all-machines] [--vault NAME] [--replace]
+[--expires-in 90d] [--yes]` sets up 1Password service accounts for the fleet from the machine a
+person sits at, with one approval. Any of those flags starts it; with no flags and a terminal,
+setup offers it first, then "choose a provider for this machine only" and "skip". `init` offers
+the same choice when this machine has no provider yet; `init --yes` prints the command when `op`
+and the 1Password app are installed, without running `op`.
+
+It needs `op` here with a person's session: `op account list` lists an account (the app's CLI
+integration, or `op signin`). Otherwise it stops and prints the manual path. It never runs `op`
+with `OP_SERVICE_ACCOUNT_TOKEN` set. Steps:
+
+1. Pick machines. `--machines` names them (this machine allowed); `--all-machines` is every fleet
+   machine; otherwise every other online, set-up machine, plus this one only if it has no
+   1Password app. A terminal gets a multi-select with that default ticked and a prompt for the
+   vault. Offline, pending or unpinned machines are skipped with a note and the command to rerun
+   later: `yonder secret setup --machines <m>`.
+2. Check every chosen machine before any account exists, so none is orphaned. Each runs
+   `yonder _secret-probe` through `_exec` (this machine: in process), which prints JSON: `os`, `op`
+   (path, empty when missing), `op_version`, `desktop_app`, `provider`, `mode`, `has_token`,
+   `service_account`, `vault`, and with `--verify`, `verified` and `detail`. No values. A machine
+   without `op` is skipped with the install hint for its OS (macOS `brew install 1password-cli`;
+   Linux the get-started link). A machine whose yonder lacks the command (exit 2, "unknown
+   command") fails with "upgrade yonder on <m>". A machine with a 1Password service-account token,
+   or using bws, needs `--replace` or a yes at the prompt; the message names the old account and
+   says it keeps working until revoked on 1Password.com.
+3. Make the vault (default "Yonder Agents") unless `op vault list --format json` shows it:
+   `op vault create <name> --description ...`. This is usually the call that asks for Touch ID;
+   later calls reuse the approval. Names a service account can't use (Personal, Private, Employee,
+   Shared) and names with `:` or `,` are refused before anything runs.
+4. Per machine: `op service-account create yonder-<m> --vault <vault>:read_items --raw
+   [--expires-in d]`. The token is read from stdout into memory. A replacement whose old account
+   had the same name gets `yonder-<m>-<yyyymmdd-hhmm>`, so the old one can be told apart and
+   revoked. This machine stores it in process. Another machine gets it in the `_exec` envelope as
+   the secret `YONDER_OP_TOKEN`, running `yonder _secret-provision <account> <vault>`, which reads
+   the env var, stores the token in that machine's token store and sets `[secrets]` to 1password
+   service-account with `service_account` and `vault`. So the token is never in argv, and the
+   target scrubs it from output and logs only its name. Both sides set the machine's record
+   `secrets_account` (the target its own record, since peers can't change a machine's own record),
+   and the run ends with a sync.
+5. Verify with `_secret-probe --verify`: `op user get --me --format json` with the stored token
+   must report a `SERVICE_ACCOUNT`. One line per machine: `ok`, `skipped` or `failed` with a fix.
+   A failure after an account exists says to revoke it and rerun.
+6. If this machine wasn't chosen, has the 1Password app and no provider yet, it is set to
+   1password desktop. The run ends with where to revoke (https://start.1password.com/ > Developer >
+   Service accounts; `op` has no revoke command) and how to add references.
+
+Exit 1 if any machine failed; skipped machines don't fail the run. Every machine whose agents use
+`--secret` needs its own token and `op`, because secrets resolve on the caller.
 `secret ls --json` is `{"provider":"1password","mode":"desktop","secrets":[{"name":"...","ref":"..."}]}`.
 
 `init` runs the same setup as `yonder secret setup`, but leaves an existing provider alone. It
@@ -358,8 +415,9 @@ service-account mode otherwise. With `--yes` it only prints the non-interactive 
 
 `doctor` gets `secrets.Health()`: provider configured, CLI installed and its version, for desktop
 whether `op` can see the app (`op whoami`, then `op account list`; no item is read), for hands-free
-modes whether a token is stored (and for 1Password, whether `op whoami` accepts it), and whether each
-reference is valid for this machine's provider. Every failure carries a fix.
+modes whether a token is stored (and for 1Password, whether `op whoami` accepts it, naming the
+service account when provisioning recorded it), and whether each reference is valid for this
+machine's provider. Every failure carries a fix.
 
 ## Agent skill
 
@@ -412,7 +470,7 @@ caller-side entry (`"command":"yonder remove <m>[ --lost]"`).
 - Default: if `m` is online, yonder first runs `yonder agents uninstall && yonder remove
   --forget-local` there through `_exec`. `--forget-local` clears that machine's `machines/`,
   `removed/` and `self`, and keeps the rest of `config.toml`. The binary stays; the output says
-  how to delete it. If `m` is offline, the output gives that line to run there later. A pending
+  how to delete it, and names its 1Password service account to revoke when the record has one. If `m` is offline, the output gives that line to run there later. A pending
   `m` (never set up) only prints `removed <m> (it was never set up)`, plus the tombstone sync.
 - `--lost`: `m` is never contacted. On this machine and every online peer (`yonder remove
   --strip-keys` through `_exec`, keys on stdin, before the sync) yonder removes the `authorized_keys` lines whose
@@ -420,7 +478,7 @@ caller-side entry (`"command":"yonder remove <m>[ --lost]"`).
   matter for the match, and other lines are kept byte for byte. The original is copied to
   `authorized_keys.yonder-bak.<unix-nanos>` first, a new backup per change, so a later strip
   never overwrites an earlier backup; a missing file is fine. Then it prints a checklist: delete
-  `m` from the tailnet, revoke its secrets token, rotate what it could read, remove its keys from
+  `m` from the tailnet, revoke its secrets token (naming its `secrets_account` when known), rotate what it could read, remove its keys from
   other services, and note which machines it couldn't reach. Those strip the keys themselves when
   a later sync reaches them (see Sync above). Running `remove --lost` again works from the
   tombstone alone and always strips, applied or not; `doctor` fails while any machine still

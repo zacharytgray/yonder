@@ -30,6 +30,9 @@ var Commands = map[string]transport.Handler{
 	"_log":       Log,
 	"_facts":     FactsCmd,
 	"_init-self": InitSelf,
+
+	"_secret-probe":     SecretProbe,
+	"_secret-provision": SecretProvision,
 }
 
 // Dispatch runs args[0] as a hidden command. Local uses it to skip ssh.

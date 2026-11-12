@@ -103,8 +103,8 @@ func (a *app) initCommand(interactive bool, chosen []string, user string) error 
 		added = append(added, m.Name)
 	}
 
-	// hook: step 3 sets up a secrets provider here
-	if err := secrets.SetupInteractive(interactive); err != nil {
+	// secrets: offer hands-free 1password for the fleet when this machine can
+	if err := a.secretsStep(interactive); err != nil {
 		a.warnf("secrets setup: %v", err)
 	}
 	// hook: step 4 installs the agent skill into each harness here
@@ -116,6 +116,24 @@ func (a *app) initCommand(interactive bool, chosen []string, user string) error 
 	a.installSkillOn(self, added, interactive)
 	if len(failed) > 0 {
 		return fmt.Errorf("could not add %s; fix the errors above and run `yonder add <machine>`", strings.Join(failed, ", "))
+	}
+	return nil
+}
+
+// secretsStep is init's secrets setup. it leaves an existing provider alone.
+func (a *app) secretsStep(interactive bool) error {
+	if cur, err := secrets.LoadSettings(); err == nil && cur.Provider != "" {
+		return secrets.SetupInteractive(false)
+	}
+	if interactive {
+		return a.secretsChoice(provisionOpts{}, false)
+	}
+	if err := secrets.SetupInteractive(false); err != nil {
+		return err
+	}
+	// no op call here: --yes runs unattended
+	if secrets.OpAndApp() {
+		fmt.Fprintln(a.out, "  or hands-free 1Password for every machine, from here (one approval): yonder secret setup --yes")
 	}
 	return nil
 }
@@ -159,7 +177,7 @@ func (a *app) selfRecord(p tailnet.Peer) registry.Machine {
 		UpdatedAt: now, DiscoveredAt: now, AddedAt: now, Facts: discover.Local(),
 	}
 	if old, err := a.store.Machine(m.Name); err == nil {
-		m.Role, m.Notes, m.AddedAt = old.Role, old.Notes, old.AddedAt
+		m.Role, m.Notes, m.AddedAt, m.SecretsAccount = old.Role, old.Notes, old.AddedAt, old.SecretsAccount
 		if old.SSHPort != 0 {
 			m.SSHPort = old.SSHPort
 		}

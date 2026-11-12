@@ -204,8 +204,15 @@ func yonderCmd(m registry.Machine, args ...string) string {
 // execOn runs a shell command on m through _exec, so m logs it like any run.
 // offline and unreachable come back as exit-75 errors, logged here.
 func (a *app) execOn(m registry.Machine, self, command string, stdin io.Reader, out, errw io.Writer) (int, error) {
+	return a.execWith(m, self, command, nil, stdin, out, errw)
+}
+
+// execWith is execOn with secret values for the command's environment. they
+// travel in the envelope only, and m scrubs them from output and its log.
+func (a *app) execWith(m registry.Machine, self, command string, secretVals map[string]string, stdin io.Reader, out, errw io.Writer) (int, error) {
 	env := remote.Envelope{
 		ID: remote.NewID(), Command: command, From: self, To: m.Name, Harness: detectHarness(),
+		Secrets: secretVals,
 	}
 	line, err := env.Encode()
 	if err != nil {

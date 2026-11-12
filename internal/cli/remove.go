@@ -17,6 +17,7 @@ import (
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/remote"
 	"github.com/zacharytgray/yonder/internal/runlog"
+	"github.com/zacharytgray/yonder/internal/secrets"
 	"github.com/zacharytgray/yonder/internal/transport"
 )
 
@@ -111,11 +112,12 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 	m, recErr := a.store.Machine(name)
 	tomb, hadTomb := a.store.Tombstone(name)
 	keys := m.SSHClientKeys
+	account := m.SecretsAccount
 	rerun := false
 	if errors.Is(recErr, registry.ErrNotFound) {
 		switch {
 		case hadTomb && lost && len(tomb.SSHClientKeys) > 0:
-			rerun, keys = true, tomb.SSHClientKeys
+			rerun, keys, account = true, tomb.SSHClientKeys, tomb.SecretsAccount
 		case hadTomb && lost:
 			return fmt.Errorf("%s was removed on %s and yonder has no ssh keys on record for it; remove them from ~/.ssh/authorized_keys by hand", name, tomb.RemovedAt.Format("2006-01-02"))
 		case hadTomb:
@@ -180,7 +182,7 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 	}
 
 	if !rerun {
-		t := registry.Tombstone{Name: name, RemovedAt: time.Now().UTC().Truncate(time.Second), Reason: "removed", SSHClientKeys: keys}
+		t := registry.Tombstone{Name: name, RemovedAt: time.Now().UTC().Truncate(time.Second), Reason: "removed", SSHClientKeys: keys, SecretsAccount: account}
 		if lost {
 			t.Reason, t.Lost = "lost", true
 		}
@@ -249,7 +251,7 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 			name, strings.Join(offline, ", "))
 	}
 	if lost {
-		a.lostChecklist(name, keys, stillTrust)
+		a.lostChecklist(name, account, keys, stillTrust)
 		return nil
 	}
 	if m.Pending && !rerun {
@@ -262,6 +264,9 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 		fmt.Fprintf(a.out, "%s wasn't reachable, so it still has the skill and its registry copy. When it's back, run there:\n  yonder agents uninstall && yonder remove --forget-local\n", name)
 	}
 	fmt.Fprintf(a.out, "Its ssh key is still trusted by the other machines. If it was lost or compromised, run `yonder remove %s --lost`.\n", name)
+	if account != "" {
+		fmt.Fprintf(a.out, "Its 1Password service account %s still works. Revoke it at %s.\n", account, secrets.RevokeWhere)
+	}
 	return nil
 }
 
@@ -275,11 +280,15 @@ func uninstallLine(path string) string {
 	return "rm " + transport.Quote(path)
 }
 
-func (a *app) lostChecklist(name string, keys, stillTrust []string) {
+func (a *app) lostChecklist(name, account string, keys, stillTrust []string) {
 	fmt.Fprintf(a.out, "Now finish by hand:\n")
+	revoke := "If it had a hands-free secrets token, revoke it. 1Password.com: Developer → Service accounts → its account → revoke the token. Bitwarden: Machine accounts → its account → Access tokens → revoke."
+	if account != "" {
+		revoke = "Revoke its 1Password service account " + account + ": https://start.1password.com/ → Developer → Service accounts → " + account + " → revoke its token. If it also had a Bitwarden token, revoke that under Machine accounts → Access tokens."
+	}
 	steps := []string{
 		"Delete " + name + " from your tailnet: Tailscale admin console → Machines → " + name + " → Remove. Its tailnet key stops working at once.",
-		"If it had a hands-free secrets token, revoke it. 1Password.com: Developer → Service accounts → its account → revoke the token. Bitwarden: Machine accounts → its account → Access tokens → revoke.",
+		revoke,
 		"Rotate any secret that vault or account could read, and any API keys or tokens stored on " + name + " itself.",
 		"Remove its ssh keys anywhere else that trusts them, such as GitHub or GitLab (Settings → SSH keys) and servers outside the fleet:\n" + keyList(keys),
 	}

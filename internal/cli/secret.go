@@ -168,35 +168,107 @@ func newSecretTestCmd() *cobra.Command {
 }
 
 func newSecretSetupCmd() *cobra.Command {
-	var provider, mode string
+	var (
+		provider, mode string
+		yes            bool
+		po             provisionOpts
+	)
 	cmd := &cobra.Command{
-		Use:   "setup [--provider 1password|bws] [--mode desktop|service-account]",
-		Short: "Choose this machine's secrets provider",
-		Long: `Choose this machine's secrets provider. With no flags it asks.
+		Use:   "setup [--machines a,b | --all-machines] [--vault NAME] [--replace] [--yes]",
+		Short: "Set up secrets: hands-free 1Password for your machines, or this machine's provider",
+		Long: `Set up secrets. With no flags it asks.
 
-1password desktop: the 1Password app approves reads with Touch ID or system auth.
-1password service-account: hands-free, a read-only token scoped to one dedicated vault.
-bws: Bitwarden Secrets Manager with a machine-account access token.
+From a machine with the 1Password app (or an ` + "`op signin`" + ` session), yonder can set up
+hands-free 1Password for the fleet in one run, with one approval: it creates a vault for
+agent secrets (default "` + secrets.DefaultVault + `"), then one read-only service account per
+machine, named yonder-<machine>, and stores each token in that machine's keychain. The
+tokens never touch disk here, argv or the log. Every machine needs ` + "`op`" + ` installed.
+By default it sets up every other online machine, and this one only if it has no
+1Password app. 1Password has no command to revoke a service account; do that at
+` + secrets.RevokeWhere + `.
+
+  yonder secret setup --yes                    the default machines, no prompts
+  yonder secret setup --machines gpu-box       just these (offline ones: run this later)
+  yonder secret setup --all-machines --vault Agents --expires-in 90d
+
+Or choose this machine's provider by hand:
+  1password desktop: the 1Password app approves reads with Touch ID or system auth.
+  1password service-account: hands-free, a read-only token scoped to one dedicated vault.
+  bws: Bitwarden Secrets Manager with a machine-account access token.
 1Password cannot approve CLI reads from its phone app today.
 
-Hands-free modes need ` + "`yonder secret token set`" + ` afterwards.`,
+Hand-chosen hands-free modes need ` + "`yonder secret token set`" + ` afterwards.`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if mode != "" && provider == "" {
 				return &usageError{errors.New("--mode needs --provider")}
 			}
+			a := newApp(cmd)
+			po.interactive = !yes && promptable()
+			if provider != "" {
+				if po.set(false) {
+					return &usageError{errors.New("--provider sets up this machine by hand; it doesn't mix with --machines, --all-machines, --vault, --replace or --expires-in")}
+				}
+			} else if po.set(yes) {
+				if len(po.machines) > 0 && po.all {
+					return &usageError{errors.New("use --machines or --all-machines, not both")}
+				}
+				return a.provision(po)
+			} else if po.interactive {
+				return a.secretsChoice(po, true)
+			}
 			return secrets.Setup(secrets.SetupOptions{
-				Out:         cmd.OutOrStdout(),
-				Interactive: isTerminal(os.Stdin),
+				Out:         a.out,
+				Interactive: po.interactive,
 				Force:       true,
 				Provider:    provider,
 				Mode:        mode,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&provider, "provider", "", "1password or bws (skips the prompts)")
-	cmd.Flags().StringVar(&mode, "mode", "", "1password only: desktop or service-account")
+	f := cmd.Flags()
+	f.StringVar(&provider, "provider", "", "set this machine by hand: 1password or bws (skips the prompts)")
+	f.StringVar(&mode, "mode", "", "with --provider 1password: desktop or service-account")
+	f.StringSliceVar(&po.machines, "machines", nil, "machines to give a service account, comma-separated")
+	f.BoolVar(&po.all, "all-machines", false, "give every fleet machine a service account, this one included")
+	f.StringVar(&po.vault, "vault", "", "1Password vault for agent secrets (default \""+secrets.DefaultVault+"\"; created if missing)")
+	f.BoolVar(&po.replace, "replace", false, "replace a token a machine already has")
+	f.StringVar(&po.expiresIn, "expires-in", "", "service accounts expire after this long, e.g. 90d (default: never)")
+	f.BoolVar(&yes, "yes", false, "never prompt; set up the default machines")
 	return cmd
+}
+
+// secretsChoice is the interactive start of setup: hands-free for the fleet
+// when this machine can create service accounts, else the provider prompts.
+// force asks even if this machine already has a provider.
+func (a *app) secretsChoice(po provisionOpts, force bool) error {
+	if secrets.UserSession() != nil {
+		return secrets.Setup(secrets.SetupOptions{Out: a.out, Interactive: true, Force: force})
+	}
+	if cur, err := secrets.LoadSettings(); err == nil && cur.Provider != "" && !force {
+		fmt.Fprintf(a.out, "secrets: using %s; `yonder secret setup` changes it\n", cur)
+		return nil
+	}
+	choice := "fleet"
+	err := huh.NewSelect[string]().
+		Title("Set up secrets").
+		Description("Agents ask for secrets by name. Yonder resolves them on the machine the agent runs on\nand passes them to the target's environment. The model never sees a value.").
+		Options(
+			huh.NewOption("hands-free 1Password for my machines: one vault, one read-only service account each (one approval)", "fleet"),
+			huh.NewOption("choose a provider for this machine only", "here"),
+			huh.NewOption("skip for now", ""),
+		).
+		Value(&choice).
+		Run()
+	switch {
+	case err != nil || choice == "":
+		fmt.Fprintln(a.out, "secrets: skipped; `yonder secret setup` sets it up later")
+		return nil
+	case choice == "here":
+		return secrets.Setup(secrets.SetupOptions{Out: a.out, Interactive: true, Force: true})
+	}
+	po.interactive = true
+	return a.provision(po)
 }
 
 func newSecretTokenCmd() *cobra.Command {

@@ -45,6 +45,10 @@ type Settings struct {
 	Provider   string // 1password | bws
 	Mode       string // 1password only: desktop | service-account
 	TokenStore string // optional override: keychain | secret-service | file
+	// service-account mode only, set by provisioning: which account the token
+	// belongs to and the vault it reads, so doctor and remove --lost can name it
+	ServiceAccount string
+	Vault          string
 }
 
 // HandsFree is true when the provider runs on a stored token, not a person.
@@ -72,6 +76,9 @@ func LoadSettings() (Settings, error) {
 	if s.Provider == Provider1Password && s.Mode == "" {
 		s.Mode = ModeDesktop
 	}
+	if s.Provider == Provider1Password && s.Mode == ModeServiceAccount {
+		s.ServiceAccount, s.Vault = str("service_account"), str("vault")
+	}
 	return s, nil
 }
 
@@ -85,6 +92,14 @@ func SaveSettings(s Settings) error {
 	}
 	if s.TokenStore != "" {
 		t["token_store"] = s.TokenStore
+	}
+	if s.Provider == Provider1Password && s.Mode == ModeServiceAccount {
+		if s.ServiceAccount != "" {
+			t["service_account"] = s.ServiceAccount
+		}
+		if s.Vault != "" {
+			t["vault"] = s.Vault
+		}
 	}
 	return registry.Open().SetSecrets(t)
 }
@@ -117,7 +132,7 @@ func newProvider(s Settings) (Provider, error) {
 	if s.Provider == ProviderBWS {
 		return &bws{tokens: newTokenStore(s.TokenStore)}, nil
 	}
-	return &onePassword{mode: s.Mode, tokens: newTokenStore(s.TokenStore)}, nil
+	return &onePassword{mode: s.Mode, tokens: newTokenStore(s.TokenStore), account: s.ServiceAccount}, nil
 }
 
 // names

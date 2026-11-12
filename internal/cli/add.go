@@ -246,6 +246,9 @@ func (a *app) addPeer(p tailnet.Peer, o addOpts) (registry.Machine, error) {
 	if m.SSHClientKeys == nil {
 		m.SSHClientKeys = []string{}
 	}
+	if old, err := a.store.Machine(name); err == nil {
+		m.SecretsAccount = old.SecretsAccount // its token outlives a re-add
+	}
 	if f, err := a.remoteFacts(a.ssh, m); err != nil {
 		a.warnf("could not read facts from %s: %v", name, err)
 	} else {

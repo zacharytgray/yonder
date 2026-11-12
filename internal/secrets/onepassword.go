@@ -19,8 +19,9 @@ const (
 // onePassword runs `op`. desktop mode leans on the app's touch id prompt;
 // service-account mode passes a stored token in the child's env.
 type onePassword struct {
-	mode   string
-	tokens TokenStore
+	mode    string
+	tokens  TokenStore
+	account string // service account name, when provisioning recorded it
 }
 
 func (o *onePassword) Name() string { return Provider1Password }
@@ -159,12 +160,19 @@ func (o *onePassword) serviceAccountHealth(ctx context.Context, bin string) []Ch
 		}
 		return []Check{{Name: "1password token", Detail: detail, Fix: "yonder secret token set (paste the service account token)"}}
 	}
-	out := []Check{{Name: "1password token", OK: true, Detail: "stored in " + src}}
+	detail := "stored in " + src
+	if o.account != "" {
+		detail += ", service account " + o.account
+	}
+	out := []Check{{Name: "1password token", OK: true, Detail: detail}}
 	_, stderr, err := run(ctx, bin, []string{"whoami"}, childEnv(opEnvToken+"="+tok), nil)
 	c := Check{Name: "1password service account"}
 	if err != nil {
 		c.Detail = "op rejected the token: " + ScrubText(lastLine(stderr), map[string]string{"TOKEN": tok})
 		c.Fix = "create a new service account token in 1Password, then `yonder secret token set`"
+		if o.account != "" {
+			c.Fix = fmt.Sprintf("revoke %s at %s, then from a machine with the 1Password app: yonder secret setup --machines %s --replace", o.account, RevokeWhere, selfOrPlaceholder())
+		}
 	} else {
 		c.OK, c.Detail = true, "token accepted"
 	}

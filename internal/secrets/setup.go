@@ -21,13 +21,13 @@ type SetupOptions struct {
 	Mode        string
 }
 
-// SetupInteractive is the init hook. it leaves an existing setup alone.
+// SetupInteractive runs Setup for init. it leaves an existing setup alone.
 func SetupInteractive(interactive bool) error {
 	return Setup(SetupOptions{Out: os.Stdout, Interactive: interactive})
 }
 
-// test hook
-var hasDesktopApp = desktopAppInstalled
+// HasDesktopApp reports whether the 1Password app is installed here. a var for tests.
+var HasDesktopApp = desktopAppInstalled
 
 func desktopAppInstalled() bool {
 	paths := []string{"/Applications/1Password.app"}
@@ -54,7 +54,7 @@ func headless() bool {
 
 // recommendedMode: desktop where the app lives and a person sits, else hands-free.
 func recommendedMode() string {
-	if hasDesktopApp() && !headless() {
+	if HasDesktopApp() && !headless() {
 		return ModeDesktop
 	}
 	return ModeServiceAccount
@@ -67,8 +67,11 @@ const modesExplained = `How 1Password modes work:
   service-account  hands-free. A read-only 1Password service account token, stored in this
                    machine's keychain. It can only see vaults you grant it, and never your
                    Personal/Private vault, so make a vault just for this.
-                   Create it on 1Password.com (not in the app): Developer > Directory >
-                   Other > Create a Service Account. Owners and admins can by default.
+                   Easiest: from a machine with the 1Password app, run
+                   ` + "`yonder secret setup --machines <names>`" + `. It makes the vault
+                   and one service account per machine with one approval.
+                   By hand: 1Password.com > Developer > Directory > Other >
+                   Create a Service Account, then ` + "`yonder secret token set`" + `.
                    Individual and Families plans allow 1,000 reads a day.
 1Password cannot approve CLI reads from its phone app today.`
 
@@ -87,6 +90,9 @@ func Setup(o SetupOptions) error {
 		s := Settings{Provider: o.Provider, Mode: o.Mode, TokenStore: cur.TokenStore}
 		if s.Provider == Provider1Password && s.Mode == "" {
 			s.Mode = recommendedMode()
+		}
+		if s.Provider == cur.Provider && s.Mode == cur.Mode {
+			s.ServiceAccount, s.Vault = cur.ServiceAccount, cur.Vault
 		}
 		if s.Provider != Provider1Password && s.Mode != "" {
 			return fmt.Errorf("--mode only applies to 1password")
