@@ -63,7 +63,7 @@ func (a *app) provision(o provisionOpts) error {
 		}
 	}
 	if err := secrets.UserSession(); err != nil {
-		return fmt.Errorf("%v\nto set up a machine by hand instead: yonder secret setup --provider 1password --mode service-account, then yonder secret token set", err)
+		return fmt.Errorf("%w\nto set up a machine by hand instead: yonder secret setup --provider 1password --mode service-account, then yonder secret token set", err)
 	}
 	ms, err := a.store.Machines()
 	if err != nil {
@@ -261,7 +261,6 @@ func (a *app) provisionOne(t provTarget, self string, o provisionOpts) bool {
 		fmt.Fprintf(a.out, "%s: failed, created %s but could not store its token: %s\n  fix: %s\n", n, t.account, msg, revokeFix)
 		return false
 	}
-	tok = ""
 	if !t.self {
 		if m, err := a.store.Machine(n); err == nil {
 			m.SecretsAccount, m.UpdatedAt = t.account, time.Now().UTC()
