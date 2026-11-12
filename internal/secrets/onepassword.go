@@ -13,7 +13,8 @@ import (
 const (
 	opEnvToken   = "OP_SERVICE_ACCOUNT_TOKEN"
 	opInstallFix = "install the 1Password CLI (`op`): https://developer.1password.com/docs/cli/get-started/"
-	opDesktopFix = "install the 1Password app on this machine, then turn on Settings > Developer > \"Integrate with 1Password CLI\""
+	// a locked app makes op say it can't connect and to update the app; unlocking fixes it
+	opDesktopFix = "open the 1Password app and unlock it (op says it can't connect, or to update the app, while it is locked); if it still fails, turn on Settings > Developer > \"Integrate with 1Password CLI\", or install the app"
 )
 
 // onePassword runs `op`. desktop mode leans on the app's touch id prompt;

@@ -375,6 +375,7 @@ func TestHealthFixes(t *testing.T) {
 		return "", "", errors.New("exit status 1")
 	}})
 	checkFix(t, Health(), "1password app integration", "Integrate with 1Password CLI")
+	checkFix(t, Health(), "1password app integration", "unlock it")
 
 	// desktop: integration on, not yet authorized: ok
 	installFake(t, &fakeExec{handler: func(c call) (string, string, error) {
