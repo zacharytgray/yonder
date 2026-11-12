@@ -314,7 +314,7 @@ func TestProbeModelsExtraPort(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		w.Write([]byte(`{"data":[{"id":"example-model","owned_by":"llama-swap"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"example-model","owned_by":"llama-swap"}]}`))
 	}))
 	defer srv.Close()
 	port := portOf(srv.URL)
