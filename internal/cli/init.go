@@ -29,6 +29,7 @@ func newInitCmd() *cobra.Command {
 		machines []string
 		user     string
 		idents   []string
+		noSkill  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -39,7 +40,8 @@ Offline peers are saved as pending and finish setup on the next ` + "`yonder ref
 Non-interactive: yonder init --yes --machines gpu-box,laptop [--user me]
 If you reach a peer with a specific ssh key: --identity gpu-box=~/.ssh/id_ed25519_gpubox
 (repeat the flag per peer; the key path stays on this machine).
-With --yes and no --machines, only this machine is set up.`,
+With --yes and no --machines, only this machine is set up.
+--no-skill leaves every harness's skills folder alone (install later with yonder agents install).`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a := newApp(cmd)
@@ -48,12 +50,13 @@ With --yes and no --machines, only this machine is set up.`,
 			if err != nil {
 				return &usageError{err}
 			}
-			return a.initCommand(interactive, machines, user, ids)
+			return a.initCommand(interactive, machines, user, ids, noSkill)
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "never prompt")
 	cmd.Flags().StringSliceVar(&machines, "machines", nil, "peers to add, comma-separated")
 	cmd.Flags().StringVar(&user, "user", "", "ssh user on the peers (default: the current user)")
+	cmd.Flags().BoolVar(&noSkill, "no-skill", false, "don't install the agent skill on any machine")
 	cmd.Flags().StringArrayVar(&idents, "identity", nil, "ssh key for a peer, as machine=path (repeatable, kept on this machine only)")
 	return cmd
 }
@@ -78,7 +81,7 @@ func parseIdentities(in []string) (map[string]string, error) {
 	return out, nil
 }
 
-func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string) error {
+func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string, noSkill bool) error {
 	st, err := a.status()
 	if err != nil {
 		if errors.Is(err, tailnet.ErrNotInstalled) || errors.Is(err, tailnet.ErrNotRunning) {
@@ -142,13 +145,16 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	if err := a.secretsStep(interactive); err != nil {
 		a.warnf("secrets setup: %v", err)
 	}
-	// hook: step 4 installs the agent skill into each harness here
-	if err := agents.InstallAll(); err != nil {
-		a.warnf("agent skill install: %v", err)
+	if !noSkill {
+		if err := agents.InstallAll(); err != nil {
+			a.warnf("agent skill install: %v", err)
+		}
 	}
 
 	a.syncFleet(self)
-	a.installSkillOn(self, added, interactive)
+	if !noSkill {
+		a.installSkillOn(self, added, interactive)
+	}
 	if len(failed) > 0 {
 		return fmt.Errorf("could not add %s; fix the errors above and run `yonder add <machine>`", strings.Join(failed, ", "))
 	}

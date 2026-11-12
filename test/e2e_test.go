@@ -2,6 +2,8 @@ package test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -149,5 +151,28 @@ func TestLocalEndToEnd(t *testing.T) {
 	// doctor: an offline pending peer is a warning, not a failure
 	if r := f.run("", "doctor"); r.code != 0 || !strings.Contains(r.stdout, "WARN  online") || !strings.Contains(r.stdout, "Nothing broken") {
 		t.Fatalf("doctor: %+v", r)
+	}
+}
+
+func TestInitNoSkillLeavesHarnessesAlone(t *testing.T) {
+	skill := func(f *fleet) bool {
+		_, err := os.Stat(filepath.Join(f.home, "yonder", "home", ".claude", "skills", "yonder"))
+		return err == nil
+	}
+	with := newFleet(t, "testdata/fleet.json")
+	if err := os.MkdirAll(filepath.Join(with.home, "yonder", "home", ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	with.must("init", "--yes")
+	if !skill(with) {
+		t.Fatal("control: init should install the skill for a detected harness")
+	}
+	without := newFleet(t, "testdata/fleet.json")
+	if err := os.MkdirAll(filepath.Join(without.home, "yonder", "home", ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	without.must("init", "--yes", "--no-skill")
+	if skill(without) {
+		t.Fatal("--no-skill still installed the skill")
 	}
 }
