@@ -35,6 +35,10 @@ var Commands = map[string]transport.Handler{
 	"_send":      Send,
 	"_recv":      Recv,
 
+	"_store-offer": StoreOffer,
+	"_store-send":  StoreSend,
+	"_store-recv":  StoreRecv,
+
 	"_secret-probe":     SecretProbe,
 	"_secret-provision": SecretProvision,
 }

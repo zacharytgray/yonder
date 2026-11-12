@@ -121,6 +121,7 @@ func newRoot() *cobra.Command {
 		newRemoveCmd(),
 		newSecretCmd(),
 		newAgentsCmd(),
+		newSyncCmd(),
 		newLayersCmd(),
 		newEnableCmd(),
 		newDisableCmd(),

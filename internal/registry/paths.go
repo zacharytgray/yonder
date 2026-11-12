@@ -29,6 +29,17 @@ func StateDir() string {
 	return filepath.Join(homeDir(), ".local", "state", "yonder")
 }
 
+// DataDir holds the synced stores (agents/, later memory/).
+func DataDir() string {
+	if h := yonderHome(); h != "" {
+		return filepath.Join(h, "data")
+	}
+	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
+		return filepath.Join(x, "yonder")
+	}
+	return filepath.Join(homeDir(), ".local", "share", "yonder")
+}
+
 func LogPath() string { return filepath.Join(StateDir(), "log.jsonl") }
 func JobsDir() string { return filepath.Join(StateDir(), "jobs") }
 

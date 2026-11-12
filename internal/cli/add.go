@@ -112,6 +112,7 @@ func (a *app) addCommand(arg string, o addOpts) error {
 	}
 	fmt.Fprintf(a.out, "added %s (%s/%s, %s@%s)\n", m.Name, m.OS, m.Arch, m.SSHUser, m.TailscaleIP)
 	a.syncFleet(self)
+	a.syncStoresQuiet(self)
 	a.offerMesh(self, m.Name, o)
 	return nil
 }
