@@ -89,3 +89,5 @@ jobs:
           version: v2.20.1 # exact; dependabot does not bump this, so update it by hand
           args: release --snapshot --clean --skip=publish
       - run: ls dist && cat dist/homebrew/Casks/yonder.rb
+      # binaries are notarized now; the cask must not strip gatekeeper's quarantine flag
+      - run: "! grep -q quarantine dist/homebrew/Casks/yonder.rb"

@@ -116,6 +116,8 @@ curl -fsSL https://raw.githubusercontent.com/zacharytgray/yonder/main/install.sh
 
 Each release archive has a signed build provenance. To check one you downloaded:
 `gh attestation verify yonder_<version>_<os>_<arch>.tar.gz --repo zacharytgray/yonder`.
+The macOS binaries are also signed with a Developer ID and notarized by Apple, so Gatekeeper
+lets them run.
 
 Then, on the machine you work from:
 
