@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"runtime"
 	"strings"
@@ -80,6 +81,10 @@ func UserSession() error {
 	out, _, err := run(ctx, bin, []string{"account", "list", "--format", "json"}, childEnv(), nil)
 	var list []json.RawMessage
 	if err != nil || json.Unmarshal(out, &list) != nil || len(list) == 0 {
+		// the app integration only answers op inside the desktop login session
+		if os.Getenv("SSH_CONNECTION") != "" {
+			return errors.New("op can't reach the 1Password app from an ssh session; run this in a terminal on the machine itself, with the app's CLI integration on")
+		}
 		return errors.New("op here can't reach a 1Password account; " + opDesktopFix + ". Run this from the machine you sit at")
 	}
 	return nil

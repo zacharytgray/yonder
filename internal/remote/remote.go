@@ -123,7 +123,7 @@ func Sender(ctx context.Context, s *registry.Store, conn string) (string, error)
 	if sender != "" {
 		return sender, nil
 	}
-	return "", fmt.Errorf("%s (%s) is not in this machine's registry", p.Name(), ip)
+	return "", fmt.Errorf("%s (%s) is not in this machine's registry; add it from a machine already in the fleet: yonder add %s", p.Name(), ip, p.Name())
 }
 
 // Log is `yonder _log [--since RFC3339]`: this machine's log as JSONL.
