@@ -29,7 +29,8 @@ type Peer struct {
 	Online       bool      `json:"online"`
 	LastSeen     time.Time `json:"last_seen"`
 	UserID       int64     `json:"user_id"`
-	ShareeNode   bool      `json:"sharee_node"` // shared into this tailnet by another account
+	ShareeNode   bool      `json:"sharee_node"`    // shared into this tailnet by another account
+	Tags         []string  `json:"tags,omitempty"` // acl tags; a tagged node is owned by its tags, not a user
 }
 
 type Status struct {
@@ -146,13 +147,26 @@ func (s *Status) Reach(name, dnsName, ip string) (Peer, Reachability) {
 }
 
 // Owned reports whether p belongs to the account this machine is logged in as.
-// a node shared in from another account (node sharing) is not owned.
-// with no user id for self (old fixtures) every peer counts as owned.
+// it fails closed: a node shared in from another account, a tagged node (its
+// user id is the tag owner's), or a missing user id on either side is not owned.
 func (s *Status) Owned(p Peer) bool {
-	if p.ShareeNode {
+	if p.ShareeNode || s.Self.UserID == 0 || p.UserID == 0 {
 		return false
 	}
-	return s.Self.UserID == 0 || p.UserID == s.Self.UserID
+	return p.UserID == s.Self.UserID
+}
+
+// NotOwnedWhy says why Owned is false for p, for refusal messages.
+func (s *Status) NotOwnedWhy(p Peer) string {
+	switch {
+	case len(p.Tags) > 0:
+		return "it is a tagged device (" + strings.Join(p.Tags, ", ") + "), and tagged devices count as not yours"
+	case p.ShareeNode:
+		return "it is shared into your tailnet from another account"
+	case s.Self.UserID == 0 || p.UserID == 0:
+		return "tailscale status gives no user id to check its owner"
+	}
+	return "it belongs to another user in your tailnet"
 }
 
 // LookupIP finds a peer (or self) by one of its tailscale addresses.
@@ -201,6 +215,7 @@ type rawPeer struct {
 	LastSeen     time.Time
 	UserID       int64
 	ShareeNode   bool
+	Tags         []string
 }
 
 type rawStatus struct {
@@ -219,6 +234,7 @@ func (r *rawPeer) peer() Peer {
 		LastSeen:     r.LastSeen.UTC(),
 		UserID:       r.UserID,
 		ShareeNode:   r.ShareeNode,
+		Tags:         r.Tags,
 	}
 }
 

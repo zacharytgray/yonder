@@ -97,6 +97,8 @@ type Tombstone struct {
 	// set by `remove --lost`: the keys to strip from authorized_keys everywhere
 	Lost          bool     `toml:"lost,omitempty" json:"lost,omitempty"`
 	SSHClientKeys []string `toml:"ssh_client_keys,omitempty" json:"ssh_client_keys,omitempty"`
+	// `remove --lost --include-shared`: sync strips keys live records share too
+	IncludeShared bool `toml:"include_shared,omitempty" json:"include_shared,omitempty"`
 	// the record's secrets_account, so a rerun of remove --lost can name it
 	SecretsAccount string `toml:"secrets_account,omitempty" json:"secrets_account,omitempty"`
 	// keys of the record this machine held for that name. local only, never synced

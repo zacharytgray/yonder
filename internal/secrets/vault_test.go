@@ -244,7 +244,7 @@ func TestInjectErrorNeverQuotesToken(t *testing.T) {
 		return "", "token\nops_PROVIDER_TOKEN_CANARY\n", errors.New("exit status 1")
 	}})
 	p := &onePassword{mode: ModeServiceAccount, tokens: &fakeTokens{tokens: map[string]string{"1password": "ops_PROVIDER_TOKEN_CANARY"}}}
-	if _, err := p.listItems(context.Background(), "Agents"); err == nil || strings.Contains(err.Error(), "CANARY") || !strings.Contains(err.Error(), "[TOKEN]") {
+	if _, err := p.listItems(context.Background(), "Agents"); err == nil || strings.Contains(err.Error(), "CANARY") || !strings.Contains(err.Error(), "[OP_SERVICE_ACCOUNT_TOKEN]") {
 		t.Fatalf("list: %v", err)
 	}
 }
@@ -328,5 +328,44 @@ func TestSetupVaultByHand(t *testing.T) {
 	}
 	if err := Setup(SetupOptions{Out: &out, Provider: ProviderBWS, Vault: "Agents"}); err == nil {
 		t.Fatal("--vault with bws")
+	}
+}
+
+// F5: every provider credential in op's env is scrubbed from its stderr,
+// not just the service account token. desktop mode inherits the others.
+func TestOpStderrScrubsEveryInheritedCredential(t *testing.T) {
+	setupHome(t, Settings{Provider: Provider1Password, Mode: ModeDesktop, Vault: "Agents"}, nil)
+	creds := map[string]string{
+		"OP_SESSION_example": "SESSION_CREDENTIAL_CANARY",
+		"OP_CONNECT_TOKEN":   "CONNECT_TOKEN_CANARY",
+		"OP_CONNECT_HOST":    "https://connect-host-canary.example.ts.net",
+		"BWS_ACCESS_TOKEN":   "BWS_TOKEN_CANARY",
+		"YONDER_OP_TOKEN":    "YONDER_TOKEN_CANARY",
+	}
+	for k, v := range creds {
+		t.Setenv(k, v)
+	}
+	installFake(t, &fakeExec{handler: func(c call) (string, string, error) {
+		// all on the last line, the one yonder shows
+		var leak []string
+		for _, kv := range c.env {
+			if k, _, _ := strings.Cut(kv, "="); IsProviderVar(k) {
+				leak = append(leak, kv)
+			}
+		}
+		if len(leak) < 4 { // childEnv drops BWS_ACCESS_TOKEN for op
+			t.Errorf("op got only %v; the test needs the rest", leak)
+		}
+		return "", "[ERROR] 2026/11/11 20:00:00 " + strings.Join(leak, " ") + "\n", errors.New("exit status 1")
+	}})
+	_, _, _, err := VaultNames()
+	if err == nil || strings.Contains(err.Error(), "CANARY") || !strings.Contains(err.Error(), "op item list") {
+		t.Fatalf("vault list: %v", err)
+	}
+	if _, err := EnsureVault(DefaultVault); err == nil || strings.Contains(err.Error(), "CANARY") {
+		t.Fatalf("ensure vault: %v", err)
+	}
+	if _, err := CreateServiceAccount("yonder-gpu-box", DefaultVault, "", false); err == nil || strings.Contains(err.Error(), "CANARY") {
+		t.Fatalf("create service account: %v", err)
 	}
 }

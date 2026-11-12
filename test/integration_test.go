@@ -85,14 +85,14 @@ func writeFixture(t *testing.T, names ...string) string {
 	for i, n := range names {
 		peers[fmt.Sprintf("nodekey:%d", i)] = map[string]any{
 			"HostName": n, "DNSName": n + ".example.ts.net.", "OS": "linux",
-			"TailscaleIPs": []string{"127.0.0.1"}, "Online": true, "LastSeen": "0001-01-01T00:00:00Z",
+			"TailscaleIPs": []string{"127.0.0.1"}, "Online": true, "LastSeen": "0001-01-01T00:00:00Z", "UserID": 1001,
 		}
 	}
 	st := map[string]any{
 		"BackendState": "Running",
 		"Self": map[string]any{
 			"HostName": "laptop", "DNSName": "laptop.example.ts.net.", "OS": runtime.GOOS,
-			"TailscaleIPs": []string{"127.0.0.1"}, "Online": true,
+			"TailscaleIPs": []string{"127.0.0.1"}, "Online": true, "UserID": 1001,
 		},
 		"Peer": peers,
 	}
@@ -110,10 +110,10 @@ func containerFixture(t *testing.T, n node, src string) {
 	t.Helper()
 	st := map[string]any{
 		"BackendState": "Running",
-		"Self":         map[string]any{"HostName": n.name, "DNSName": n.name + ".example.ts.net.", "TailscaleIPs": []string{"127.0.0.1"}},
+		"Self":         map[string]any{"HostName": n.name, "DNSName": n.name + ".example.ts.net.", "TailscaleIPs": []string{"127.0.0.1"}, "UserID": 1001},
 		"Peer": map[string]any{"nodekey:laptop": map[string]any{
 			"HostName": "laptop", "DNSName": "laptop.example.ts.net.", "OS": runtime.GOOS,
-			"TailscaleIPs": []string{src, "127.0.0.1"}, "Online": true,
+			"TailscaleIPs": []string{src, "127.0.0.1"}, "Online": true, "UserID": 1001,
 		}},
 	}
 	data, _ := json.Marshal(st)

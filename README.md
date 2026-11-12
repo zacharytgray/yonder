@@ -117,7 +117,8 @@ In desktop mode you approve once. A service account can store secrets only if yo
 setup (`--allow-write`, below). Bitwarden can't: `bws` takes the value on its command line.
 
 The machine your agent runs on unlocks the value. The value travels over SSH stdin into the
-remote command's environment. It is never put in a command line or a log. If a command prints
+remote command's environment. Yonder never puts it in a command line or a log (a program your
+command runs could still pass it on its own command line). If a command prints
 it, the agent sees `[HF_TOKEN]` in its place. While the command runs, other programs running as
 your user on that machine can read its environment, as with any environment variable.
 
@@ -128,10 +129,13 @@ that sets out to get one.
 
 Protected:
 
-- Command lines, shell history and `ps`. Values travel on stdin and in the environment.
+- Command lines, shell history and `ps`, as far as Yonder's own transport goes: values travel on
+  stdin and in the environment. A tool your command runs can still put a value in its own
+  arguments.
 - Yonder's log and job files. They hold secret names, never values.
 - Output that happens to include a value. Yonder replaces the exact value with `[NAME]`. It also
-  catches the value trimmed, each line of a multi-line value, and the value JSON-escaped.
+  catches the value trimmed and each line of a multi-line value, when that is 8 or more
+  characters, and the value JSON-escaped.
 - Provider tokens. A command run through Yonder never inherits `OP_SERVICE_ACCOUNT_TOKEN`,
   `BWS_ACCESS_TOKEN` or the like from Yonder's own environment, unless you ask for that name with
   `--secret`.
@@ -282,9 +286,10 @@ comes with the command that fixes it.
 - Tailscale is required. Yonder uses it to find your machines and to know which ones are online.
 - No wake-on-LAN. Tailscale cannot wake a sleeping machine.
 - Yonder is for your own one to five machines. It is not a team tool or a job scheduler.
-- Yonder assumes a single-owner tailnet: your machines only. It refuses nodes shared in from
-  another tailnet, and names that match more than one machine, unless you pass `--allow-shared`
-  or the full name.
+- Yonder assumes a single-owner tailnet: your machines only. It refuses nodes another account
+  owns (shared in from another tailnet, another user's, or tagged: tagged devices count as not
+  yours) unless you pass `--allow-shared`, and names that match more than one machine unless you
+  pass the full name.
 
 ## Contributing
 

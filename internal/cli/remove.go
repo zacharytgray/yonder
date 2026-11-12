@@ -194,6 +194,15 @@ func (a *app) removeCommand(name string, lost, yes, includeShared bool) error {
 	}
 	start := time.Now()
 
+	// a rerun with --include-shared upgrades the tombstone, so offline
+	// machines strip the shared keys at their next sync too
+	if rerun && includeShared && !tomb.IncludeShared {
+		tomb.IncludeShared = true
+		if err := a.store.SaveTombstone(tomb); err != nil {
+			return err
+		}
+	}
+
 	cleaned := false
 	if !lost && targetOnline {
 		var out bytes.Buffer
@@ -213,7 +222,7 @@ func (a *app) removeCommand(name string, lost, yes, includeShared bool) error {
 	if !rerun {
 		t := registry.Tombstone{Name: name, RemovedAt: time.Now().UTC().Truncate(time.Second), Reason: "removed", SSHClientKeys: keys, SecretsAccount: account}
 		if lost {
-			t.Reason, t.Lost = "lost", true
+			t.Reason, t.Lost, t.IncludeShared = "lost", true, includeShared
 		}
 		// a record stamped later than now (clock skew) would beat the tombstone.
 		// date it just past added_at, but never past what peers accept

@@ -152,13 +152,14 @@ func (s *Scrubber) heldTail(b []byte) int {
 	return 0
 }
 
-// minLine is the shortest line of a multi-line value scrubbed on its own.
-// shorter lines would match ordinary output.
+// minLine is the shortest trimmed value, or line of a multi-line value,
+// scrubbed on its own. shorter ones would match ordinary output.
 const minLine = 8
 
-// forms are the spellings of v worth catching: v, v trimmed, each long
-// enough line of a multi-line v, and v json-escaped. a deliberate transform
-// (rev, base64, a cut) still gets through; nothing here can stop that.
+// forms are the spellings of v worth catching: v at any length, v trimmed
+// and each line of a multi-line v when long enough, and v json-escaped. a
+// deliberate transform (rev, base64, a cut) still gets through; nothing
+// here can stop that.
 func forms(v string) []string {
 	if v == "" {
 		return nil
@@ -169,7 +170,9 @@ func forms(v string) []string {
 			out = append(out, f)
 		}
 	}
-	add(strings.TrimSpace(v))
+	if t := strings.TrimSpace(v); len(t) >= minLine {
+		add(t)
+	}
 	if strings.Contains(v, "\n") {
 		for _, l := range strings.Split(v, "\n") {
 			if l = strings.TrimSpace(l); len(l) >= minLine {

@@ -231,3 +231,31 @@ func TestSecretSetEndToEnd(t *testing.T) {
 		}
 	}
 }
+
+// desktop-mode op inherits session and connect credentials and can echo
+// them on stderr; none of it reaches vault_error.
+const fakeOpLeaky = `#!/bin/sh
+echo "connect token $OP_CONNECT_TOKEN" >&2
+echo "OP_SESSION_example=$OP_SESSION_example" >&2
+exit 1
+`
+
+func TestSecretLsScrubsInheritedProviderCreds(t *testing.T) {
+	f := newFleet(t, "testdata/fleet.json")
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "op"), []byte(fakeOpLeaky), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, kv := range f.env {
+		if strings.HasPrefix(kv, "PATH=") {
+			f.env[i] = "PATH=" + bin + ":" + strings.TrimPrefix(kv, "PATH=")
+		}
+	}
+	f.env = append(f.env, "OP_SESSION_example=SESSION_CREDENTIAL_CANARY", "OP_CONNECT_TOKEN=CONNECT_CREDENTIAL_CANARY")
+	f.must("init", "--yes")
+	f.must("secret", "setup", "--provider", "1password", "--mode", "desktop", "--vault", "Agents")
+	r := f.must("secret", "ls", "--json")
+	if strings.Contains(r.stdout+r.stderr, "CANARY") || !strings.Contains(r.stdout, `"vault_error": "op item list`) || !strings.Contains(r.stdout, "[OP_SESSION_example]") {
+		t.Fatalf("ls --json: %+v", r)
+	}
+}

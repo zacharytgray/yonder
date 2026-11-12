@@ -136,7 +136,7 @@ func (a *app) reach(m registry.Machine, self string) (transport.Runner, error) {
 		return nil, reachError(m, p, r)
 	}
 	if m.Pending {
-		return nil, withCode(ExitTempErr, "%s is not set up yet (it was offline when added); run `yonder refresh %s`", m.Name, m.Name)
+		return nil, withCode(ExitTempErr, "%s is not set up yet (it was offline when added); run `%s`", m.Name, finishCmd(m))
 	}
 	if r != tailnet.Reachable {
 		return nil, reachError(m, p, r)

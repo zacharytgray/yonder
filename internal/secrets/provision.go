@@ -105,9 +105,10 @@ func EnsureVault(name string) (created bool, err error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), resolveTimeout)
 	defer cancel()
-	out, stderr, err := run(ctx, bin, []string{"vault", "list", "--format", "json"}, childEnv(), nil)
+	env := childEnv()
+	out, stderr, err := run(ctx, bin, []string{"vault", "list", "--format", "json"}, env, nil)
 	if err != nil {
-		return false, fmt.Errorf("op vault list failed: %s (was the approval declined?)", errLine(stderr, err))
+		return false, fmt.Errorf("op vault list failed: %s (was the approval declined?)", scrubbedLine(stderr, err, env, nil))
 	}
 	var vaults []struct {
 		Name string `json:"name"`
@@ -120,9 +121,9 @@ func EnsureVault(name string) (created bool, err error) {
 			return false, nil
 		}
 	}
-	_, stderr, err = run(ctx, bin, []string{"vault", "create", name, "--description", vaultDescription}, childEnv(), nil)
+	_, stderr, err = run(ctx, bin, []string{"vault", "create", name, "--description", vaultDescription}, env, nil)
 	if err != nil {
-		return false, fmt.Errorf("op vault create failed: %s", errLine(stderr, err))
+		return false, fmt.Errorf("op vault create failed: %s", scrubbedLine(stderr, err, env, nil))
 	}
 	return true, nil
 }
@@ -145,10 +146,11 @@ func CreateServiceAccount(name, vault, expiresIn string, write bool) (string, er
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), resolveTimeout)
 	defer cancel()
-	out, stderr, err := run(ctx, bin, args, childEnv(), nil)
+	env := childEnv()
+	out, stderr, err := run(ctx, bin, args, env, nil)
 	tok := strings.TrimSpace(string(out))
 	if err != nil {
-		msg := scrubbedLine(stderr, err, map[string]string{"TOKEN": tok})
+		msg := scrubbedLine(stderr, err, env, map[string]string{"TOKEN": tok})
 		return "", fmt.Errorf("op service-account create failed: %s", msg)
 	}
 	if checkToken(tok) != nil {
@@ -165,9 +167,15 @@ func errLine(stderr []byte, err error) string {
 }
 
 // scrubbedLine is errLine after scrubbing all of stderr, so a value split
-// over lines can't survive the cut.
-func scrubbedLine(stderr []byte, err error, vals map[string]string) string {
-	return errLine([]byte(ScrubText(string(stderr), vals)), err)
+// over lines can't survive the cut. it scrubs vals and every provider
+// credential in env, the child's environment: desktop-mode op inherits
+// OP_SESSION_* and OP_CONNECT_TOKEN and can echo them.
+func scrubbedLine(stderr []byte, err error, env []string, vals map[string]string) string {
+	all := providerCreds(env)
+	for k, v := range vals {
+		all[k] = v
+	}
+	return errLine([]byte(ScrubText(string(stderr), all)), err)
 }
 
 // ProbeResult is what `yonder _secret-probe` reports about a machine. no values.
@@ -237,9 +245,10 @@ func verifyServiceAccount(r ProbeResult, s Settings, tok string) (bool, string) 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
 	defer cancel()
-	out, stderr, err := run(ctx, r.Op, []string{"user", "get", "--me", "--format", "json"}, childEnv(opEnvToken+"="+tok), nil)
+	env := childEnv(opEnvToken + "=" + tok)
+	out, stderr, err := run(ctx, r.Op, []string{"user", "get", "--me", "--format", "json"}, env, nil)
 	if err != nil {
-		return false, "op rejected the token: " + scrubbedLine(stderr, err, map[string]string{"TOKEN": tok})
+		return false, "op rejected the token: " + scrubbedLine(stderr, err, env, nil)
 	}
 	if !strings.Contains(strings.ToUpper(string(out)), "SERVICE_ACCOUNT") {
 		return false, "op accepted the token but it is not a service account"

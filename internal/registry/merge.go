@@ -39,7 +39,9 @@ func Merge(bundles ...Bundle) Bundle {
 		}
 		for _, t := range b.Tombstones {
 			cur, ok := tombs[t.Name]
-			if !ok || t.RemovedAt.After(cur.RemovedAt) || (t.RemovedAt.Equal(cur.RemovedAt) && t.Lost && !cur.Lost) {
+			same := t.RemovedAt.Equal(cur.RemovedAt)
+			if !ok || t.RemovedAt.After(cur.RemovedAt) || (same && t.Lost && !cur.Lost) ||
+				(same && t.Lost && cur.Lost && t.IncludeShared && !cur.IncludeShared) {
 				tombs[t.Name] = t
 			}
 		}
@@ -114,7 +116,11 @@ func (b Bundle) Digest() string {
 		s += "m:" + r.Name + "@" + r.UpdatedAt.UTC().String() + ";"
 	}
 	for _, t := range m.Tombstones {
-		s += "t:" + t.Name + "@" + t.RemovedAt.UTC().String() + ";"
+		s += "t:" + t.Name + "@" + t.RemovedAt.UTC().String()
+		if t.IncludeShared {
+			s += "+shared"
+		}
+		s += ";"
 	}
 	return s
 }

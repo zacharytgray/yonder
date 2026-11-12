@@ -168,3 +168,47 @@ func TestReach(t *testing.T) {
 		t.Fatalf("nope: %v", r)
 	}
 }
+
+// F2: ownership fails closed when either side has no user id
+func TestOwnedFailsClosedWithoutUserID(t *testing.T) {
+	data := []byte(`{"BackendState":"Running",
+ "Self":{"HostName":"laptop","DNSName":"laptop.example.ts.net.","TailscaleIPs":["100.64.0.1"]},
+ "Peer":{"a":{"HostName":"gpu-box","DNSName":"gpu-box.example.ts.net.","TailscaleIPs":["100.64.0.2"],"UserID":1001}}}`)
+	st, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := st.Peers[0]
+	if st.Owned(p) {
+		t.Fatal("no user id for self must not own every peer")
+	}
+	if why := st.NotOwnedWhy(p); why != "tailscale status gives no user id to check its owner" {
+		t.Fatalf("why: %q", why)
+	}
+	st.Self.UserID = 1001
+	if !st.Owned(p) {
+		t.Fatal("same user should own it")
+	}
+	p.UserID = 0
+	if st.Owned(p) {
+		t.Fatal("a peer with no user id is not owned")
+	}
+}
+
+// a tagged node has the tag owner's user id; it reads as not yours, and says so
+func TestTaggedNodeNotOwned(t *testing.T) {
+	data := []byte(`{"BackendState":"Running",
+ "Self":{"HostName":"laptop","DNSName":"laptop.example.ts.net.","TailscaleIPs":["100.64.0.1"],"UserID":1001},
+ "Peer":{"a":{"HostName":"build-box","DNSName":"build-box.example.ts.net.","TailscaleIPs":["100.64.0.4"],"UserID":3003,"Tags":["tag:server","tag:ci"]}}}`)
+	st, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := st.Peers[0]
+	if st.Owned(p) || len(p.Tags) != 2 {
+		t.Fatalf("tagged: %+v", p)
+	}
+	if why := st.NotOwnedWhy(p); why != "it is a tagged device (tag:server, tag:ci), and tagged devices count as not yours" {
+		t.Fatalf("why: %q", why)
+	}
+}

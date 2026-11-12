@@ -42,6 +42,8 @@ type machineView struct {
 	UpdatedAt    time.Time         `json:"updated_at"`
 	Facts        registry.Facts    `json:"facts"`
 	Record       *registry.Machine `json:"record,omitempty"` // show only
+
+	pinned bool // has an ssh host key; not in the json
 }
 
 type lsOutput struct {
@@ -110,7 +112,7 @@ func view(m registry.Machine, self string, st *tailnet.Status, stErr error) mach
 		Harnesses:    []string{},
 		Stale:        !m.Pending && (m.DiscoveredAt.IsZero() || time.Since(m.DiscoveredAt) > staleAfter),
 		DiscoveredAt: m.DiscoveredAt, UpdatedAt: m.UpdatedAt,
-		Facts: f,
+		Facts: f, pinned: m.SSHHostKey != "",
 	}
 	for _, h := range f.Harnesses {
 		v.Harnesses = append(v.Harnesses, h.Name)
@@ -274,6 +276,11 @@ func printTable(w io.Writer, vs []machineView) error {
 	}
 	if stale {
 		fmt.Fprintln(w, "* facts older than 7 days; run `yonder refresh`")
+	}
+	for _, v := range vs {
+		if v.State == "pending" && v.Online != nil && *v.Online && !v.pinned {
+			fmt.Fprintln(w, onlineNowLine(v.Name))
+		}
 	}
 	return nil
 }

@@ -32,10 +32,14 @@ func clean(s string, limit int) string {
 	return strings.TrimSpace(b.String())
 }
 
-// sanitize cleans every string discovery found before it enters a record.
-func sanitize(f Facts) Facts {
+// Sanitize cleans every string in f before it enters a record: what local
+// discovery found, and what a peer's _facts sent back. extra is dropped;
+// discovery never fills it, so from a peer it is untyped text from outside.
+func Sanitize(f Facts) Facts {
 	f.Hostname = clean(f.Hostname, maxText)
+	f.OS, f.Arch = clean(f.OS, maxText), clean(f.Arch, maxText)
 	f.OSVersion = clean(f.OSVersion, maxText)
+	f.Extra = nil
 	f.CPU = clean(f.CPU, maxText)
 	gpus := make([]registry.GPU, len(f.GPUs))
 	for i, g := range f.GPUs {

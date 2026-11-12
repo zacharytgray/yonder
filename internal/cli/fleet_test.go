@@ -63,8 +63,9 @@ func testApp(t *testing.T, ssh sshRunner, st *tailnet.Status) (*app, *bytes.Buff
 	}, &out
 }
 
+// every test peer, self included, belongs to the same tailscale user
 func peer(name string, online bool) tailnet.Peer {
-	return tailnet.Peer{DNSName: name + ".example.ts.net", TailscaleIPs: []string{"100.64.0.9"}, Online: online}
+	return tailnet.Peer{DNSName: name + ".example.ts.net", TailscaleIPs: []string{"100.64.0.9"}, Online: online, UserID: 1001}
 }
 
 func TestLazyRefresh(t *testing.T) {
@@ -406,6 +407,21 @@ func TestRemoveLostKeepsSharedKeys(t *testing.T) {
 			}
 			if !include && !strings.Contains(s, "--include-shared --yes") {
 				t.Fatalf("checklist should say how to strip the shared key:\n%s", s)
+			}
+			// the choice travels with the tombstone, for machines offline now
+			if tomb, _ := a.store.Tombstone("gpu-box"); !tomb.Lost || tomb.IncludeShared != include {
+				t.Fatalf("tombstone %+v", tomb)
+			}
+			if !include {
+				// the rerun the checklist names upgrades the tombstone, held keys kept
+				before, _ := a.store.Tombstone("gpu-box")
+				if err := a.removeCommand("gpu-box", true, true, true); err != nil {
+					t.Fatal(err)
+				}
+				tomb, _ := a.store.Tombstone("gpu-box")
+				if !tomb.IncludeShared || !tomb.RemovedAt.Equal(before.RemovedAt) || len(tomb.HeldKeys) != 2 {
+					t.Fatalf("rerun tombstone %+v", tomb)
+				}
 			}
 		})
 	}

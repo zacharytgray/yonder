@@ -88,7 +88,7 @@ func (a *app) provision(o provisionOpts) error {
 		switch {
 		case m.Name == self:
 		case m.Pending:
-			why[m.Name] = "not set up yet; run `yonder refresh " + m.Name + "` once it is online"
+			why[m.Name] = "not set up yet; run `" + finishCmd(m) + "` once it is online"
 		case m.SSHHostKey == "":
 			why[m.Name] = "no pinned host key; run `yonder add " + m.Name + "`"
 		case !a.isOnline(m):

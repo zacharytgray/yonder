@@ -18,13 +18,19 @@ import (
 // stripped, one "<name> <removed_at>" per line.
 func lostAppliedPath() string { return filepath.Join(registry.StateDir(), "lost-keys-applied") }
 
+// an include_shared tombstone gets its own id, so a machine that applied the
+// plain one strips the shared keys when the upgrade arrives
 func lostID(t registry.Tombstone) string {
-	return t.Name + " " + t.RemovedAt.UTC().Format(time.RFC3339)
+	id := t.Name + " " + t.RemovedAt.UTC().Format(time.RFC3339)
+	if t.IncludeShared {
+		id += " shared"
+	}
+	return id
 }
 
 // LostKeys is what sync may strip for lost tombstone t: keys that are both in t
 // and in the record this machine held for that name, minus any key a live
-// record (self included) lists.
+// record (self included) lists, unless t says include_shared.
 func LostKeys(t registry.Tombstone, live []registry.Machine) []string {
 	held := map[string]bool{}
 	for _, k := range t.HeldKeys {
@@ -34,7 +40,7 @@ func LostKeys(t registry.Tombstone, live []registry.Machine) []string {
 	}
 	for _, m := range live {
 		for _, k := range m.SSHClientKeys {
-			if id, ok := transport.KeyID(k); ok {
+			if id, ok := transport.KeyID(k); ok && !t.IncludeShared {
 				delete(held, id)
 			}
 		}

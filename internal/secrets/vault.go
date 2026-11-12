@@ -70,7 +70,7 @@ func pickField(fields []opField) int {
 }
 
 // opCall runs op with this mode's env. msg is op's last stderr line, with
-// the token scrubbed from all of stderr first.
+// every provider credential in that env scrubbed from all of stderr first.
 func (o *onePassword) opCall(ctx context.Context, stdin []byte, args ...string) (out []byte, msg string, err error) {
 	bin, err := lookPath("op")
 	if err != nil {
@@ -82,13 +82,7 @@ func (o *onePassword) opCall(ctx context.Context, stdin []byte, args ...string) 
 	}
 	out, stderr, err := run(ctx, bin, args, env, stdin)
 	if err != nil {
-		vals := map[string]string{}
-		for _, kv := range env {
-			if v, ok := strings.CutPrefix(kv, opEnvToken+"="); ok {
-				vals["TOKEN"] = v
-			}
-		}
-		return nil, scrubbedLine(stderr, err, vals), err
+		return nil, scrubbedLine(stderr, err, env, nil), err
 	}
 	return out, "", nil
 }

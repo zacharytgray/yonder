@@ -28,7 +28,7 @@ go vet ./... && go vet -tags integration ./...
 go test -race ./...
 make build && ./bin/yonder --help && ./bin/yonder version
 YONDER_HOME=$(mktemp -d) YONDER_TAILSCALE_JSON=internal/tailnet/testdata/status.json \
-  sh -c './bin/yonder init --yes && ./bin/yonder ls && ./bin/yonder run laptop -- echo hi'
+  sh -c './bin/yonder init --yes --no-skill && ./bin/yonder ls && ./bin/yonder run laptop -- echo hi'
 ```
 
 `make lint` needs golangci-lint v2. `make integration` needs docker and skips without it;

@@ -297,6 +297,58 @@ func TestSyncStripsLostKeysOnce(t *testing.T) {
 	}
 }
 
+// remove --lost --include-shared reaches a machine that was offline: the
+// tombstone carries include_shared, and an upgrade of one already applied
+// strips the shared key at the next sync
+func TestSyncHonoursIncludeShared(t *testing.T) {
+	setup(t)
+	const own = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIownkey me@old-server"
+	const shared = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIsharedkey me@desk"
+	ak := transport.AuthorizedKeysPath(registry.UserHome())
+	if err := os.MkdirAll(filepath.Dir(ak), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ak, []byte(own+"\n"+shared+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 11, 11, 20, 0, 0, 0, time.UTC)
+	s := registry.Open()
+	for _, m := range []registry.Machine{
+		{Name: "old-server", AddedAt: t0.Add(-time.Hour), UpdatedAt: t0.Add(-time.Hour), SSHClientKeys: []string{own, shared}},
+		{Name: "desk", AddedAt: t0.Add(-time.Hour), UpdatedAt: t0.Add(-time.Hour), SSHClientKeys: []string{shared}},
+	} {
+		if err := s.SaveMachine(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sync := func(tomb registry.Tombstone) {
+		t.Helper()
+		data, _ := json.Marshal(registry.Bundle{Tombstones: []registry.Tombstone{tomb}})
+		if code := Sync(context.Background(), nil, bytes.NewReader(data), io.Discard, os.Stderr); code != 0 {
+			t.Fatal("sync failed")
+		}
+	}
+	plain := registry.Tombstone{Name: "old-server", RemovedAt: t0, Lost: true, SSHClientKeys: []string{own, shared}}
+	sync(plain)
+	if b, _ := os.ReadFile(ak); string(b) != shared+"\n" {
+		t.Fatalf("plain lost tombstone keeps the shared key: %q", b)
+	}
+	up := plain
+	up.IncludeShared = true
+	sync(up)
+	if b, _ := os.ReadFile(ak); string(b) != "" {
+		t.Fatalf("include_shared should strip the shared key too: %q", b)
+	}
+	if tomb, _ := s.Tombstone("old-server"); !tomb.IncludeShared {
+		t.Fatalf("stored tombstone %+v", tomb)
+	}
+	// a plain copy from a slower peer doesn't downgrade it
+	sync(plain)
+	if tomb, _ := s.Tombstone("old-server"); !tomb.IncludeShared {
+		t.Fatalf("downgraded: %+v", tomb)
+	}
+}
+
 func TestSyncStripsHeldLostTombstone(t *testing.T) {
 	setup(t)
 	const lost = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIlostkey me@old-server"
@@ -342,11 +394,11 @@ func TestStripLostSkipsPlainTombstones(t *testing.T) {
 
 // a tailnet where laptop is a fleet machine, old-server was removed and stranger never joined
 const syncStatus = `{"BackendState":"Running",
- "Self":{"HostName":"gpu-box","DNSName":"gpu-box.example.ts.net.","TailscaleIPs":["100.64.0.2"]},
+ "Self":{"HostName":"gpu-box","DNSName":"gpu-box.example.ts.net.","TailscaleIPs":["100.64.0.2"],"UserID":1001},
  "Peer":{
-  "a":{"HostName":"laptop","DNSName":"laptop.example.ts.net.","TailscaleIPs":["100.64.0.1","fd7a:115c:a1e0::1"],"Online":true},
-  "b":{"HostName":"old-server","DNSName":"old-server.example.ts.net.","TailscaleIPs":["100.64.0.5"],"Online":true},
-  "c":{"HostName":"stranger","DNSName":"stranger.example.ts.net.","TailscaleIPs":["100.64.0.7"],"Online":true}}}`
+  "a":{"HostName":"laptop","DNSName":"laptop.example.ts.net.","TailscaleIPs":["100.64.0.1","fd7a:115c:a1e0::1"],"Online":true,"UserID":1001},
+  "b":{"HostName":"old-server","DNSName":"old-server.example.ts.net.","TailscaleIPs":["100.64.0.5"],"Online":true,"UserID":1001},
+  "c":{"HostName":"stranger","DNSName":"stranger.example.ts.net.","TailscaleIPs":["100.64.0.7"],"Online":true,"UserID":1001}}}`
 
 func TestSyncIdentifiesSender(t *testing.T) {
 	setup(t)

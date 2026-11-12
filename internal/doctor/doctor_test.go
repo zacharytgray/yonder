@@ -52,7 +52,7 @@ func machine(name string, discovered time.Time) registry.Machine {
 }
 
 func peer(name string, online bool) tailnet.Peer {
-	return tailnet.Peer{HostName: name, DNSName: name + ".example.ts.net", TailscaleIPs: []string{"100.64.0.9"}, Online: online, LastSeen: now.Add(-2 * time.Hour)}
+	return tailnet.Peer{HostName: name, DNSName: name + ".example.ts.net", TailscaleIPs: []string{"100.64.0.9"}, Online: online, LastSeen: now.Add(-2 * time.Hour), UserID: 1001}
 }
 
 func env(t *testing.T, ms ...registry.Machine) Env {
@@ -130,7 +130,7 @@ func TestAggregation(t *testing.T) {
 		{"gpu-box", "version", Warn, ""},
 		{"gpu-box", "facts", Warn, "yonder refresh gpu-box"},
 		{"gpu-box", "skill: codex", Warn, "yonder agents install --all-machines"},
-		{"new-box", "setup", Warn, "yonder refresh new-box"},
+		{"new-box", "setup", Warn, "yonder add new-box"}, // no held pin: only add may trust a key
 		{"fleet", "registry", Warn, "yonder refresh"},
 		{"secrets", "provider", Fail, "op signin"},
 	}
@@ -139,6 +139,17 @@ func TestAggregation(t *testing.T) {
 		if !ok || c.Status != w.st || (w.fix != "" && c.Fix != w.fix) {
 			t.Errorf("%s/%s: got %+v (found %v), want %s fix %q", w.group, w.name, c, ok, w.st, w.fix)
 		}
+	}
+	if c, _ := find(cs, "new-box", "setup"); !strings.Contains(c.Detail, "new-box is online now; run `yonder add new-box` to finish setup") {
+		t.Errorf("pending detail: %q", c.Detail)
+	}
+	// a pending record holding a pin finishes on refresh, strictly
+	held := machine("new-box", time.Time{})
+	held.Pending = true
+	e = env(t, held)
+	e.Status.Peers = []tailnet.Peer{peer("new-box", true)}
+	if c, ok := find(Run(e), "new-box", "setup"); !ok || c.Fix != "yonder refresh new-box" {
+		t.Errorf("held pin: %+v", c)
 	}
 	if _, ok := find(cs, "gpu-box", "skill: hermes"); ok {
 		t.Error("undetected harnesses shouldn't get a check")

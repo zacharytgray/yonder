@@ -144,3 +144,21 @@ func TestScrubValueForms(t *testing.T) {
 		t.Fatalf("short line scrubbed: %q", got)
 	}
 }
+
+// a short value trimmed is too common to scrub alone; the exact value still is.
+func TestScrubShortTrimmedForm(t *testing.T) {
+	vals := map[string]string{"K": " a\n"}
+	if got := ScrubText("a banana", vals); got != "a banana" {
+		t.Fatalf("trimmed short value over-redacted: %q", got)
+	}
+	if got := ScrubText("x a\ny", vals); got != "x[K]y" {
+		t.Fatalf("exact value kept: %q", got)
+	}
+	if got := ScrubText("ab", map[string]string{"K": "a"}); got != "[K]b" {
+		t.Fatalf("short exact value kept: %q", got)
+	}
+	// a long enough value is still caught trimmed
+	if got := ScrubText("[sk-abcdefgh]", map[string]string{"K": " sk-abcdefgh\n"}); got != "[[K]]" {
+		t.Fatalf("trimmed form missed: %q", got)
+	}
+}

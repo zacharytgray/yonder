@@ -49,7 +49,7 @@ The hidden commands a caller runs on a target are `_exec`, `_job` (the detached 
 ~/.local/state/yonder/log.jsonl        commands this machine received
 ~/.local/state/yonder/jobs/<id>.log    output of detached runs (scrubbed)
 ~/.local/state/yonder/jobs/<id>.json   detached run status: pid, state, exit
-~/.local/state/yonder/lost-keys-applied  lost tombstones already stripped here: "<name> <removed_at>"
+~/.local/state/yonder/lost-keys-applied  lost tombstones already stripped here: "<name> <removed_at>[ shared]"
 ```
 
 `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are honoured. `YONDER_HOME` overrides both (tests):
@@ -97,7 +97,8 @@ disk_free_gb = 512.0
 ```
 
 A tombstone is `removed/<name>.toml` with `name`, `removed_at`, an optional `reason`, the
-machine's `ssh_client_keys` and `secrets_account`, and `lost = true` after `remove --lost`. It also keeps `held_keys`:
+machine's `ssh_client_keys` and `secrets_account`, `lost = true` after `remove --lost`, and
+`include_shared = true` after `remove --lost --include-shared`. It also keeps `held_keys`:
 the `ssh_client_keys` of the record this machine held for that name when the tombstone replaced
 it. `held_keys` stays local and is never synced.
 
@@ -144,7 +145,10 @@ picking a peer) is the one trust moment: it connects with `StrictHostKeyChecking
 against an empty temp file and reads the key back. If the record already held a different key,
 it warns that the key changed and names `yonder remove <m> --lost`. `refresh` finishing a
 pending record that still holds a pin probes strictly against that pin, and never accepts a new
-key; a mismatch stops with that advice. A machine's own record takes its key from
+key; a mismatch stops with that advice. Nothing else uses `accept-new`: `refresh`, `ls` and
+`doctor` never finish a pending record without a held pin (one saved by an offline `add` or
+`init`, or one that arrived through sync). They report "<m> is online now; run `yonder add <m>`
+to finish setup" instead, and `refresh` of all machines still exits 0. A machine's own record takes its key from
 `/etc/ssh/ssh_host_*_key.pub`.
 
 `YONDER_SSH_IDENTITY=<private key>` adds `-i <key> -o IdentitiesOnly=yes` (tests and CI).
@@ -188,8 +192,9 @@ or shell history. The target:
    `OP_SESSION_*`. A `--secret` of the same name is added back with the resolved value. `_job`
    does the same.
 2. scrubs every secret value out of stdout and stderr (replaced with `[NAME]`; overlapping
-   values become one `[A+B]`). Each value is also caught trimmed, line by line for lines of 8 or
-   more characters, and JSON-escaped. A value the command transforms (reversed, cut, encoded)
+   values become one `[A+B]`). The exact value is caught at any length. It is also caught
+   trimmed and line by line, each only when 8 or more characters (shorter would match ordinary
+   output), and JSON-escaped. A value the command transforms (reversed, cut, encoded)
    is not caught.
 3. before running it, appends a start entry to its log: time, id, from, to, harness, user,
    command (secret values scrubbed), secret names, `"status":"started"` and `"exit":null`, so a
@@ -242,7 +247,10 @@ carry the same name as yours) the short name is an error that lists their DNS na
 the full one; the record still takes the short name. A peer with a record here whose `dns_name`
 differs is refused (`yonder remove <m>` first). A peer the logged-in tailscale account doesn't own
 (its `UserID` differs from `Self`'s, or it is a `ShareeNode`) is refused unless `--allow-shared`
-is given, and then, in a terminal, confirmed, since adding it trusts it with ssh and can hand it a
+is given. The check fails closed: if `Self` or the peer has no `UserID` (missing or 0), the peer
+is not owned. A tagged node (`Tags` set) carries the tag owner's `UserID`, so it reads as not
+owned too; the refusal names its tags, says tagged devices count as not yours, and gives
+`yonder add <dns> --allow-shared`. With `--allow-shared` it is confirmed first when a terminal is attached, since adding it trusts it with ssh and can hand it a
 secrets token. It probes over ssh with
 BatchMode. If key auth fails and a terminal is attached, it offers `ssh-copy-id`; otherwise it
 prints the `ssh-copy-id` line and stops. It looks for yonder via `sh -lc 'command -v yonder'` (dir resolved with `pwd -P`, path cleaned),
@@ -256,9 +264,11 @@ network there), it prints the manual install lines and stops. It reads
 every `~/.ssh/*.pub` on the target into `ssh_client_keys` (all of them, not only the key that
 machine uses for yonder; sync never strips a key a live record lists, see Trust model), runs `_facts`, saves the record, runs
 `_init-self <m>` there, and syncs the registry to every online machine. An offline peer is
-saved as `pending = true` and `add` exits 75; `yonder refresh` finishes it once it is online.
-If the record here was already set up, the pending record keeps its `tailscale_ip`,
-`ssh_host_key` and `ssh_client_keys`, and `refresh` finishes it against that pin. `refresh`
+saved as `pending = true` and `add` exits 75; `yonder add <m>` finishes it once it is online
+(the message says so). If the record here was already set up, the pending record keeps its
+`tailscale_ip`, `ssh_host_key` and `ssh_client_keys`, and `refresh` finishes it against that pin.
+A pending record with no pin is never finished by `refresh`; it prints "<m> is online now; run
+`yonder add <m>` to finish setup". `refresh`
 refuses to finish a pending peer the account doesn't own (fix `yonder add <dns> --allow-shared`).
 A set-up record with no `ssh_host_key` is an error with fix `yonder add <m>`; `refresh` never
 pins a new key for one.
@@ -279,9 +289,13 @@ Lost-key cleanup rides on sync. After merging, `_sync` looks at every `lost = tr
 it now holds, received or already there, and strips that machine's keys from its own
 `~/.ssh/authorized_keys` with the same code as `remove --strip-keys` (same match rules, same
 backup, and the same refusal to write through a symlink). It strips only keys in both the
-tombstone and its `held_keys`, and never a key that any live record (self included) lists. The caller does the same on itself after every sync (`refresh`,
+tombstone and its `held_keys`, and never a key that any live record (self included) lists,
+unless the tombstone has `include_shared`. Between two lost tombstones with the same
+`removed_at`, the `include_shared` one wins the merge. The caller does the same on itself after every sync (`refresh`,
 `add`, `remove`), even with no peer online. Each tombstone is applied once per machine and
-recorded in `lost-keys-applied`, so later syncs don't touch the file, and a key the user adds
+recorded in `lost-keys-applied` (an `include_shared` tombstone under its own id, `<name>
+<removed_at> shared`, so an upgrade of one already applied strips the shared keys), so later
+syncs don't touch the file, and a key the user adds
 back by hand stays. A failed strip is not recorded, so the next sync retries it. It never
 fails the sync; `doctor` reports a key left behind.
 
@@ -328,7 +342,8 @@ set-up peer with `_facts`, all in parallel, through the same code `refresh` uses
 most 5 seconds in total. A machine that answers in time gets its record updated; one that is
 slow or fails keeps what is stored, with no error. Results are saved on this machine only, not
 synced, so `ls` costs one `_facts` per stale peer and nothing more; the next `refresh` or `add`
-spreads them. Pending and offline machines are skipped. `--no-refresh` prints the stored
+spreads them. Pending and offline machines are skipped. Under the table, `ls` prints "<m> is
+online now; run `yonder add <m>` to finish setup" for each online pending machine without a pin. `--no-refresh` prints the stored
 facts as they are. The 7-day `stale` marker still applies to whatever is printed.
 
 Discovery (`internal/discover`) runs on the machine itself, all probes concurrent, each with its own
@@ -336,7 +351,9 @@ timeout (about 3 s total). A missing tool is absent from the facts, never an err
 discovered string (model names, runtimes, harness versions and paths, CPU and GPU names, OS
 version, hostname) loses its control and format characters (escape sequences, bidi overrides,
 zero-width) and is cut to 120 characters (paths to 512). A model whose name is left empty is
-dropped. Agents still read these strings; the skill tells them to treat them as data.
+dropped. The caller runs the same cleaning again on what a peer's `_facts` returns (OS and arch
+too), and drops `facts.extra` from it, before saving; a peer's reply is outside input. Agents
+still read these strings; the skill tells them to treat them as data.
 
 - Hardware: `sysctl`, `sw_vers`, `pmset -g batt`, `system_profiler SPDisplaysDataType` (Intel
   Macs only; Apple silicon reports the chip as one unified-memory GPU), `/proc`, `/etc/os-release`,
@@ -371,8 +388,10 @@ processes of the same user on that machine (for example through `/proc/<pid>/env
 
 What this protects, exactly:
 
-- Protected: command lines and `ps`, the log and job files, and output that happens to contain a
-  value (exact-match scrubbing, plus the trimmed, per-line and JSON-escaped forms). Provider
+- Protected: command lines and `ps` as far as yonder's own transport goes (a tool the command
+  runs can still put a value in its own argv), the log and job files, and output that happens to
+  contain a value (exact-match scrubbing, plus the trimmed and per-line forms of 8+ characters
+  and the JSON-escaped form). Provider
   error text that could quote a value or token is never shown (below).
 - Not protected: an agent that deliberately reads, transforms or prints a value
   (`echo $V | rev`). Nor anything the agent can read as the user: the token store (keychain
@@ -457,8 +476,12 @@ every field of the item.
 
 Provider errors elsewhere follow one rule. `op inject` and `bws secret get` failures are fixed
 texts with the exit code and a hint, never the provider's stderr. Where a provider line is shown
-(`op item list`, `op whoami`, token store writes), all of stderr is scrubbed of the token and any
-value sent before the last line is cut from it.
+(`op item list`, `op item get`, `op whoami`, `op vault list`/`create`, `op service-account create`,
+token store reads and writes), all of stderr is scrubbed before the last line is cut from it: of
+any value or token sent, and of every provider credential in the child's environment
+(`OP_SERVICE_ACCOUNT_TOKEN`, `BWS_ACCESS_TOKEN`, `YONDER_OP_TOKEN`, `OP_CONNECT_TOKEN`,
+`OP_CONNECT_HOST`, `OP_SESSION_*`), each replaced with `[VAR_NAME]`. Desktop-mode op inherits the
+session and Connect variables and could echo them.
 
 Tokens for hands-free modes go to the provider only through the child's env
 (`OP_SERVICE_ACCOUNT_TOKEN`, `BWS_ACCESS_TOKEN`). If that variable is already set in yonder's own
@@ -585,7 +608,8 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   symlink the check reads through it and the fix says to delete the lines by hand);
   `secrets.Health()`.
 - Each fleet machine, in parallel: in tailscale status; online (offline is a WARN with last seen
-  and notes, and its other checks are skipped); pending; no pinned host key (fix `yonder add
+  and notes, and its other checks are skipped); pending (WARN; with no held pin the detail is
+  "<m> is online now; run `yonder add <m>` to finish setup", with a pin the fix is `yonder refresh <m>`); no pinned host key (fix `yonder add
   <m>`); record address matches the tailnet (FAIL, fix `yonder remove <m> && yonder add <m>`); ssh with the pinned host key, by running
   `yonder version` there (BatchMode, 5s connect timeout); same yonder version as here; stale
   record (`discovered_at` older than 7 days, fix `yonder refresh <m>`); skill state from
@@ -626,8 +650,11 @@ caller-side entry (`"command":"yonder remove <m>[ --lost]"`).
   `m` from the tailnet, revoke its secrets token (naming its `secrets_account` when known), rotate what it could read, remove its keys from
   other services, name any shared keys it kept with the machines to make new keys on, and note
   which machines it couldn't reach. Those strip the keys themselves when
-  a later sync reaches them (see Sync above). Running `remove --lost` again works from the
-  tombstone alone and always strips, applied or not; `doctor` fails while any machine still
+  a later sync reaches them (see Sync above), shared keys included when the tombstone has
+  `include_shared`. Running `remove --lost` again works from the
+  tombstone alone and always strips, applied or not; a rerun with `--include-shared` also sets
+  `include_shared` on the tombstone (same `removed_at`), so machines offline now strip the shared
+  keys at their next sync; `doctor` fails while any machine still
   trusts a lost key.
 - Offline peers keep the record until a sync reaches them; any later `yonder refresh` from a
   machine that has the tombstone pushes it, and a lost tombstone strips the keys there too. A removed machine that comes back and syncs is refused
@@ -668,8 +695,9 @@ way, such as the same LAN.
 - For a record already held here that is set up or holds a pinned host key, `tailscale_ip`,
   `ssh_host_key`, `ssh_client_keys` and `added_at` don't change through sync. Facts, role, notes,
   `yonder_path`, `discovered_at` and `updated_at` merge as usual. A pending record from a peer
-  never replaces a set-up one (it is dropped), so sync can't unpin a host key and hand the next
-  `refresh` an accept-new. A pending record held here without a pin is finished by the first
+  never replaces a set-up one (it is dropped), so sync can't unpin a host key; and `refresh`
+  never finishes a pending record without a pin anyway, so nothing from a peer leads to an
+  accept-new. A pending record held here without a pin is finished by the first
   full one, even an older one, so its pin is used. To change a machine's identity, run `yonder remove <m>` then
   `yonder add <m>`.
 - A plain tombstone loses to a record with a newer `added_at` (a re-add). A lost tombstone

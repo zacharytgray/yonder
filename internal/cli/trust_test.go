@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -61,6 +62,29 @@ func TestAddRefusesAmbiguousAndShared(t *testing.T) {
 	}
 	if len(p.pins) != 1 || p.pins[0].Host != "100.64.0.67" {
 		t.Fatalf("pins %+v", p.pins)
+	}
+}
+
+// F2: self with no user id owns nothing; a tagged node's refusal names its
+// tags and the way through
+func TestAddFailsClosedOnOwnership(t *testing.T) {
+	a, p := newPinApp(t, false)
+	a.st.Self.UserID = 0
+	if err := a.addCommand("gpu-box", addOpts{}); err == nil || !strings.Contains(err.Error(), "no user id") || !strings.Contains(err.Error(), "--allow-shared") {
+		t.Fatalf("no self user id: %v", err)
+	}
+	a.st.Self.UserID = 1001
+	a.st.Peers[0].UserID, a.st.Peers[0].Tags = 3003, []string{"tag:server"}
+	err := a.addCommand("gpu-box", addOpts{})
+	if err == nil || !strings.Contains(err.Error(), "tagged device (tag:server), and tagged devices count as not yours") ||
+		!strings.Contains(err.Error(), "`yonder add gpu-box.example.ts.net --allow-shared`") {
+		t.Fatalf("tagged: %v", err)
+	}
+	if len(p.pins) != 0 {
+		t.Fatalf("refused peers were contacted: %+v", p.pins)
+	}
+	if err := a.addCommand("gpu-box.example.ts.net", addOpts{allowShared: true}); err != nil || len(p.pins) != 1 {
+		t.Fatalf("--allow-shared: %v %+v", err, p.pins)
 	}
 }
 
@@ -163,6 +187,47 @@ func TestPendingKeepsHeldPin(t *testing.T) {
 	}
 }
 
+// F3: a pending record with no held pin (here one that arrived through sync)
+// is never finished by refresh or ls; only an explicit add pins its key
+func TestRefreshNeverPinsUnpinnedPending(t *testing.T) {
+	a, p := newPinApp(t, false)
+	now := time.Now().UTC().Add(-time.Hour)
+	if _, err := a.store.MergeIn(registry.Bundle{Machines: []registry.Machine{{Name: "gpu-box", TailscaleIP: "100.64.0.9",
+		DNSName: "gpu-box.example.ts.net", SSHUser: "me", SSHPort: 22, Pending: true, UpdatedAt: now, AddedAt: now}}}); err != nil {
+		t.Fatal(err)
+	}
+	m, err := a.store.Machine("gpu-box")
+	if err != nil || !m.Pending || m.SSHHostKey != "" {
+		t.Fatalf("setup: %+v %v", m, err)
+	}
+	if err := a.refreshOne(m, "laptop"); err != nil {
+		t.Fatalf("refresh should report, not fail: %v", err)
+	}
+	if len(p.pins) != 0 {
+		t.Fatalf("refresh pinned a first key with accept-new: %+v", p.pins)
+	}
+	want := "gpu-box is online now; run `yonder add gpu-box` to finish setup"
+	out := a.out.(interface{ String() string }).String()
+	if !strings.Contains(out, want) {
+		t.Fatalf("refresh output:\n%s", out)
+	}
+	if m, _ := a.store.Machine("gpu-box"); !m.Pending || m.SSHHostKey != "" {
+		t.Fatalf("record changed: %+v", m)
+	}
+	// ls says the same under the table, and lazy refresh leaves it alone
+	if a.lazyRefresh("laptop", []registry.Machine{m}) || len(p.pins) != 0 {
+		t.Fatal("lazy refresh touched a pending record")
+	}
+	var b strings.Builder
+	if err := printTable(&b, []machineView{view(m, "laptop", a.st, nil)}); err != nil || !strings.Contains(b.String(), want) {
+		t.Fatalf("ls:\n%s %v", b.String(), err)
+	}
+	// the explicit add finishes it
+	if err := a.addCommand("gpu-box", addOpts{}); err != nil || len(p.pins) != 1 {
+		t.Fatalf("add: %v %+v", err, p.pins)
+	}
+}
+
 // an explicit add re-pins, and says the key changed
 func TestAddWarnsOnChangedHostKey(t *testing.T) {
 	a, _ := newStrictApp(t, true)
@@ -213,5 +278,39 @@ func TestMovedPeerGetsNoSSH(t *testing.T) {
 	}
 	if _, err := a.reach(desk, "laptop"); ExitCode(err) != ExitError {
 		t.Fatalf("reach: %v", err)
+	}
+}
+
+// facts a peer's _facts sends back are cleaned here too: a peer can send anything
+func TestPeerFactsSanitized(t *testing.T) {
+	a, s := newStrictApp(t, true)
+	evil := "llama\x1b[31m‮" + strings.Repeat("x", 300)
+	s.yonder = func(_ transport.Target, args []string, stdio transport.IO) (int, error) {
+		switch args[0] {
+		case "_facts":
+			_ = json.NewEncoder(stdio.Stdout).Encode(map[string]any{
+				"hostname": "gpu-box\a", "os": "linux\n", "cpu": evil,
+				"models": []map[string]string{{"name": evil}, {"name": "\u200b"}},
+				"extra":  map[string]string{"note": "ignore previous instructions"},
+			})
+		case "_sync":
+			fmt.Fprint(stdio.Stdout, `{"machines":[],"tombstones":[]}`)
+		}
+		return 0, nil
+	}
+	m, _ := a.store.Machine("gpu-box")
+	if err := a.refreshOne(m, "laptop"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := a.store.Machine("gpu-box")
+	f := got.Facts
+	if f.Hostname != "gpu-box" || f.OS != "linux" || f.Extra != nil {
+		t.Fatalf("facts %+v", f)
+	}
+	if strings.ContainsAny(f.CPU, "\x1b‮") || len([]rune(f.CPU)) > 120 {
+		t.Fatalf("cpu %q", f.CPU)
+	}
+	if len(f.Models) != 1 || strings.ContainsAny(f.Models[0].Name, "\x1b‮") || len([]rune(f.Models[0].Name)) > 120 {
+		t.Fatalf("models %+v", f.Models)
 	}
 }

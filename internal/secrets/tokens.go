@@ -97,9 +97,10 @@ func (keychain) Set(account, token string) error {
 	line := fmt.Sprintf("add-generic-password -U -s %s -a %s -l %s -w %s\n", keychainService, account, keychainService, token)
 	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
 	defer cancel()
-	_, stderr, err := run(ctx, securityBin, []string{"-i"}, os.Environ(), []byte(line))
+	env := os.Environ()
+	_, stderr, err := run(ctx, securityBin, []string{"-i"}, env, []byte(line))
 	if err != nil {
-		msg := scrubbedLine(stderr, err, map[string]string{"TOKEN": token})
+		msg := scrubbedLine(stderr, err, env, map[string]string{"TOKEN": token})
 		return fmt.Errorf("keychain write failed: %s", msg)
 	}
 	return nil
@@ -113,12 +114,17 @@ func (secretService) Kind() string { return "secret service (secret-tool)" }
 func (secretService) Get(account string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
 	defer cancel()
-	out, stderr, err := run(ctx, "secret-tool", []string{"lookup", "service", keychainService, "account", account}, os.Environ(), nil)
+	env := os.Environ()
+	out, stderr, err := run(ctx, "secret-tool", []string{"lookup", "service", keychainService, "account", account}, env, nil)
 	if err != nil && len(out) == 0 && len(strings.TrimSpace(string(stderr))) == 0 {
 		return "", ErrNoToken
 	}
 	if err != nil {
-		return "", fmt.Errorf("secret-tool lookup failed: %s; set token_store = \"file\" under [secrets] if no secret service runs here", lastLine(stderr))
+		vals := map[string]string{}
+		if t := strings.TrimSpace(string(out)); t != "" {
+			vals["TOKEN"] = t
+		}
+		return "", fmt.Errorf("secret-tool lookup failed: %s; set token_store = \"file\" under [secrets] if no secret service runs here", scrubbedLine(stderr, err, env, vals))
 	}
 	return strings.TrimRight(string(out), "\n"), nil
 }
@@ -129,9 +135,10 @@ func (secretService) Set(account, token string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
 	defer cancel()
-	_, stderr, err := run(ctx, "secret-tool", []string{"store", "--label=yonder " + account, "service", keychainService, "account", account}, os.Environ(), []byte(token))
+	env := os.Environ()
+	_, stderr, err := run(ctx, "secret-tool", []string{"store", "--label=yonder " + account, "service", keychainService, "account", account}, env, []byte(token))
 	if err != nil {
-		return fmt.Errorf("secret-tool store failed: %s", scrubbedLine(stderr, err, map[string]string{"TOKEN": token}))
+		return fmt.Errorf("secret-tool store failed: %s", scrubbedLine(stderr, err, env, map[string]string{"TOKEN": token}))
 	}
 	return nil
 }

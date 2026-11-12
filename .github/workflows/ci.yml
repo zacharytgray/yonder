@@ -37,7 +37,7 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          version: v2.15.0 # exact; dependabot does not bump this, so update it by hand
           # build with this go so the linter understands the go.mod version
           install-mode: goinstall
 

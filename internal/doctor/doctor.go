@@ -501,7 +501,11 @@ func peerChecks(e Env, m registry.Machine, lost []lostMachine) peerResult {
 	}
 	add("online", Pass, "online at "+p.IP(), "")
 	if m.Pending {
-		add("setup", Warn, "setup unfinished (it was offline when added)", "yonder refresh "+m.Name)
+		if m.SSHHostKey == "" {
+			add("setup", Warn, m.Name+" is online now; run `yonder add "+m.Name+"` to finish setup", "yonder add "+m.Name)
+		} else {
+			add("setup", Warn, "setup unfinished (it was offline when added)", "yonder refresh "+m.Name)
+		}
 		return res
 	}
 	if m.SSHHostKey == "" {

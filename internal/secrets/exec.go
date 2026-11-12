@@ -81,6 +81,18 @@ func WithoutProviderVars(env []string) []string {
 	return out
 }
 
+// providerCreds maps each provider credential set in env to its value, for
+// scrubbing a child's stderr.
+func providerCreds(env []string) map[string]string {
+	out := map[string]string{}
+	for _, kv := range env {
+		if k, v, _ := strings.Cut(kv, "="); IsProviderVar(k) && v != "" {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 func exitCode(err error) int {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {

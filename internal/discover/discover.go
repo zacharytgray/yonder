@@ -56,7 +56,7 @@ func collect(ctx context.Context) Facts {
 	f.GPUs = hw.gpus
 	f.Harnesses = harness
 	f.Models = models
-	f = sanitize(f)
+	f = Sanitize(f)
 	models = f.Models
 
 	sort.SliceStable(models, func(i, j int) bool {

@@ -22,7 +22,9 @@ func newRefreshCmd() *cobra.Command {
 		Use:   "refresh [machine]",
 		Short: "Rediscover facts on online machines and sync the registry",
 		Long: `Rerun discovery on every online machine (or one), update their records,
-finish setup for pending machines that are now online, and sync the registry everywhere.`,
+finish setup for pending machines that are now online and hold a pinned ssh host key,
+and sync the registry everywhere. A pending machine with no pinned key is only reported:
+` + "`yonder add <machine>`" + ` pins its key and finishes it.`,
 		Args: usageArgs(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a := newApp(cmd)
@@ -73,9 +75,14 @@ func (a *app) refreshOne(m registry.Machine, self string) error {
 			return reachError(m, p, r)
 		}
 		if m.Pending {
+			// no held pin: only an explicit local add may trust a first key
+			if m.SSHHostKey == "" {
+				fmt.Fprintln(a.out, onlineNowLine(m.Name))
+				return nil
+			}
 			// refresh is not an add: no trusting another account's node here
 			if !st.Owned(p) {
-				return fmt.Errorf("%s (%s) is not owned by your tailscale account; finish it with `yonder add %s --allow-shared` if you mean it", m.Name, p.DNSName, p.DNSName)
+				return fmt.Errorf("%s (%s) is not owned by your tailscale account: %s; finish it with `yonder add %s --allow-shared` if you mean it", m.Name, p.DNSName, st.NotOwnedWhy(p), p.DNSName)
 			}
 			// a pin held from before is checked strictly, never replaced
 			o := addOpts{user: m.SSHUser, port: m.SSHPort, role: m.Role, notes: m.Notes, pin: m.SSHHostKey}
@@ -105,6 +112,20 @@ func (a *app) refreshOne(m registry.Machine, self string) error {
 		fmt.Fprintf(a.out, "refreshed %s\n", m.Name)
 	}
 	return nil
+}
+
+// onlineNowLine is the next step for a pending record with no held pin.
+func onlineNowLine(name string) string {
+	return fmt.Sprintf("%s is online now; run `yonder add %s` to finish setup", name, name)
+}
+
+// finishCmd finishes a pending record: refresh checks a held pin strictly;
+// without one, only an explicit add pins a first key.
+func finishCmd(m registry.Machine) string {
+	if m.SSHHostKey != "" {
+		return "yonder refresh " + m.Name
+	}
+	return "yonder add " + m.Name
 }
 
 // rediscover reads fresh facts for a set-up machine (self locally, a peer

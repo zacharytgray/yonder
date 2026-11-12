@@ -6,7 +6,8 @@
     "OS": "macOS",
     "TailscaleIPs": ["100.64.0.1"],
     "Online": true,
-    "LastSeen": "0001-01-01T00:00:00Z"
+    "LastSeen": "0001-01-01T00:00:00Z",
+    "UserID": 1001
   },
   "Peer": {
     "nodekey:aaa": {
@@ -15,7 +16,8 @@
       "OS": "linux",
       "TailscaleIPs": ["100.64.0.2"],
       "Online": false,
-      "LastSeen": "2026-01-01T00:00:00Z"
+      "LastSeen": "2026-01-01T00:00:00Z",
+      "UserID": 1001
     },
     "nodekey:bbb": {
       "HostName": "phone",
@@ -23,7 +25,8 @@
       "OS": "iOS",
       "TailscaleIPs": ["100.64.0.3"],
       "Online": true,
-      "LastSeen": "0001-01-01T00:00:00Z"
+      "LastSeen": "0001-01-01T00:00:00Z",
+      "UserID": 1001
     }
   }
 }

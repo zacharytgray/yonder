@@ -37,7 +37,7 @@ func newInitCmd() *cobra.Command {
 		Short: "Set up this machine and pick tailnet peers to add",
 		Long: `Set up this machine as a fleet member, then choose which tailnet peers to add.
 
-Offline peers are saved as pending and finish setup on the next ` + "`yonder refresh`" + `.
+Offline peers are saved as pending; ` + "`yonder add <machine>`" + ` finishes one once it is online.
 Non-interactive: yonder init --yes --machines gpu-box,laptop [--user me]
 If you reach a peer with a specific ssh key: --identity gpu-box=~/.ssh/id_ed25519_gpubox
 (repeat the flag per peer; the key path stays on this machine).
@@ -132,7 +132,7 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 			if err := a.savePending(p, o); err != nil {
 				return err
 			}
-			fmt.Fprintf(a.out, "%s is offline (last seen %s); saved as pending, it finishes setup on the next `yonder refresh`\n", p.Name(), ago(p.LastSeen))
+			fmt.Fprintf(a.out, "%s is offline (last seen %s); saved as pending, `yonder add %s` finishes setup once it is online\n", p.Name(), ago(p.LastSeen), p.Name())
 			continue
 		}
 		m, err := a.addPeer(p, o)
@@ -249,7 +249,7 @@ func (a *app) initCandidates(st *tailnet.Status, self string, allowShared bool) 
 		case registry.ValidName(name) != nil:
 			c.note = "name is not kebab-case, skipped"
 		case c.shared && !allowShared:
-			c.note = "not owned by your tailscale account (shared in); --allow-shared lets you pick it"
+			c.note = "not owned by your tailscale account (" + st.NotOwnedWhy(p) + "); --allow-shared lets you pick it"
 		default:
 			if old, err := a.store.Machine(name); err == nil && old.DNSName != "" && !strings.EqualFold(old.DNSName, p.DNSName) {
 				c.note = "another " + name + " (" + old.DNSName + ") is in the fleet"

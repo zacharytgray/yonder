@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/zacharytgray/yonder/internal/discover"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/tailnet"
 	"github.com/zacharytgray/yonder/internal/transport"
@@ -100,7 +101,7 @@ func (a *app) addCommand(arg string, o addOpts) error {
 		if err := a.savePending(p, o); err != nil {
 			return err
 		}
-		return withCode(ExitTempErr, "%s is offline (last seen %s); saved as pending, `yonder refresh %s` finishes setup once it is online", name, ago(p.LastSeen), name)
+		return withCode(ExitTempErr, "%s is offline (last seen %s); saved as pending, `yonder add %s` finishes setup once it is online", name, ago(p.LastSeen), name)
 	}
 	m, err := a.addPeer(p, o)
 	if err != nil {
@@ -140,9 +141,9 @@ func (a *app) resolvePeer(st *tailnet.Status, arg string, allowShared, interacti
 		return p, nil
 	}
 	if !allowShared {
-		return p, fmt.Errorf("%s is not owned by your tailscale account (another user's, or shared into your tailnet). Adding it trusts it with ssh and can hand it a secrets token. If it really is your machine, pass --allow-shared", p.DNSName)
+		return p, fmt.Errorf("%s is not owned by your tailscale account: %s. Adding it trusts it with ssh and can hand it a secrets token. If it really is your machine, pass --allow-shared with its full name: `yonder add %s --allow-shared`", p.DNSName, st.NotOwnedWhy(p), p.DNSName)
 	}
-	if interactive && !a.confirm(fmt.Sprintf("%s belongs to another tailscale account. Trust it with ssh and secrets anyway?", p.DNSName)) {
+	if interactive && !a.confirm(fmt.Sprintf("%s is not owned by your tailscale account (%s). Trust it with ssh and secrets anyway?", p.DNSName, st.NotOwnedWhy(p))) {
 		return p, withCode(ExitError, "cancelled; %s not added", p.DNSName)
 	}
 	return p, nil
@@ -383,7 +384,8 @@ func (a *app) remoteFacts(r transport.Runner, m registry.Machine) (registry.Fact
 	if err := json.Unmarshal(out.Bytes(), &f); err != nil {
 		return registry.Facts{}, fmt.Errorf("bad _facts reply: %w", err)
 	}
-	return f, nil
+	// the peer ran the same cleaning, but its reply is still outside input
+	return discover.Sanitize(f), nil
 }
 
 // installScriptURL is the official installer, used when this binary can't be copied over.
