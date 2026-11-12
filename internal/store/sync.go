@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 )
 
@@ -111,7 +112,14 @@ func (s *Store) SyncWith(p Peer, dry bool) (Report, error) {
 
 	var changed []string
 	push := Bundle{Store: s.Kind.Name, From: s.Self, Files: map[string]FileState{}, Data: map[string][]byte{}}
+	failedCopy := map[string]string{} // path -> why its conflict copy couldn't be written
 	for _, x := range steps {
+		if why, ok := failedCopy[x.path]; ok && x.copyOf == "" {
+			// without the copy the losing edit would be lost, so neither side changes
+			rep.Skipped = append(rep.Skipped, Skip{Path: x.path, Why: "two edits conflict, and the copy of one could not be written (" + why + "); both are left as they are"})
+			rep.Conflicts = slices.DeleteFunc(rep.Conflicts, func(c Conflict) bool { return c.Path == x.path })
+			continue
+		}
 		var data []byte
 		switch {
 		case x.needThere:
@@ -122,7 +130,7 @@ func (s *Store) SyncWith(p Peer, dry bool) (Report, error) {
 			data = got.Data[x.path]
 		case x.fromPeer:
 			if !unchanged(x.copyOf) {
-				rep.Skipped = append(rep.Skipped, Skip{Path: x.copyOf, Why: "changed on " + p.Name() + " during the sync"})
+				failedCopy[x.copyOf] = "it changed on " + p.Name() + " during the sync"
 				continue
 			}
 			data = got.Data[x.copyOf]
@@ -131,17 +139,25 @@ func (s *Store) SyncWith(p Peer, dry bool) (Report, error) {
 		}
 		if x.here != nil {
 			if x.copyOf != "" && data == nil {
-				rep.Skipped = append(rep.Skipped, Skip{Path: x.path, Why: "the conflicting copy changed during the sync"})
+				failedCopy[x.copyOf] = "it changed here during the sync"
 				continue
 			}
-			what, err := s.apply(x.path, *x.here, data, p.Name())
+			local := !x.needThere && !x.fromPeer // the content is this machine's own
+			what, err := s.apply(x.path, *x.here, data, p.Name(), local)
 			var re refusedError
 			switch {
 			case errors.As(err, &re):
 				re.r.Path = x.path
 				rep.PeerRefused = append(rep.PeerRefused, Refusal{Path: x.path, Reason: "refused here: " + re.r.Reason, Fix: re.r.Fix})
+				if x.copyOf != "" {
+					failedCopy[x.copyOf] = x.path + " was refused: " + re.r.Reason
+				}
 				continue
 			case err != nil:
+				if x.copyOf != "" {
+					failedCopy[x.copyOf] = x.path + ": " + err.Error()
+					continue
+				}
 				rep.Skipped = append(rep.Skipped, Skip{Path: x.path, Why: err.Error()})
 				continue
 			case what != "":
@@ -233,16 +249,26 @@ func (s *Store) plan(rm Manifest, rep *Report) []step {
 	for _, path := range sorted {
 		l, lok := local[path]
 		r, rok := rm.Files[path]
+		if rok {
+			delete(s.st.Suspect, path) // the peer knows it, so it is no resurrection
+		}
 		switch {
 		case !rok:
-			if !l.Deleted {
-				steps = append(steps, step{path: path, there: ptr(l)})
+			if l.Deleted {
+				continue
 			}
+			// back from a long absence: the peer may have deleted this long ago
+			if s.st.Suspect[path] && !s.StaleOK {
+				rep.Skipped = append(rep.Skipped, Skip{Path: path, Why: staleWhy})
+				continue
+			}
+			steps = append(steps, step{path: path, there: ptr(l)})
 			continue
 		case !lok:
-			if !r.Deleted {
-				steps = append(steps, step{path: path, here: ptr(r), needThere: true})
+			if r.Deleted {
+				continue
 			}
+			steps = append(steps, step{path: path, here: ptr(r), needThere: true})
 			continue
 		}
 		switch l.Version.Compare(r.Version) {
@@ -306,3 +332,5 @@ func (s *Store) plan(rm Manifest, rep *Report) []step {
 }
 
 func ptr(f FileState) *FileState { return &f }
+
+const staleWhy = "this machine was away longer than deletes are remembered, and the other machine doesn't know this file, so it may have been deleted meanwhile; `yonder sync --stale-ok` here sends it anyway"

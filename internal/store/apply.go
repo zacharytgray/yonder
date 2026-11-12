@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 func (s *Store) livePath(rel string) string { return filepath.Join(s.Dir, filepath.FromSlash(rel)) }
@@ -138,11 +139,16 @@ var (
 )
 
 // apply makes next the store's version of rel. data is the content (nil
-// for a delete, or when the content here already matches). an incoming
-// change that needs review goes to pending/ instead of live.
-func (s *Store) apply(rel string, next FileState, data []byte, from string) (string, error) {
+// for a delete, or when the content here already matches). local says the
+// content came from this machine's own store; anything else that needs
+// review goes to pending/ instead of live. a version's origin is written by
+// whoever sent it, so it never decides review.
+func (s *Store) apply(rel string, next FileState, data []byte, from string, local bool) (string, error) {
 	if err := ValidRel(rel); err != nil {
 		return "", err
+	}
+	if other := s.caseTwin(rel); other != "" && !next.Deleted {
+		return "", refusedError{Refusal{Reason: "its name differs from " + other + " only by case, which a Mac can't hold apart", Fix: "rename one of them", Final: true}}
 	}
 	cur, known := s.st.Files[rel]
 	if known && !next.Version.Dominates(cur.Version) {
@@ -187,9 +193,18 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string) (str
 			return "", refusedError{*r}
 		}
 	}
+	if files, total := s.totals(rel); files+1 > MaxFiles || total+int64(len(data)) > MaxTotal {
+		return "", refusedError{Refusal{Reason: fmt.Sprintf("the store would be over its limits (%d files, %d MiB)", MaxFiles, MaxTotal>>20), Fix: "remove files from the store"}}
+	}
+	// an allowed file stays allowed here, so this machine's own scans take it too
+	if next.Allowed {
+		s.st.Allow[rel] = next.Hash
+	} else {
+		delete(s.st.Allow, rel)
+	}
 	liveData, liveExec, liveExists := s.live(rel)
 	liveSame := liveExists && hashOf(liveData) == next.Hash && liveExec == next.Exec
-	if !liveSame && next.Origin.Machine != s.Self && s.Kind.Review != nil && s.Kind.Review(rel, next.Exec) {
+	if !liveSame && !local && s.Kind.Review != nil && s.Kind.Review(rel, next.Exec) {
 		if err := writeAtomic(s.pendingPath(rel), data, 0o600); err != nil {
 			return "", err
 		}
@@ -219,6 +234,27 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string) (str
 	s.st.Files[rel] = next
 	s.logChange(rel, "edit", next, from)
 	return "updated", nil
+}
+
+// caseTwin is another path held here that differs from rel only by case.
+func (s *Store) caseTwin(rel string) string {
+	for p, f := range s.st.Files {
+		if !f.Deleted && p != rel && strings.EqualFold(p, rel) {
+			return p
+		}
+	}
+	return ""
+}
+
+// totals counts the files and bytes held here, leaving out rel.
+func (s *Store) totals(rel string) (files int, bytes int64) {
+	for p, f := range s.st.Files {
+		if !f.Deleted && p != rel {
+			files++
+			bytes += f.Size
+		}
+	}
+	return files, bytes
 }
 
 func orSelf(m string) string {

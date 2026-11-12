@@ -128,3 +128,22 @@ func TestSyncCommand(t *testing.T) {
 		t.Fatalf("output: %s", out)
 	}
 }
+
+func TestBusyPeerIsSkipped(t *testing.T) {
+	a, _, out := twoHomes(t)
+	fake := a.ssh.(*fakeSSH)
+	orig := fake.yonder
+	fake.yonder = func(tg transport.Target, args []string, stdio transport.IO) (int, error) {
+		if args[0] == "_store-offer" {
+			_, _ = stdio.Stderr.Write([]byte("yonder _store-offer: busy: another yonder is syncing this store\n"))
+			return remote.ExitStoreBusy, nil
+		}
+		return orig(tg, args, stdio)
+	}
+	if ok := a.syncStore("testnotes", "laptop", nil, syncOpts{}); !ok {
+		t.Fatalf("a busy peer is a skip, not a failure:\n%s", out)
+	}
+	if !strings.Contains(out.String(), "gpu-box skipped: it is busy syncing") {
+		t.Fatalf("output: %s", out)
+	}
+}

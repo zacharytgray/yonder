@@ -32,6 +32,9 @@ const (
 	PeerLockWait = 5 * time.Second
 )
 
+// MaxFiles is the file count limit per store. a var for tests.
+var MaxFiles = 10000
+
 // ProtocolVersion is the manifest version this yonder speaks.
 const ProtocolVersion = 1
 
@@ -75,6 +78,7 @@ type Refusal struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
 	Fix    string `json:"fix,omitempty"`
+	Final  bool   `json:"final,omitempty"` // no allow waives it
 }
 
 func (r Refusal) String() string {
@@ -134,6 +138,10 @@ type State struct {
 	Allow   map[string]string    `json:"allow,omitempty"` // path -> the hash whose secret check is waived
 	Peers   map[string]time.Time `json:"peers,omitempty"` // last good sync with each machine
 	Notices []Notice             `json:"notices,omitempty"`
+	// files held when this machine came back after more than DeleteTTL away.
+	// the others may have deleted them and forgotten, so they are only sent
+	// to a machine that knows the path, until edited here or --stale-ok.
+	Suspect map[string]bool `json:"suspect,omitempty"`
 }
 
 // Store is one synced folder on this machine.
@@ -144,6 +152,10 @@ type Store struct {
 	Self     string
 	Harness  string // recorded on changes this run makes; empty for edits found by a scan
 	Now      func() time.Time
+	// AllowDeletes lets a scan delete most of the store (see massDelete)
+	AllowDeletes bool
+	// StaleOK sends files held back after a long absence (State.Suspect)
+	StaleOK bool
 
 	st   *State
 	lock *os.File
@@ -243,6 +255,25 @@ func (s *Store) State() (*State, error) {
 	}
 	if st.Peers == nil {
 		st.Peers = map[string]time.Time{}
+	}
+	var last time.Time
+	for _, t := range st.Peers {
+		if t.After(last) {
+			last = t
+		}
+	}
+	if st.Suspect == nil {
+		st.Suspect = map[string]bool{}
+	}
+	if !last.IsZero() && s.now().Sub(last) > DeleteTTL && len(st.Suspect) == 0 {
+		for p, f := range st.Files {
+			if !f.Deleted && !f.Origin.Time.After(last) {
+				st.Suspect[p] = true
+			}
+		}
+	}
+	if s.StaleOK {
+		clear(st.Suspect)
 	}
 	s.st = st
 	return st, nil

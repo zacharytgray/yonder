@@ -115,16 +115,31 @@ func (s *Store) Resolve(rel, keep string) (kept string, removed []string, err er
 		return "", nil, fmt.Errorf("no version of %s from %s; versions: %s", rel, keep, strings.Join(names, ", "))
 	}
 	if pick.path != rel {
-		data, exec, ok := s.live(pick.path)
-		if !ok {
-			return "", nil, fmt.Errorf("%s is not in the store folder", pick.path)
+		data := s.content(pick.path)
+		if data == nil {
+			return "", nil, fmt.Errorf("%s changed since the last sync; run `yonder sync` first", pick.path)
 		}
-		s.keepLive(rel, "replaced by resolve")
-		if err := s.writeLive(rel, data, exec); err != nil {
-			return "", nil, err
+		exec := s.st.Files[pick.path].Exec
+		if _, waiting := s.st.Pending[pick.path]; waiting {
+			// a copy that waits for review still waits once it is at the path
+			if err := s.restorePending(rel, data, exec); err != nil {
+				return "", nil, err
+			}
+		} else {
+			s.keepLive(rel, "replaced by resolve")
+			if err := s.writeLive(rel, data, exec); err != nil {
+				return "", nil, err
+			}
 		}
 	}
 	for _, c := range copies {
+		if _, waiting := s.st.Pending[c]; waiting {
+			// nothing live to delete, so record the delete here
+			s.dropPending(c, "removed by resolve")
+			f := FileState{Version: s.st.Files[c].Version.Bump(s.Self), Deleted: true, Origin: Origin{Machine: s.Self, Harness: s.Harness, Time: s.now()}}
+			s.st.Files[c] = f
+			s.logChange(c, "delete", f, "")
+		}
 		s.keepLive(c, "removed by resolve")
 		if err := s.removeLive(c); err != nil {
 			return "", removed, err

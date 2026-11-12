@@ -212,7 +212,7 @@ func TestSyncTwoMachines(t *testing.T) {
 	if err := a.s.Lock(time.Second); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.s.Restore("instructions.md", 1); err != nil {
+	if _, _, err := a.s.Restore("instructions.md", 1); err != nil {
 		t.Fatal(err)
 	}
 	a.s.Unlock()

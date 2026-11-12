@@ -50,21 +50,28 @@ type disk struct {
 }
 
 // readDisk walks the store folder. files that can't sync come back as refusals.
+// a missing store folder (errNoRoot) is not the same as an empty one.
 func (s *Store) readDisk() (map[string]disk, []Refusal, error) {
 	out := map[string]disk{}
 	var refused []Refusal
 	var total int64
-	err := filepath.WalkDir(s.Dir, func(p string, d fs.DirEntry, err error) error {
+	// a store folder moved and linked back (into a dotfiles repo, say) is read through the link
+	root, err := filepath.EvalSymlinks(s.Dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return out, nil, errNoRoot
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	folded := map[string]string{}
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if p == s.Dir && errors.Is(err, fs.ErrNotExist) {
-				return filepath.SkipAll
-			}
 			return err
 		}
-		if p == s.Dir {
+		if p == root {
 			return nil
 		}
-		rel := filepath.ToSlash(strings.TrimPrefix(p, s.Dir+string(filepath.Separator)))
+		rel := filepath.ToSlash(strings.TrimPrefix(p, root+string(filepath.Separator)))
 		base := d.Name()
 		if tempName(base) || (s.Kind.Ignore != nil && s.Kind.Ignore(rel, d.IsDir())) {
 			if d.IsDir() {
@@ -79,6 +86,11 @@ func (s *Store) readDisk() (map[string]disk, []Refusal, error) {
 			refused = append(refused, Refusal{Path: rel, Reason: err.Error(), Fix: "rename it"})
 			return nil
 		}
+		if other, ok := folded[strings.ToLower(rel)]; ok {
+			refused = append(refused, Refusal{Path: rel, Reason: "its name differs from " + other + " only by case, which a Mac can't hold apart", Fix: "rename one of them", Final: true})
+			return nil
+		}
+		folded[strings.ToLower(rel)] = rel
 		if d.Type()&fs.ModeSymlink != 0 {
 			refused = append(refused, Refusal{Path: rel, Reason: "a symlink; only regular files sync", Fix: "replace it with the file itself"})
 			return nil
@@ -109,6 +121,10 @@ func (s *Store) readDisk() (map[string]disk, []Refusal, error) {
 				}
 			}
 		}
+		if len(out) >= MaxFiles {
+			refused = append(refused, Refusal{Path: rel, Reason: fmt.Sprintf("the store is over its %d file limit", MaxFiles), Fix: "remove files from the store"})
+			return nil
+		}
 		if total+info.Size() > MaxTotal {
 			refused = append(refused, Refusal{Path: rel, Reason: fmt.Sprintf("the store is over its %d MiB limit", MaxTotal>>20), Fix: "remove large files from the store"})
 			return nil
@@ -122,7 +138,20 @@ func (s *Store) readDisk() (map[string]disk, []Refusal, error) {
 }
 
 // a refusal by name can't be waived; only a content match can
-func nameOnly(r *Refusal) bool { return strings.HasPrefix(r.Reason, "the name ") }
+func nameOnly(r *Refusal) bool { return r.Final || strings.HasPrefix(r.Reason, "the name ") }
+
+// errNoRoot: the store folder is gone
+var errNoRoot = errors.New("no store folder")
+
+// ErrMassDelete: a scan would delete most of the store. that is more often a
+// moved or broken folder than a choice, so it stops until asked.
+var ErrMassDelete = errors.New("mass delete")
+
+// massDelete is the guard: every tracked file (of two or more), or more than
+// half of ten or more.
+func massDelete(deletes, tracked int) bool {
+	return (tracked >= 2 && deletes == tracked) || (tracked >= 10 && deletes*2 > tracked)
+}
 
 // Scan finds changes made here since the last scan and bumps this machine's
 // counter for each. callers hold the lock. it returns the paths it changed
@@ -133,12 +162,32 @@ func (s *Store) Scan() (changed []string, refused []Refusal, err error) {
 		return nil, nil, err
 	}
 	files, refused, err := s.readDisk()
-	if err != nil {
+	if err != nil && !errors.Is(err, errNoRoot) {
 		return nil, refused, err
 	}
 	refusedSet := map[string]bool{}
 	for _, r := range refused {
 		refusedSet[r.Path] = true
+	}
+	// count deletes before changing anything, so the guard can stop the scan whole
+	tracked, deletes := 0, 0
+	for rel, cur := range st.Files {
+		if cur.Deleted {
+			continue
+		}
+		if p, ok := st.Pending[rel]; ok && !p.LiveExists {
+			continue
+		}
+		tracked++
+		if _, ok := files[rel]; !ok && !refusedSet[rel] {
+			deletes++
+		}
+	}
+	if errors.Is(err, errNoRoot) && tracked > 0 && !s.AllowDeletes {
+		return nil, nil, fmt.Errorf("the %s store folder %s is missing, but %d files were in it; put it back, or delete them on purpose with `yonder sync --allow-deletes`: %w", s.Kind.Name, s.Dir, tracked, ErrMassDelete)
+	}
+	if !s.AllowDeletes && massDelete(deletes, tracked) {
+		return nil, nil, fmt.Errorf("this scan would delete %d of the %d files in the %s store (%s); if the folder moved or broke, put it back; if you meant it, run `yonder sync --allow-deletes`: %w", deletes, tracked, s.Kind.Name, s.Dir, ErrMassDelete)
 	}
 	now := s.now()
 	for rel, d := range files {
@@ -161,6 +210,7 @@ func (s *Store) Scan() (changed []string, refused []Refusal, err error) {
 			Origin: Origin{Machine: s.Self, Harness: s.Harness, Time: t},
 		}
 		next.Allowed = st.Allow[rel] == d.hash
+		delete(st.Suspect, rel) // a fresh edit is no resurrection
 		st.Files[rel] = next
 		changed = append(changed, rel)
 		s.logChange(rel, "edit", next, "")
@@ -211,8 +261,19 @@ type Manifest struct {
 	Refused []Refusal            `json:"refused,omitempty"`
 }
 
+// manifest leaves out files held back after a long absence, so a caller
+// never takes one as new; a caller that knows the path sends its version.
 func (s *Store) manifest(refused []Refusal) Manifest {
-	return Manifest{V: ProtocolVersion, Store: s.Kind.Name, Machine: s.Self, Files: s.st.Files, Refused: refused}
+	files := s.st.Files
+	if len(s.st.Suspect) > 0 && !s.StaleOK {
+		files = map[string]FileState{}
+		for p, f := range s.st.Files {
+			if !s.st.Suspect[p] {
+				files[p] = f
+			}
+		}
+	}
+	return Manifest{V: ProtocolVersion, Store: s.Kind.Name, Machine: s.Self, Files: files, Refused: refused}
 }
 
 // LogEntry is one change this machine recorded: its own, or one it received.

@@ -26,6 +26,8 @@ type syncOpts struct {
 	dryRun     bool
 	resolve    string
 	keep       string
+	deletes    bool // let a scan delete most of a store
+	staleOK    bool // take files a long-absent machine brings back
 	quiet      bool // only problems: for syncs that ride on another command
 }
 
@@ -43,6 +45,11 @@ wins; two edits neither side has seen are both kept: the later edit stays at the
 the other goes beside it as <name>.conflict-<machine>-<yyyymmdd>.<ext>. Settle one with
 --resolve <path> --keep mine|theirs|<machine>, or delete the copy. Replaced and deleted
 versions are kept (` + "`yonder agents restore`" + `). Files that can't sync are FAIL lines.
+
+A scan that would delete every file in a store (of two or more), or more than half of ten
+or more, stops: a moved or missing folder looks like that. --allow-deletes goes ahead. A
+machine away longer than 90 days may bring back files deleted meanwhile, so new files from
+it are skipped unless --stale-ok.
 
 There is no daemon. --background starts the sync and returns at once, for a
 session-start hook. --dry-run shows what would move and changes nothing here (the
@@ -69,6 +76,8 @@ other machines still record their own edits).`,
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "show what would move; change nothing here")
 	cmd.Flags().StringVar(&o.resolve, "resolve", "", "settle the conflict at this store path")
 	cmd.Flags().StringVar(&o.keep, "keep", "", "with --resolve: mine, theirs, or a machine name")
+	cmd.Flags().BoolVar(&o.deletes, "allow-deletes", false, "let this sync delete most or all of a store here (it stops otherwise)")
+	cmd.Flags().BoolVar(&o.staleOK, "stale-ok", false, "take files from a machine that was away longer than deletes are remembered")
 	return cmd
 }
 
@@ -190,6 +199,7 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 		return errors.Is(err, store.ErrBusy) && o.quiet // a sync already running is fine for a ride-along
 	}
 	defer s.Unlock()
+	s.AllowDeletes, s.StaleOK = o.deletes, o.staleOK
 	scanned, refused, err := s.Scan()
 	if err != nil {
 		a.warnf("%s: %v", name, err)
@@ -236,11 +246,15 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 			rep, err := s.SyncWith(&sshPeer{a: a, m: m, store: name}, o.dryRun)
 			if err != nil {
 				var off storeOffError
-				if errors.As(err, &off) {
+				var busy storeBusyError
+				switch {
+				case errors.As(err, &off):
 					if !o.quiet {
 						fmt.Fprintf(a.out, "%s: %s skipped: the %s layer is off there\n", name, m.Name, s.Kind.Layer)
 					}
-				} else {
+				case errors.As(err, &busy):
+					fmt.Fprintf(a.out, "%s: %s skipped: it is busy syncing; it catches up at the next sync\n", name, m.Name)
+				default:
 					fmt.Fprintf(a.out, "%s: %s failed: %v\n", name, m.Name, err)
 					ok = false
 				}
@@ -374,6 +388,10 @@ type storeOffError struct{ msg string }
 
 func (e storeOffError) Error() string { return e.msg }
 
+type storeBusyError struct{ msg string }
+
+func (e storeBusyError) Error() string { return e.msg }
+
 func (p *sshPeer) Name() string { return p.m.Name }
 
 func (p *sshPeer) call(cmd string, stdin []byte, out *bytes.Buffer) error {
@@ -393,6 +411,8 @@ func (p *sshPeer) call(cmd string, stdin []byte, out *bytes.Buffer) error {
 		return nil
 	case code == remote.ExitStoreOff:
 		return storeOffError{msg}
+	case code == remote.ExitStoreBusy:
+		return storeBusyError{msg}
 	case code == ExitUsage && strings.Contains(msg, "unknown"):
 		return fmt.Errorf("%s is too old for store sync; upgrade yonder there", p.m.Name)
 	}

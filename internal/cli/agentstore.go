@@ -517,15 +517,20 @@ recent. The restore then syncs to the fleet like any edit here.`,
 				return nil
 			}
 			var v store.Version
+			var pending bool
 			_, err = withStore(s, func() error {
 				var err error
-				v, err = s.Restore(rel, n)
+				v, pending, err = s.Restore(rel, n)
 				return err
 			})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(a.out, "restored %s to version %d (%s)\n", rel, v.N, v.Why)
+			if pending {
+				fmt.Fprintf(a.out, "restored %s to version %d (%s); hooks run code, so it waits for `yonder agents accept` here\n", rel, v.N, v.Why)
+			} else {
+				fmt.Fprintf(a.out, "restored %s to version %d (%s)\n", rel, v.N, v.Why)
+			}
 			a.pushSoon()
 			return nil
 		},

@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,8 +11,19 @@ import (
 	"github.com/zacharytgray/yonder/internal/store"
 )
 
-// ExitStoreOff is a store command's exit when that store's layer is off here.
-const ExitStoreOff = 3
+// exits of the store commands that mean "skip this machine", not "failed"
+const (
+	ExitStoreOff  = 3 // the store's layer is off here
+	ExitStoreBusy = 4 // another yonder holds the store's lock here
+)
+
+func storeErr(name string, err error, errw io.Writer) int {
+	fmt.Fprintf(errw, "yonder %s: %v\n", name, err)
+	if errors.Is(err, store.ErrBusy) {
+		return ExitStoreBusy
+	}
+	return 1
+}
 
 // openStore checks the caller and the layer, then opens the named store.
 // under sshd only a fleet machine may sync, the same rule as _sync.
@@ -61,8 +73,7 @@ func StoreOffer(ctx context.Context, args []string, _ io.Reader, out, errw io.Wr
 		return code
 	}
 	if err := store.ServeOffer(s, out); err != nil {
-		fmt.Fprintf(errw, "yonder _store-offer: %v\n", err)
-		return 1
+		return storeErr("_store-offer", err, errw)
 	}
 	return 0
 }
@@ -74,8 +85,7 @@ func StoreSend(ctx context.Context, args []string, in io.Reader, out, errw io.Wr
 		return code
 	}
 	if err := store.ServeSend(s, in, out); err != nil {
-		fmt.Fprintf(errw, "yonder _store-send: %v\n", err)
-		return 1
+		return storeErr("_store-send", err, errw)
 	}
 	return 0
 }
@@ -87,8 +97,7 @@ func StoreRecv(ctx context.Context, args []string, in io.Reader, out, errw io.Wr
 		return code
 	}
 	if err := store.ServeRecv(s, in, out, sender); err != nil {
-		fmt.Fprintf(errw, "yonder _store-recv: %v\n", err)
-		return 1
+		return storeErr("_store-recv", err, errw)
 	}
 	return 0
 }

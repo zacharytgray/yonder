@@ -83,6 +83,9 @@ func ReadBundle(r io.Reader) (Bundle, error) {
 	if b.Files == nil {
 		b.Files = map[string]FileState{}
 	}
+	if len(b.Files) > 2*MaxFiles {
+		return Bundle{}, fmt.Errorf("bundle lists %d files, over the limit", len(b.Files))
+	}
 	for p := range b.Files {
 		if err := ValidRel(p); err != nil {
 			return Bundle{}, err
@@ -224,7 +227,8 @@ func ServeRecv(s *Store, in io.Reader, out io.Writer, from string) error {
 	sort.Strings(paths)
 	var changed []string
 	for _, p := range paths {
-		what, err := s.apply(p, b.Files[p], b.Data[p], from)
+		delete(s.st.Suspect, p) // the sender knows it, so it is no resurrection
+		what, err := s.apply(p, b.Files[p], b.Data[p], from, false)
 		var re refusedError
 		switch {
 		case errors.As(err, &re):

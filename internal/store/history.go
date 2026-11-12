@@ -113,32 +113,64 @@ func (s *Store) pruneHistory(rel string) {
 func timeOfID(id string) time.Time { return time.Unix(0, idNum(id)) }
 
 // Restore puts back version n of rel (1 is the most recent kept). what is
-// live now is kept first. the next scan records it as a change here.
-func (s *Store) Restore(rel string, n int) (Version, error) {
+// live now is kept first. the next scan records it as a change here. a
+// review-tier file waits for accept instead, since history also holds
+// changes that were never accepted. callers hold the lock and have scanned.
+func (s *Store) Restore(rel string, n int) (v Version, pending bool, err error) {
 	vs, err := s.History(rel)
 	if err != nil {
-		return Version{}, err
+		return Version{}, false, err
 	}
 	if len(vs) == 0 {
-		return Version{}, fmt.Errorf("no kept versions of %s", rel)
+		return Version{}, false, fmt.Errorf("no kept versions of %s", rel)
 	}
 	if n < 1 || n > len(vs) {
-		return Version{}, fmt.Errorf("%s has versions 1 to %d", rel, len(vs))
+		return Version{}, false, fmt.Errorf("%s has versions 1 to %d", rel, len(vs))
 	}
-	v := vs[n-1]
+	v = vs[n-1]
 	data, err := v.Data()
 	if err != nil {
-		return v, err
+		return v, false, err
 	}
 	if _, err := s.State(); err != nil {
-		return v, err
+		return v, false, err
+	}
+	if s.Kind.Review != nil && s.Kind.Review(rel, v.State.Exec) {
+		return v, true, s.restorePending(rel, data, v.State.Exec)
 	}
 	s.keepLive(rel, "replaced by restore")
 	if err := s.writeLive(rel, data, v.State.Exec); err != nil {
-		return v, err
+		return v, false, err
 	}
 	if _, ok := s.st.Pending[rel]; ok {
 		s.dropPending(rel, "replaced by restore")
 	}
-	return v, nil
+	return v, false, nil
+}
+
+// restorePending makes a restored version this store's version of rel, waiting
+// for accept, with what is live left as it is.
+func (s *Store) restorePending(rel string, data []byte, exec bool) error {
+	if !s.liveAsRecorded(rel) {
+		return errEdited
+	}
+	live, liveExec, liveExists := s.live(rel)
+	p, waiting := s.st.Pending[rel]
+	if !waiting {
+		p = Pending{LiveExists: liveExists, Since: s.now()}
+		if liveExists {
+			p.LiveHash, p.LiveExec = hashOf(live), liveExec
+		}
+	} else if old, err := os.ReadFile(s.pendingPath(rel)); err == nil {
+		s.keep(rel, old, s.st.Files[rel], "waited for review, replaced by restore")
+	}
+	if err := writeAtomic(s.pendingPath(rel), data, 0o600); err != nil {
+		return err
+	}
+	next := FileState{Hash: hashOf(data), Exec: exec, Size: int64(len(data)), Version: s.st.Files[rel].Version.Bump(s.Self),
+		Origin: Origin{Machine: s.Self, Harness: s.Harness, Time: s.now()}}
+	s.st.Pending[rel] = p
+	s.st.Files[rel] = next
+	s.logChange(rel, "pending", next, "")
+	return nil
 }
