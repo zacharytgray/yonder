@@ -101,7 +101,7 @@ func runCopy(a *app, srcArgs []string, dstArg string, force bool, harness string
 			}
 		}
 		if p == "" {
-			return &usageError{fmt.Errorf("name a path after %s:", m)}
+			return &usageError{fmt.Errorf("name a path after %s: (like %s:~/Desktop)", m, m)}
 		}
 		if i > 0 && m != srcName {
 			return &usageError{errors.New("all sources must be on one machine; run cp once per machine")}
@@ -202,7 +202,7 @@ func runCopy(a *app, srcArgs []string, dstArg string, force bool, harness string
 		_, _ = a.errw.Write(recvErr.Bytes())
 		var res remote.CopyResult
 		if err := json.Unmarshal([]byte(lastLine(recvOut.String())), &res); err != nil {
-			return fmt.Errorf("copied, but %s's reply was unreadable: %v", dst.Name, err)
+			return fmt.Errorf("copied, but %s's reply was unreadable: %w", dst.Name, err)
 		}
 		fmt.Fprintln(a.out, copySummary(dst.Name, res))
 		return nil

@@ -307,7 +307,7 @@ func receive(ctx context.Context, spec CopySpec, r io.Reader, errw io.Writer) (C
 			break
 		}
 		if err != nil {
-			return res, ExitCutOff, fmt.Errorf("%w (%v)", errCutOff, err)
+			return res, ExitCutOff, fmt.Errorf("%w (%w)", errCutOff, err)
 		}
 		if done != nil {
 			return res, 1, errors.New("refused: the archive goes on after its end marker; nothing was copied")
@@ -316,7 +316,7 @@ func receive(ctx context.Context, spec CopySpec, r io.Reader, errw io.Writer) (C
 		if name == doneMarker {
 			var t copyTotals
 			if err := json.NewDecoder(io.LimitReader(tr, 4096)).Decode(&t); err != nil {
-				return res, 1, fmt.Errorf("bad end marker: %v", err)
+				return res, 1, fmt.Errorf("bad end marker: %w", err)
 			}
 			done = &t
 			continue
@@ -362,7 +362,7 @@ func receive(ctx context.Context, spec CopySpec, r io.Reader, errw io.Writer) (C
 				err = cerr
 			}
 			if err != nil {
-				return res, ExitCutOff, fmt.Errorf("%w (%v)", errCutOff, err)
+				return res, ExitCutOff, fmt.Errorf("%w (%w)", errCutOff, err)
 			}
 			_ = root.Chtimes(name, hdr.ModTime, hdr.ModTime)
 			res.Files++
