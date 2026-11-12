@@ -143,6 +143,7 @@ type Report struct {
 	Version   string          `json:"version"`
 	SkillHash string          `json:"skill_hash"`
 	Harnesses []HarnessStatus `json:"harnesses"`
+	Store     *StoreStatus    `json:"store,omitempty"` // the agents store; absent before init
 }
 
 func stateOf(dir string) (state, installed string) {

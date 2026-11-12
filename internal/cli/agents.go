@@ -20,16 +20,33 @@ import (
 func newAgentsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agents",
-		Short: "Install the yonder skill into agent harnesses",
-		Long: `Install, remove or check the yonder skill in each agent harness's user skills folder:
+		Short: "Install the yonder skill, and sync agent config between machines",
+		Long: `install, uninstall and status manage the yonder skill in each agent harness's user
+skills folder:
   claude-code  ~/.claude/skills/yonder
   codex, pi    ~/.agents/skills/yonder
   hermes       ~/.hermes/skills/yonder
-Yonder writes only its own yonder/ folder and never edits a harness's settings.`,
+
+With the agents layer on (yonder enable agents), the agents store in
+~/.local/share/yonder/agents holds instructions, skills, subagents, commands and hooks,
+and syncs between machines: import puts config in, link wires it into the harnesses,
+log, diff and restore show and undo changes, accept reviews incoming hooks.
+Yonder never edits a harness's settings file.
+
+Store layout:
+  instructions.md              shared instructions for every harness
+  instructions.<h>.md          extra text for one harness (claude, codex, pi, hermes)
+  skills/<name>/               one folder per skill
+  claude/agents/, claude/commands/   Claude Code subagents and commands
+  hooks/                       hook scripts, linked into ~/.claude/hooks
+  files/<h>/<name>             a file linked into that harness's folder as is
+  machines/<machine>/          the same layout, for one machine only`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	cmd.AddCommand(newAgentsInstallCmd(), newAgentsUninstallCmd(), newAgentsStatusCmd())
+	cmd.AddCommand(newAgentsInstallCmd(), newAgentsUninstallCmd(), newAgentsStatusCmd(),
+		newAgentsImportCmd(), newAgentsLinkCmd(), newAgentsUnlinkCmd(), newAgentsLogCmd(),
+		newAgentsDiffCmd(), newAgentsAcceptCmd(), newAgentsRestoreCmd(), newAgentsAllowCmd())
 	return cmd
 }
 
@@ -109,12 +126,17 @@ func newAgentsStatusCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "status [--json]",
-		Short: "Show where the skill is installed and whether it is current",
+		Short: "Show where the skill is installed, and the agents store",
 		Args:  usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a := newApp(cmd)
 			home := agents.Home()
 			r := agents.Status(home)
+			if self, err := a.selfName(); err == nil {
+				if ss, err := agents.StoreReport(self); err == nil {
+					r.Store = &ss
+				}
+			}
 			if asJSON {
 				enc := json.NewEncoder(a.out)
 				enc.SetIndent("", "  ")
@@ -134,6 +156,9 @@ func newAgentsStatusCmd() *cobra.Command {
 					hint = "  run `yonder agents install`"
 				}
 				fmt.Fprintf(a.out, "  %-12s %-18s %s%s\n", h.Name, state, agents.Tilde(h.Path, home), hint)
+			}
+			if r.Store != nil {
+				printStoreStatus(a, *r.Store, home)
 			}
 			return nil
 		},
@@ -238,4 +263,45 @@ func (a *app) execWith(m registry.Machine, self, command string, secretVals map[
 		return ExitError, err
 	}
 	return code, nil
+}
+
+func printStoreStatus(a *app, s agents.StoreStatus, home string) {
+	if !s.LayerOn {
+		fmt.Fprintln(a.out, "agents store: the agents layer is off (yonder enable agents)")
+		return
+	}
+	fmt.Fprintf(a.out, "agents store %s: %d files, %s\n", agents.Tilde(s.Dir, home), s.Files, humanBytes(s.Bytes))
+	switch {
+	case s.Paused:
+		fmt.Fprintln(a.out, "  linked: paused (the layer was off)")
+	case len(s.Linked) > 0:
+		fmt.Fprintf(a.out, "  linked: %s\n", strings.Join(s.Linked, ", "))
+	default:
+		fmt.Fprintln(a.out, "  linked: not here (yonder agents link)")
+	}
+	fmt.Fprintf(a.out, "  review: %s\n", s.Review)
+	for _, m := range sortedKeys(s.LastSync) {
+		fmt.Fprintf(a.out, "  last sync with %s: %s\n", m, ago(s.LastSync[m]))
+	}
+	for _, p := range s.Pending {
+		fmt.Fprintf(a.out, "  waits for review: %s (yonder agents accept)\n", p)
+	}
+	for _, c := range s.Conflicts {
+		fmt.Fprintf(a.out, "  conflict: %s (yonder sync --resolve %s --keep mine|theirs)\n", c, c)
+	}
+	for _, r := range s.Refused {
+		fmt.Fprintf(a.out, "  FAIL %s\n", r)
+	}
+	for _, p := range s.Problems {
+		fmt.Fprintf(a.out, "  link: %s (yonder agents link)\n", p)
+	}
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
 }

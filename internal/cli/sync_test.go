@@ -17,6 +17,7 @@ import (
 
 func init() {
 	store.Register(store.Kind{Name: "testnotes", Layer: registry.LayerMemory})
+	backgroundOff = true // a background sync here would re-run the test binary
 }
 
 // twoHomes sets up laptop (this process's YONDER_HOME) and gpu-box (another

@@ -13,6 +13,13 @@ type Config struct {
 	Secrets  map[string]any `toml:"secrets,omitempty"`  // provider settings, step 3
 	SSH      map[string]SSH `toml:"ssh,omitempty"`      // per-target ssh settings, this machine only
 	Discover Discover       `toml:"discover,omitempty"` // hand-edited discovery settings, this machine only
+	Sync     SyncSettings   `toml:"sync,omitempty"`     // hand-edited store sync settings, this machine only
+}
+
+// SyncSettings tunes store sync on this machine. yonder only reads it.
+type SyncSettings struct {
+	// which incoming changes wait for `yonder agents accept`: executables (default) | all | none
+	Review string `toml:"review,omitempty"`
 }
 
 // Discover tunes discovery on this machine. yonder only reads it.

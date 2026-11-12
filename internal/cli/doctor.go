@@ -80,6 +80,9 @@ func (a *app) doctor() doctor.Report {
 		Now:          time.Now(),
 	}
 	checks := doctor.Run(e)
+	if cfg.Self != "" && a.store.LayerOn(registry.LayerAgents) {
+		checks = append(checks, agentsChecks(cfg.Self)...)
+	}
 	if cfgErr != nil {
 		checks = append([]doctor.Check{{Group: "this machine", Name: "config", Status: doctor.Fail,
 			Detail: cfgErr.Error(), Fix: "fix or delete the file named above, then `yonder init`"}}, checks...)
@@ -170,4 +173,55 @@ func (d doctorRemote) AuthorizedKeys(m registry.Machine) (string, error) {
 		return "", fmt.Errorf("exit %d", code)
 	}
 	return out.String(), nil
+}
+
+// agentsChecks: the agents store here. files that can't sync fail; conflicts,
+// waiting reviews, lost deletes, broken links and home paths warn.
+func agentsChecks(self string) []doctor.Check {
+	const g = "agents store"
+	r, err := agents.StoreReport(self)
+	if err != nil {
+		return []doctor.Check{{Group: g, Name: "state", Status: doctor.Fail, Detail: err.Error(), Fix: "fix or delete the file named above"}}
+	}
+	var out []doctor.Check
+	add := func(name string, st doctor.Status, detail, fix string) {
+		out = append(out, doctor.Check{Group: g, Name: name, Status: st, Detail: detail, Fix: fix})
+	}
+	detail := fmt.Sprintf("%d files in %s", r.Files, agents.Tilde(r.Dir, agents.Home()))
+	if len(r.LastSync) > 0 {
+		var parts []string
+		for _, m := range sortedKeys(r.LastSync) {
+			parts = append(parts, m+" "+ago(r.LastSync[m]))
+		}
+		detail += "; last sync: " + strings.Join(parts, ", ")
+	}
+	add("store", doctor.Pass, detail, "")
+	for _, ref := range r.Refused {
+		add("refused", doctor.Fail, ref.Path+": "+ref.Reason+" (it doesn't sync)", ref.Fix)
+	}
+	for _, c := range r.Conflicts {
+		add("conflict", doctor.Warn, c+" was edited on two machines at once; both versions are in the store",
+			"yonder sync --resolve "+c+" --keep mine|theirs|<machine>, or delete the .conflict- copy")
+	}
+	for _, p := range r.Pending {
+		add("review", doctor.Warn, p+" changed on another machine and waits for review here", "yonder agents accept (in a terminal)")
+	}
+	for _, n := range r.Notices {
+		add("delete", doctor.Warn, n.Path+": "+n.Detail, "delete it again if you meant to")
+	}
+	for _, p := range r.HomePaths {
+		add("home path", doctor.Warn, p+" names an absolute home folder, which differs on other machines", "write ~/ instead")
+	}
+	for _, p := range r.Problems {
+		add("link", doctor.Warn, p, "yonder agents link")
+	}
+	switch {
+	case r.Paused:
+		add("link", doctor.Warn, "links are paused although the layer is on", "yonder sync")
+	case len(r.Linked) == 0:
+		add("link", doctor.Pass, "not linked into any harness here", "")
+	case len(r.Problems) == 0:
+		add("link", doctor.Pass, "linked into "+strings.Join(r.Linked, ", "), "")
+	}
+	return out
 }

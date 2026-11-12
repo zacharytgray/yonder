@@ -74,6 +74,7 @@ func newFleet(t *testing.T, fixture string) *fleet {
 		"YONDER_TAILSCALE_JSON=" + abs,
 		"SHELL=/bin/sh",
 		"USER=me",
+		"YONDER_SYNC_BACKGROUND=off", // no stray syncs outliving a test's temp dirs
 	}
 	return f
 }

@@ -273,6 +273,8 @@ func TestFleetOverSSH(t *testing.T) {
 		t.Fatalf("refresh: %+v", r)
 	}
 
+	agentsOverSSH(t, f, a, b)
+
 	// node-c: a record pointing at node-a's port with node-b's host key must be refused (pinning)
 	machines := filepath.Join(f.home, "yonder", "config", "machines")
 	recA, _ := os.ReadFile(filepath.Join(machines, "node-a.toml"))
@@ -307,4 +309,162 @@ func TestFleetOverSSH(t *testing.T) {
 	if r := f.run("", "add", "node-c", "--user", "me", "--port", "1", "--yes"); r.code != 75 {
 		t.Fatalf("dead port: %+v", r)
 	}
+}
+
+// setOnline flips one peer's Online in a tailscale status fixture.
+func setOnline(t *testing.T, fixture, name string, online bool) {
+	t.Helper()
+	data, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st map[string]any
+	if err := json.Unmarshal(data, &st); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range st["Peer"].(map[string]any) {
+		if pm := p.(map[string]any); pm["HostName"] == name {
+			pm["Online"] = online
+			pm["LastSeen"] = time.Now().UTC().Format(time.RFC3339)
+		}
+	}
+	data, _ = json.Marshal(st)
+	if err := os.WriteFile(fixture, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// agentsOverSSH: the agents store between this host and two containers: a
+// first sync, review of an incoming hook, a conflict, a relay in one sync,
+// an offline machine catching up, and the layer turned off fleet-wide.
+func agentsOverSSH(t *testing.T, f *fleet, a, b node) {
+	t.Helper()
+	const remoteStore = "~/.local/share/yonder/agents"
+	const y = `"$(command -v yonder || echo ~/.local/bin/yonder)"` // add may have put it in ~/.local/bin
+	store := filepath.Join(f.home, "yonder", "data", "agents")
+	cat := func(n node, rel string) string {
+		t.Helper()
+		return f.must("run", n.name, "--", "cat "+remoteStore+"/"+rel+" 2>/dev/null || echo '<missing>'").stdout
+	}
+	edit := func(n node, rel, content string) {
+		t.Helper()
+		f.must("run", n.name, "--", "mkdir -p $(dirname "+remoteStore+"/"+rel+") && printf '%s' '"+content+"' > "+remoteStore+"/"+rel)
+	}
+	src := t.TempDir()
+	put := func(p, content string, mode os.FileMode) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(filepath.Join(src, "CLAUDE.md"), "be brief\n", 0o644)
+	put(filepath.Join(src, "skills", "review", "SKILL.md"), "review\n", 0o644)
+	put(filepath.Join(src, "hooks", "guard.sh"), "#!/bin/sh\necho guard\n", 0o755)
+
+	// the layer reaches both containers with the registry; the store follows
+	if r := f.must("enable", "agents"); !strings.Contains(r.stdout, "synced to node-a, node-b") {
+		t.Fatalf("enable agents: %s", r.stdout)
+	}
+	f.must("agents", "import", src)
+	r := f.must("sync")
+	if !strings.Contains(r.stdout, "agents: node-a: get 0, send 3") || !strings.Contains(r.stdout, "waits for review on node-b") {
+		t.Fatalf("first agents sync: %s", r.stdout)
+	}
+	for _, n := range []node{a, b} {
+		if got := cat(n, "instructions.md"); got != "be brief\n" {
+			t.Fatalf("%s instructions: %q", n.name, got)
+		}
+		// hooks run code: on the containers the hook waits for review, not live
+		if got := cat(n, "hooks/guard.sh"); got != "<missing>\n" {
+			t.Fatalf("%s: the incoming hook should not be live yet: %q", n.name, got)
+		}
+		st := f.must("run", n.name, "--", y+" agents status --json").stdout
+		if !strings.Contains(st, `"hooks/guard.sh"`) || !strings.Contains(st, `"pending"`) {
+			t.Fatalf("%s status: %s", n.name, st)
+		}
+	}
+	if r := f.must("run", a.name, "--", y+" agents accept < /dev/null || true"); !strings.Contains(r.stdout+r.stderr, "needs a person at a terminal") {
+		t.Fatalf("accept without a terminal: %+v", r)
+	}
+
+	// a concurrent edit: node-a's later edit wins, laptop's is kept beside it
+	put(filepath.Join(store, "instructions.md"), "laptop edit\n", 0o644)
+	past := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(filepath.Join(store, "instructions.md"), past, past); err != nil {
+		t.Fatal(err)
+	}
+	edit(a, "instructions.md", "node-a edit\n")
+	r = f.must("sync", "agents", "node-a")
+	if !strings.Contains(r.stdout, "conflict at instructions.md: kept node-a's edit; laptop's is at instructions.conflict-laptop-") {
+		t.Fatalf("conflict: %s", r.stdout)
+	}
+	copies, _ := filepath.Glob(filepath.Join(store, "instructions.conflict-laptop-*.md"))
+	if len(copies) != 1 {
+		t.Fatalf("conflict copy here: %v", copies)
+	}
+	cp := filepath.Base(copies[0])
+	if got := cat(a, cp); got != "laptop edit\n" {
+		t.Fatalf("the conflict copy should be on node-a too: %q", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(store, "instructions.md")); string(b) != "node-a edit\n" {
+		t.Fatalf("winner here: %q", b)
+	}
+	if r := f.run("", "doctor"); !strings.Contains(r.stdout, "instructions.md was edited on two machines at once") {
+		t.Fatalf("doctor should warn about the conflict: %s", r.stdout)
+	}
+	f.must("sync", "--resolve", "instructions.md", "--keep", "mine")
+	if got := cat(a, "instructions.md"); got != "laptop edit\n" {
+		t.Fatalf("resolve should spread: %q", got)
+	}
+	if got := cat(a, cp); got != "<missing>\n" {
+		t.Fatalf("resolve removes the copy everywhere: %q", got)
+	}
+
+	// one sync relays between the containers: each gets the other's new file
+	edit(a, "skills/from-a/SKILL.md", "a\n")
+	edit(b, "skills/from-b/SKILL.md", "b\n")
+	f.must("sync", "agents")
+	if cat(a, "skills/from-b/SKILL.md") != "b\n" || cat(b, "skills/from-a/SKILL.md") != "a\n" {
+		t.Fatal("one sync should relay changes between the other machines")
+	}
+
+	// node-b sleeps through two changes, then catches up at its next sync
+	fixture := ""
+	for _, e := range f.env {
+		if v, ok := strings.CutPrefix(e, "YONDER_TAILSCALE_JSON="); ok {
+			fixture = v
+		}
+	}
+	setOnline(t, fixture, b.name, false)
+	put(filepath.Join(store, "instructions.md"), "while node-b slept\n", 0o644)
+	edit(a, "skills/from-a/SKILL.md", "a2\n")
+	r = f.must("sync", "agents")
+	if strings.Contains(r.stdout, "node-b:") {
+		t.Fatalf("an offline machine is skipped: %s", r.stdout)
+	}
+	if cat(a, "instructions.md") != "while node-b slept\n" {
+		t.Fatal("node-a should have the new text")
+	}
+	setOnline(t, fixture, b.name, true)
+	f.must("sync")
+	if got := cat(b, "instructions.md"); got != "while node-b slept\n" {
+		t.Fatalf("node-b should catch up: %q", got)
+	}
+	if got := cat(b, "skills/from-a/SKILL.md"); got != "a2\n" {
+		t.Fatalf("node-b should get node-a's change through this machine: %q", got)
+	}
+	if r := f.must("agents", "log", "skills/from-a/SKILL.md"); !strings.Contains(r.stdout, "by node-a") {
+		t.Fatalf("log should name node-a: %s", r.stdout)
+	}
+
+	// off for the whole fleet: the containers stop taking syncs
+	f.must("disable", "agents")
+	st := f.must("run", b.name, "--", y+" agents status --json").stdout
+	if !strings.Contains(st, `"layer_on": false`) {
+		t.Fatalf("node-b should have the layer off: %s", st)
+	}
+	f.must("enable", "agents")
 }

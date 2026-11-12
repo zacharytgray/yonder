@@ -321,3 +321,33 @@ func (s *Store) Allow(rel string) error {
 	st.Allow[rel] = hashOf(data)
 	return nil
 }
+
+// Put writes a file into the store here, keeping what it replaces. callers
+// hold the lock, then scan to record it.
+func (s *Store) Put(rel string, data []byte, exec bool) error {
+	if err := ValidRel(rel); err != nil {
+		return err
+	}
+	if _, err := s.State(); err != nil {
+		return err
+	}
+	if _, _, exists := s.live(rel); exists {
+		s.keepLive(rel, "replaced here")
+	}
+	return s.writeLive(rel, data, exec)
+}
+
+// Refusals lists the files here that can't sync, without changing anything.
+func (s *Store) Refusals() ([]Refusal, error) {
+	if _, err := s.State(); err != nil {
+		return nil, err
+	}
+	_, refused, err := s.readDisk()
+	return refused, err
+}
+
+// Live reads a store file as it is on disk here.
+func (s *Store) Live(rel string) ([]byte, bool) {
+	data, _, ok := s.live(rel)
+	return data, ok
+}

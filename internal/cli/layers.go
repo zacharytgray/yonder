@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zacharytgray/yonder/internal/agents"
 	"github.com/zacharytgray/yonder/internal/registry"
 )
 
@@ -152,6 +153,9 @@ func (a *app) setLayers(names []string, on bool) error {
 	}
 	reached := a.syncFleet(self)
 	a.applyLayers(self)
+	if on {
+		a.syncStoresQuiet(self)
+	}
 	word := "off"
 	if on {
 		word = "on"
@@ -201,9 +205,13 @@ func parseLayers(in []string) ([]string, error) {
 	return out, checkLayerNames(out)
 }
 
-// applyLayers does what this machine's layer settings ask of it here.
-// the agents layer fills it in.
-func (a *app) applyLayers(_ string) {}
+// applyLayers does what this machine's layer settings ask of it here: with
+// agents off it unlinks the harnesses; back on, it links them again.
+func (a *app) applyLayers(self string) {
+	if err := agents.ApplyLayer(a.store.LayerOn(registry.LayerAgents), self, a.out); err != nil {
+		a.warnf("agents layer: %v", err)
+	}
+}
 
 func orDash(s string) string {
 	if s == "" {
