@@ -255,7 +255,10 @@ func TestFleetOverSSH(t *testing.T) {
 		t.Fatalf("host key mismatch should be unreachable: %+v", r)
 	}
 
-	// a dead port is unreachable too
+	// a dead port is unreachable too; drop the crafted record first, it names node-a's dns
+	if err := os.Remove(filepath.Join(machines, "node-c.toml")); err != nil {
+		t.Fatal(err)
+	}
 	if r := f.run("", "add", "node-c", "--user", "me", "--port", "1", "--yes"); r.code != 75 {
 		t.Fatalf("dead port: %+v", r)
 	}

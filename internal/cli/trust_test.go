@@ -284,7 +284,7 @@ func TestMovedPeerGetsNoSSH(t *testing.T) {
 // facts a peer's _facts sends back are cleaned here too: a peer can send anything
 func TestPeerFactsSanitized(t *testing.T) {
 	a, s := newStrictApp(t, true)
-	evil := "llama\x1b[31m‮" + strings.Repeat("x", 300)
+	evil := "llama\x1b[31m\u202e" + strings.Repeat("x", 300)
 	s.yonder = func(_ transport.Target, args []string, stdio transport.IO) (int, error) {
 		switch args[0] {
 		case "_facts":
@@ -307,10 +307,10 @@ func TestPeerFactsSanitized(t *testing.T) {
 	if f.Hostname != "gpu-box" || f.OS != "linux" || f.Extra != nil {
 		t.Fatalf("facts %+v", f)
 	}
-	if strings.ContainsAny(f.CPU, "\x1b‮") || len([]rune(f.CPU)) > 120 {
+	if strings.ContainsAny(f.CPU, "\x1b\u202e") || len([]rune(f.CPU)) > 120 {
 		t.Fatalf("cpu %q", f.CPU)
 	}
-	if len(f.Models) != 1 || strings.ContainsAny(f.Models[0].Name, "\x1b‮") || len([]rune(f.Models[0].Name)) > 120 {
+	if len(f.Models) != 1 || strings.ContainsAny(f.Models[0].Name, "\x1b\u202e") || len([]rune(f.Models[0].Name)) > 120 {
 		t.Fatalf("models %+v", f.Models)
 	}
 }
