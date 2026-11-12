@@ -103,6 +103,18 @@ func (o *onePassword) listItems(ctx context.Context, vault string) ([]vaultItem,
 	return items, nil
 }
 
+// vaultVisible asks op for the vault's metadata, which needs read access to
+// it. no item is read.
+func (o *onePassword) vaultVisible(vault string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
+	defer cancel()
+	_, msg, err := o.opCall(ctx, nil, "vault", "get", vault, "--format", "json")
+	if msg != "" {
+		return fmt.Errorf("this machine's account can't read the vault %q: %s", vault, msg)
+	}
+	return err
+}
+
 // getItem reads one item with its values; callers keep them in memory.
 func (o *onePassword) getItem(ctx context.Context, id, vault string) ([]byte, error) {
 	out, msg, err := o.opCall(ctx, nil, "item", "get", id, "--vault", vault, "--format", "json", "--reveal")
@@ -187,26 +199,39 @@ func (o *onePassword) vaultLookup(vault string, names []string) (refs, vals map[
 	return refs, vals, inVault, nil
 }
 
-// VaultNames lists the agent vault's item titles that are valid secret
-// names, and how many titles were skipped. vault is "" when this machine
-// has none; then nothing runs.
-func VaultNames() (vault string, names []string, skipped int, err error) {
+// VaultList is one vault's titles that are valid secret names.
+type VaultList struct {
+	Vault   string
+	Names   []string
+	Skipped int   // titles that aren't names
+	Err     error // listing it failed
+}
+
+// VaultNames lists the titles in the agent vault, then each extra vault.
+// nil when this machine has no agent vault; then nothing runs.
+func VaultNames() ([]VaultList, error) {
 	s, err := LoadSettings()
 	if err != nil || s.Provider != Provider1Password || s.Vault == "" {
-		return "", nil, 0, err
+		return nil, err
 	}
 	p, err := newProvider(s)
 	if err != nil {
-		return s.Vault, nil, 0, err
+		return []VaultList{{Vault: s.Vault, Err: err}}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), resolveTimeout)
 	defer cancel()
-	items, err := p.(*onePassword).listItems(ctx, s.Vault)
-	if err != nil {
-		return s.Vault, nil, 0, err
+	var out []VaultList
+	for _, v := range s.Vaults() {
+		l := VaultList{Vault: v}
+		items, err := p.(*onePassword).listItems(ctx, v)
+		if err != nil {
+			l.Err = err
+		} else {
+			l.Names, l.Skipped = titleNames(items)
+		}
+		out = append(out, l)
 	}
-	names, skipped = titleNames(items)
-	return s.Vault, names, skipped, nil
+	return out, nil
 }
 
 // Store saves value as the item titled name in the agent vault and returns

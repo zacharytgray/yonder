@@ -206,6 +206,23 @@ func TestSecretSetEndToEnd(t *testing.T) {
 	if r := keep(f.run("x", "secret", "set", "new-key")); r.code != 2 {
 		t.Fatalf("bad name: %+v", r)
 	}
+	f.must("secret", "setup", "--provider", "1password", "--extra-vault", "Ops")
+	f.must("secret", "setup", "--provider", "1password") // no flag keeps it
+	if r := keep(f.must("secret", "ls")); !strings.Contains(r.stdout, "extra vault: Ops (read-only)") || !strings.Contains(r.stdout, "NEW_KEY  item in Agents") {
+		t.Fatalf("ls with an extra vault: %s", r.stdout)
+	}
+	if r := keep(f.must("secret", "ls", "--json")); !strings.Contains(r.stdout, `"extra_vaults": [`) || !strings.Contains(r.stdout, `"vault": "Ops"`) {
+		t.Fatalf("ls --json with an extra vault: %s", r.stdout)
+	}
+	if r := keep(f.must("doctor", "--json")); !strings.Contains(r.stdout, `also reads \"Ops\" (read-only)`) {
+		t.Fatalf("doctor: %s", r.stdout)
+	}
+	if r := keep(f.run("", "secret", "setup", "--provider", "bws", "--extra-vault", "Ops")); r.code == 0 || !strings.Contains(r.stderr, "only applies to 1password") {
+		t.Fatalf("bws extra vault: %+v", r)
+	}
+	if r := keep(f.run("x", "secret", "set", "NEW_KEY", "--replace")); r.code != 0 || r.stdout != "stored NEW_KEY in Agents (1 chars)\n" {
+		t.Fatalf("set with an extra vault: %+v", r)
+	}
 	f.must("secret", "setup", "--provider", "bws")
 	if r := keep(f.run("x", "secret", "set", "OTHER")); r.code != 1 || !strings.Contains(r.stderr, "can't store secrets in Bitwarden") {
 		t.Fatalf("bws: %+v", r)

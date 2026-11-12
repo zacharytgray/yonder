@@ -52,6 +52,9 @@ type Settings struct {
 	// 1password: the agent vault. `secret set` writes here and names not in
 	// secrets.toml resolve from item titles here
 	Vault string
+	// 1password: more vaults this machine reads by name, after the agent
+	// vault. provisioning grants them read-only; `secret set` never writes them
+	ExtraVaults []string
 }
 
 // Access says what this machine can do in the agent vault.
@@ -89,6 +92,13 @@ func LoadSettings() (Settings, error) {
 	}
 	if s.Provider == Provider1Password {
 		s.Vault = str("vault")
+		if l, ok := c.Secrets["extra_vaults"].([]any); ok {
+			for _, v := range l {
+				if v, ok := v.(string); ok && strings.TrimSpace(v) != "" {
+					s.ExtraVaults = append(s.ExtraVaults, strings.TrimSpace(v))
+				}
+			}
+		}
 		if s.Mode == ModeServiceAccount {
 			s.ServiceAccount = str("service_account")
 			s.Write, _ = c.Secrets["write"].(bool)
@@ -118,6 +128,9 @@ func SaveSettings(s Settings) error {
 	}
 	if s.Provider == Provider1Password && s.Vault != "" {
 		t["vault"] = s.Vault
+	}
+	if s.Provider == Provider1Password && len(s.ExtraVaults) > 0 {
+		t["extra_vaults"] = s.ExtraVaults
 	}
 	return registry.Open().SetSecrets(t)
 }
@@ -261,7 +274,7 @@ func RemoveRef(name string) error {
 		return err
 	}
 	if _, ok := refs[name]; !ok {
-		return unknownErr([]string{name}, refs, "", nil)
+		return unknownErr([]string{name}, refs, nil, nil)
 	}
 	delete(refs, name)
 	return saveRefs(refs)
@@ -284,7 +297,7 @@ func knownList(names []string) string {
 }
 
 // unknownErr names what is missing and everything that would resolve.
-func unknownErr(names []string, refs map[string]string, vault string, inVault []string) error {
+func unknownErr(names []string, refs map[string]string, vaults []string, inVault []string) error {
 	seen := map[string]bool{}
 	var known []string
 	for _, n := range append(sortedKeys(refs), inVault...) {
@@ -300,8 +313,8 @@ func unknownErr(names []string, refs map[string]string, vault string, inVault []
 	}
 	where := "on this machine"
 	fix := "add one with `yonder secret add NAME <ref>`"
-	if vault != "" {
-		where = fmt.Sprintf("in secrets.toml or the vault %q", vault)
+	if len(vaults) > 0 {
+		where = "in secrets.toml or the vault " + quoteList(vaults)
 		fix = "store one with `yonder secret set NAME`, or map one with `yonder secret add NAME <ref>`"
 	}
 	return fmt.Errorf("unknown %s %s %s (known: %s); %s", word, strings.Join(names, ", "), where, knownList(known), fix)
@@ -324,12 +337,31 @@ func Resolve(names []string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return resolveWith(p, names, refs, s.Vault)
+	return resolveWith(p, names, refs, s.Vaults())
 }
 
-// resolveWith: secrets.toml first, then an item titled exactly NAME in the
-// agent vault (1password only). one op inject covers both.
-func resolveWith(p Provider, names []string, refs map[string]string, vault string) (map[string]string, error) {
+// Vaults is the agent vault, then the extra vaults: the order names resolve in.
+func (s Settings) Vaults() []string {
+	if s.Provider != Provider1Password || s.Vault == "" {
+		return nil
+	}
+	return append([]string{s.Vault}, s.ExtraVaults...)
+}
+
+// quoteList: "A", or "A" and then "B", "C".
+func quoteList(vs []string) string {
+	q := quoted(vs)
+	if len(q) == 1 {
+		return q[0]
+	}
+	return q[0] + " and then " + strings.Join(q[1:], ", ")
+}
+
+// resolveWith: secrets.toml first, then an item titled exactly NAME in each
+// vault in order, the agent vault first (1password only). the first vault
+// holding a title wins. a vault is listed only while names are left. one op
+// inject covers everything that has a reference.
+func resolveWith(p Provider, names []string, refs map[string]string, vaults []string) (map[string]string, error) {
 	pick := map[string]string{}
 	var unknown []string
 	for _, n := range names {
@@ -351,28 +383,34 @@ func resolveWith(p Provider, names []string, refs map[string]string, vault strin
 	}
 	direct := map[string]string{}
 	op, isOp := p.(*onePassword)
-	if len(unknown) > 0 && isOp && vault != "" {
-		found, vals, inVault, err := op.vaultLookup(vault, unknown)
-		if err != nil {
-			return nil, err
-		}
-		var still []string
-		for _, n := range unknown {
-			if ref, ok := found[n]; ok {
-				pick[n] = ref
-			} else if v, ok := vals[n]; ok {
-				direct[n] = v
-			} else {
-				still = append(still, n)
+	if len(unknown) > 0 && isOp && len(vaults) > 0 {
+		var inVaults []string
+		for _, vault := range vaults {
+			found, vals, inVault, err := op.vaultLookup(vault, unknown)
+			if err != nil {
+				return nil, err
+			}
+			inVaults = append(inVaults, inVault...)
+			var still []string
+			for _, n := range unknown {
+				if ref, ok := found[n]; ok {
+					pick[n] = ref
+				} else if v, ok := vals[n]; ok {
+					direct[n] = v
+				} else {
+					still = append(still, n)
+				}
+			}
+			if unknown = still; len(unknown) == 0 {
+				break
 			}
 		}
-		if len(still) > 0 {
-			return nil, unknownErr(still, refs, vault, inVault)
+		if len(unknown) > 0 {
+			return nil, unknownErr(unknown, refs, vaults, inVaults)
 		}
-		unknown = nil
 	}
 	if len(unknown) > 0 {
-		return nil, unknownErr(unknown, refs, "", nil)
+		return nil, unknownErr(unknown, refs, nil, nil)
 	}
 	vals, err := p.Resolve(pick)
 	if err != nil {
@@ -410,6 +448,7 @@ func Health() []Check {
 		out = append(out, p.Health()...)
 		if s.Provider == Provider1Password {
 			out = append(out, vaultCheck(s))
+			out = append(out, extraVaultChecks(s, p)...)
 		}
 	}
 	return append(out, refChecks(s.Provider, refs, rerr)...)
@@ -422,7 +461,58 @@ func vaultCheck(s Settings) Check {
 		return c
 	}
 	c.Detail = fmt.Sprintf("%q, %s", s.Vault, s.Access())
+	if len(s.ExtraVaults) > 0 {
+		c.Detail += "; also reads " + strings.Join(quoted(s.ExtraVaults), ", ") + " (read-only)"
+	}
 	return c
+}
+
+func quoted(vs []string) []string {
+	q := make([]string, len(vs))
+	for i, v := range vs {
+		q[i] = fmt.Sprintf("%q", v)
+	}
+	return q
+}
+
+// extraVaultChecks: with a service account, op must see each extra vault
+// (`op vault get`, metadata only, no item read). desktop mode only lists
+// them, since asking would need an approval.
+func extraVaultChecks(s Settings, p Provider) []Check {
+	op, ok := p.(*onePassword)
+	if !ok || len(s.ExtraVaults) == 0 || s.Mode != ModeServiceAccount {
+		return nil
+	}
+	var out []Check
+	for _, v := range s.ExtraVaults {
+		c := Check{Name: "1password vault " + v, OK: true, Detail: "readable (read-only)"}
+		if err := op.vaultVisible(v); err != nil {
+			c.OK = false
+			c.Detail = err.Error()
+			c.Fix = "give this machine a new account that can read it, from a machine with the 1Password app: " + ReprovisionCmd(selfOrPlaceholder(), s)
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// ReprovisionCmd is the setup line that gives machine a new account with
+// the same vaults and write access as s.
+func ReprovisionCmd(machine string, s Settings) string {
+	arg := func(v string) string {
+		if strings.ContainsAny(v, " '\"") {
+			return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+		}
+		return v
+	}
+	b := "yonder secret setup --machines " + machine + " --vault " + arg(s.Vault)
+	for _, v := range s.ExtraVaults {
+		b += " --extra-vault " + arg(v)
+	}
+	if s.Write {
+		b += " --allow-write"
+	}
+	return b + " --replace"
 }
 
 func refChecks(provider string, refs map[string]string, err error) []Check {

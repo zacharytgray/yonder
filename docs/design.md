@@ -37,7 +37,8 @@ test/                  end-to-end tests against the built binary (+ docker integ
 
 The hidden commands a caller runs on a target are `_exec`, `_job` (the detached supervisor),
 `_jobs`, `_sync`, `_log`, `_facts`, `_init-self <name>`, and `_secret-probe [--verify]` and
-`_secret-provision <account> <vault> [--write]` (both run through `_exec`; see Secrets).
+`_secret-provision <account> <vault> [--write] [--extra-vault V]...` (both run through `_exec`;
+see Secrets).
 
 ## Files on each machine
 
@@ -435,12 +436,21 @@ token_store = "file"          # optional: keychain | secret-service | file (defa
 service_account = "yonder-gpu-box"  # service-account mode, set by provisioning: names, never secrets
 write = true                  # service-account mode: the account may write the vault
 vault = "Yonder Agents"       # 1password, either mode: the agent vault
+extra_vaults = ["Ops"]        # 1password, optional: more vaults to read names from, after vault
 ```
 
 `vault` is set by provisioning (on each target, and on the machine running it when that one stays
 in desktop mode with no vault yet), or by hand with `yonder secret setup --provider 1password
 [--mode m] --vault NAME`. `--vault` alone still means provisioning. `--provider 1password` without
 `--mode` keeps the current mode.
+
+`extra_vaults` is set by provisioning with `--extra-vault` (below), or by hand with
+`yonder secret setup --provider 1password --extra-vault NAME` (repeatable; needs an agent vault;
+a hand setup without the flag keeps the list). Names are checked like `vault`; repeats and the
+agent vault itself are dropped. They hold secrets only some machines may read: a machine reads
+them, it never writes them, and `secret set` never stores there. A vault no service account can
+read (say one kept for Touch ID only) needs no entry here; the machine with the app reaches it
+through a `secrets.toml` reference like `op://Gated/item/field`.
 
 Providers:
 
@@ -460,9 +470,11 @@ may hold newlines and still parse back. bws gets one `bws secret get <uuid> --ou
 Unknown names fail before any provider call and list the known names.
 
 Resolution order for a name: `secrets.toml` first, then, with 1Password and a recorded `vault`, the
-item in that vault titled exactly that name. Names all found in `secrets.toml` never touch the vault.
-For the rest, yonder runs one `op item list --vault V --format json` (titles, ids and categories,
-no values). The field is picked by category where the layout is fixed: `API_CREDENTIAL` reads
+item in that vault titled exactly that name, then the same in each of `extra_vaults` in order. The
+first vault that holds the title wins, so an extra vault can't shadow an agent vault item. Names all
+found in `secrets.toml` never touch a vault. For the rest, yonder runs one `op item list --vault V
+--format json` (titles, ids and categories, no values) per vault, and lists the next vault only
+while names are left. The field is picked by category where the layout is fixed: `API_CREDENTIAL` reads
 `credential`, `PASSWORD` and `LOGIN` read `password`, `SECURE_NOTE` reads `notesPlain`. Those become
 `op://<vault id>/<item id>/<field>` references and join the `secrets.toml` references in the same
 single `op inject`. An item of any other category costs one `op item get --format json --reveal`,
@@ -512,8 +524,9 @@ The store, by OS:
   token file other users can read.
 
 Commands: `yonder secret add NAME <ref>`, `set NAME [--replace]`, `ls [--json]` (names from
-`secrets.toml` and from vault titles that are valid names, never values; a name in both shows once,
-from `secrets.toml`; in desktop mode the vault list asks for approval like any read),
+`secrets.toml` and from vault titles that are valid names, agent vault then extra vaults, never
+values; a name shows once, from where it resolves; with extra vaults each vault item names its
+vault; in desktop mode the vault list asks for approval like any read),
 `rm NAME`, `test NAME` (resolves, prints only `NAME: ok, N chars`), `setup [--provider p --mode m]`
 and `token set` (hidden prompt, or stdin: `yonder secret token set < tokenfile`). The manual path
 (`setup --provider ... --mode service-account`, then `token set` on each machine) stays for bws and
@@ -521,8 +534,8 @@ for people who make service accounts themselves.
 
 ### Provisioning hands-free 1Password
 
-`yonder secret setup [--machines a,b | --all-machines] [--vault NAME] [--allow-write] [--replace]
-[--expires-in 90d] [--yes]` sets up 1Password service accounts for the fleet from the machine a
+`yonder secret setup [--machines a,b | --all-machines] [--vault NAME] [--extra-vault NAME]...
+[--allow-write] [--replace] [--expires-in 90d] [--yes]` sets up 1Password service accounts for the fleet from the machine a
 person sits at, with one approval. Any of those flags starts it; with no flags and a terminal,
 setup offers it first, then "choose a provider for this machine only" and "skip". `init` offers
 the same choice when this machine has no provider yet; `init --yes` prints the command when `op`
@@ -541,7 +554,10 @@ with `OP_SERVICE_ACCOUNT_TOKEN` set. Steps:
 2. Check every chosen machine before any account exists, so none is orphaned. Each runs
    `yonder _secret-probe` through `_exec` (this machine: in process), which prints JSON: `os`, `op`
    (path, empty when missing), `op_version`, `desktop_app`, `provider`, `mode`, `has_token`,
-   `service_account`, `vault`, `write`, and with `--verify`, `verified` and `detail`. No values. A machine
+   `service_account`, `vault`, `extra_vaults`, `write`, `can_extra_vaults` (this yonder takes
+   `_secret-provision --extra-vault`), and with `--verify`, `verified` and `detail`. No values.
+   With `--extra-vault`, a machine whose probe lacks `can_extra_vaults` fails with "upgrade yonder
+   on <m>" here, before any account exists. A machine
    without `op` is skipped with the install hint for its OS (macOS `brew install 1password-cli`;
    Linux the get-started link). A machine whose yonder lacks the command (exit 2, "unknown
    command") fails with "upgrade yonder on <m>". A machine with a 1Password service-account token,
@@ -550,16 +566,19 @@ with `OP_SERVICE_ACCOUNT_TOKEN` set. Steps:
 3. Make the vault (default "Yonder Agents") unless `op vault list --format json` shows it:
    `op vault create <name> --description ...`. This is usually the call that asks for Touch ID;
    later calls reuse the approval. Names a service account can't use (Personal, Private, Employee,
-   Shared) and names with `:` or `,` are refused before anything runs.
+   Shared) and names with `:` or `,` are refused before anything runs. Each `--extra-vault` is
+   made the same way if missing, with a description saying only some accounts read it.
 4. Per machine: `op service-account create yonder-<m> --vault <vault>:read_items --raw
-   [--expires-in d]`, or `<vault>:read_items,write_items` with `--allow-write`. Permissions are
+   [--expires-in d]`, or `<vault>:read_items,write_items` with `--allow-write`, plus
+   `--vault <extra>:read_items` for each `--extra-vault`. Permissions are
    fixed at creation, so changing a machine's access means `--replace`. The token is read from stdout into memory. A replacement whose old account
    had the same name gets `yonder-<m>-<yyyymmdd-hhmm>`, so the old one can be told apart and
    revoked. This machine stores it in process. Another machine gets it in the `_exec` envelope as
-   the secret `YONDER_OP_TOKEN`, running `yonder _secret-provision <account> <vault> [--write]`
-   (`--write` only when granted, so an older peer still takes a read-only token), which reads
-   the env var, stores the token in that machine's token store and sets `[secrets]` to 1password
-   service-account with `service_account`, `vault` and `write`. So the token is never in argv, and the
+   the secret `YONDER_OP_TOKEN`, running `yonder _secret-provision <account> <vault> [--write]
+   [--extra-vault V]...` (`--write` only when granted, so an older peer still takes a read-only
+   token), which reads the env var, stores the token in that machine's token store and sets
+   `[secrets]` to 1password service-account with `service_account`, `vault`, `extra_vaults` and
+   `write`. So the token is never in argv, and the
    target scrubs it from output and logs only its name. Both sides set the machine's record
    `secrets_account` and `secrets_write` (the target its own record, since peers can't change a
    machine's own record),
@@ -575,8 +594,10 @@ with `OP_SERVICE_ACCOUNT_TOKEN` set. Steps:
 Exit 1 if any machine failed; skipped machines don't fail the run. Every machine whose agents use
 `--secret` needs its own token and `op`, because secrets resolve on the caller.
 `secret ls --json` is `{"provider":"1password","mode":"desktop","vault":"...","vault_error":"",
-"secrets":[{"name":"...","ref":"...","source":"secrets.toml"},{"name":"...","ref":"","source":"vault"}]}`.
-`vault` is empty when none is recorded; `vault_error` is set when listing it failed.
+"extra_vaults":[{"vault":"...","error":""}],
+"secrets":[{"name":"...","ref":"...","source":"secrets.toml","vault":""},{"name":"...","ref":"","source":"vault","vault":"..."}]}`.
+`vault` is empty when none is recorded; `vault_error` is set when listing it failed, and each
+`extra_vaults` entry's `error` likewise. A vault item's `vault` names the vault it resolves from.
 
 `init` runs the same setup as `yonder secret setup`, but leaves an existing provider alone. It
 recommends desktop mode where the 1Password app is installed and the session is not headless, and
@@ -586,8 +607,11 @@ service-account mode otherwise. With `--yes` it only prints the non-interactive 
 whether `op` can see the app (`op whoami`, then `op account list`; no item is read), for hands-free
 modes whether a token is stored (and for 1Password, whether `op whoami` accepts it, naming the
 service account when provisioning recorded it), for 1Password the agent vault and its access
-("read-only" or "read and write"; desktop mode is read and write), and whether each reference is
-valid for this machine's provider. Every failure carries a fix.
+("read-only" or "read and write"; desktop mode is read and write) and the extra vaults it also
+reads, and whether each reference is valid for this machine's provider. In service-account mode
+each extra vault gets its own check, `op vault get <V> --format json` (metadata, no item read),
+which fails with the `secret setup ... --extra-vault ... --replace` line that grants it; desktop
+mode only lists them, since checking would ask for an approval. Every failure carries a fix.
 
 ## Agent skill
 

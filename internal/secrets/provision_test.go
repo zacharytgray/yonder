@@ -55,7 +55,7 @@ func TestCreateServiceAccount(t *testing.T) {
 	t.Setenv(opEnvToken, "ops_someOtherToken") // a user's own token must not leak into op
 	f := &fakeExec{handler: func(c call) (string, string, error) { return dummyToken + "\n", "", nil }}
 	installFake(t, f)
-	tok, err := CreateServiceAccount("yonder-gpu-box", DefaultVault, "30d", false)
+	tok, err := CreateServiceAccount("yonder-gpu-box", DefaultVault, nil, "30d", false)
 	if err != nil || tok != dummyToken {
 		t.Fatalf("%q %v", tok, err)
 	}
@@ -71,7 +71,7 @@ func TestCreateServiceAccount(t *testing.T) {
 
 	// junk instead of a token is refused and not echoed
 	installFake(t, &fakeExec{handler: func(call) (string, string, error) { return "not a token\n", "", nil }})
-	if _, err := CreateServiceAccount("x", "v", "", false); err == nil || strings.Contains(err.Error(), "not a token") {
+	if _, err := CreateServiceAccount("x", "v", nil, "", false); err == nil || strings.Contains(err.Error(), "not a token") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -96,7 +96,7 @@ func TestInstallAndProbe(t *testing.T) {
 	if p := Probe(false); p.Op == "" || p.HasToken || p.Mode != ModeDesktop {
 		t.Fatalf("before: %+v", p)
 	}
-	if _, err := InstallServiceAccount(dummyToken, "yonder-gpu-box", DefaultVault, false); err != nil {
+	if _, err := InstallServiceAccount(dummyToken, "yonder-gpu-box", DefaultVault, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := LoadSettings()

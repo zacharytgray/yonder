@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/zacharytgray/yonder/internal/registry"
@@ -25,7 +26,8 @@ const (
 	// ProvisionTokenEnv carries a new token to a target inside the _exec envelope.
 	ProvisionTokenEnv = "YONDER_OP_TOKEN"
 
-	vaultDescription = "Secrets for yonder agents. Every machine's yonder service account can read all of it."
+	vaultDescription      = "Secrets for yonder agents. Every machine's yonder service account can read all of it."
+	extraVaultDescription = "Secrets that only the yonder service accounts given --extra-vault for it can read."
 )
 
 // AccountName is the service account a machine gets.
@@ -56,6 +58,23 @@ func CheckVaultName(name string) error {
 		}
 	}
 	return nil
+}
+
+// CheckExtraVaults checks --extra-vault names and drops repeats and the
+// agent vault itself.
+func CheckExtraVaults(vault string, extras []string) ([]string, error) {
+	var out []string
+	for _, v := range extras {
+		v = strings.TrimSpace(v)
+		if err := CheckVaultName(v); err != nil {
+			return nil, fmt.Errorf("--extra-vault: %w", err)
+		}
+		if v == vault || slices.Contains(out, v) {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }
 
 var expiresRe = regexp.MustCompile(`^([0-9]+[smhdw])+$`)
@@ -96,9 +115,18 @@ func OpAndApp() bool {
 	return err == nil && HasDesktopApp()
 }
 
-// EnsureVault makes the vault unless it exists. this is usually the call that
-// asks for touch id; later calls reuse the approval.
+// EnsureVault makes the agent vault unless it exists. this is usually the
+// call that asks for touch id; later calls reuse the approval.
 func EnsureVault(name string) (created bool, err error) {
+	return ensureVault(name, vaultDescription)
+}
+
+// EnsureExtraVault makes an extra vault unless it exists.
+func EnsureExtraVault(name string) (created bool, err error) {
+	return ensureVault(name, extraVaultDescription)
+}
+
+func ensureVault(name, description string) (created bool, err error) {
 	bin, err := lookPath("op")
 	if err != nil {
 		return false, errors.New("1password CLI `op` not found; " + opInstallFix)
@@ -121,7 +149,7 @@ func EnsureVault(name string) (created bool, err error) {
 			return false, nil
 		}
 	}
-	_, stderr, err = run(ctx, bin, []string{"vault", "create", name, "--description", vaultDescription}, env, nil)
+	_, stderr, err = run(ctx, bin, []string{"vault", "create", name, "--description", description}, env, nil)
 	if err != nil {
 		return false, fmt.Errorf("op vault create failed: %s", scrubbedLine(stderr, err, env, nil))
 	}
@@ -129,9 +157,9 @@ func EnsureVault(name string) (created bool, err error) {
 }
 
 // CreateServiceAccount makes a service account for vault, read-only unless
-// write, and returns its token. the token is shown once; callers keep it in
-// memory only.
-func CreateServiceAccount(name, vault, expiresIn string, write bool) (string, error) {
+// write, that can also read each extra vault, and returns its token. the
+// token is shown once; callers keep it in memory only.
+func CreateServiceAccount(name, vault string, extras []string, expiresIn string, write bool) (string, error) {
 	bin, err := lookPath("op")
 	if err != nil {
 		return "", errors.New("1password CLI `op` not found; " + opInstallFix)
@@ -140,7 +168,11 @@ func CreateServiceAccount(name, vault, expiresIn string, write bool) (string, er
 	if write {
 		perms += ",write_items"
 	}
-	args := []string{"service-account", "create", name, "--vault", vault + ":" + perms, "--raw"}
+	args := []string{"service-account", "create", name, "--vault", vault + ":" + perms}
+	for _, v := range extras {
+		args = append(args, "--vault", v+":read_items")
+	}
+	args = append(args, "--raw")
 	if expiresIn != "" {
 		args = append(args, "--expires-in", expiresIn)
 	}
@@ -180,24 +212,27 @@ func scrubbedLine(stderr []byte, err error, env []string, vals map[string]string
 
 // ProbeResult is what `yonder _secret-probe` reports about a machine. no values.
 type ProbeResult struct {
-	OS             string `json:"os"`
-	Op             string `json:"op"` // path; empty when op is missing
-	OpVersion      string `json:"op_version"`
-	DesktopApp     bool   `json:"desktop_app"`
-	Provider       string `json:"provider"`
-	Mode           string `json:"mode"`
-	HasToken       bool   `json:"has_token"`
-	ServiceAccount string `json:"service_account"`
-	Vault          string `json:"vault"`
-	Write          bool   `json:"write"`    // the service account may write the vault
-	Verified       bool   `json:"verified"` // --verify: op accepted the stored token as a service account
-	Detail         string `json:"detail"`   // why verify failed
+	OS             string   `json:"os"`
+	Op             string   `json:"op"` // path; empty when op is missing
+	OpVersion      string   `json:"op_version"`
+	DesktopApp     bool     `json:"desktop_app"`
+	Provider       string   `json:"provider"`
+	Mode           string   `json:"mode"`
+	HasToken       bool     `json:"has_token"`
+	ServiceAccount string   `json:"service_account"`
+	Vault          string   `json:"vault"`
+	ExtraVaults    []string `json:"extra_vaults"` // read-only vaults after the agent vault
+	Write          bool     `json:"write"`        // the service account may write the vault
+	Verified       bool     `json:"verified"`     // --verify: op accepted the stored token as a service account
+	Detail         string   `json:"detail"`       // why verify failed
+	// this yonder takes `_secret-provision --extra-vault`; older ones omit it
+	CanExtraVaults bool `json:"can_extra_vaults"`
 }
 
 // Probe reports op, the provider settings and whether a token is stored.
 // with verify it asks op who the stored token is.
 func Probe(verify bool) ProbeResult {
-	r := ProbeResult{OS: runtime.GOOS, DesktopApp: HasDesktopApp()}
+	r := ProbeResult{OS: runtime.GOOS, DesktopApp: HasDesktopApp(), CanExtraVaults: true}
 	if bin, err := lookPath("op"); err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
 		ver, _, err := run(ctx, bin, []string{"--version"}, childEnv(), nil)
@@ -212,6 +247,7 @@ func Probe(verify bool) ProbeResult {
 		return r
 	}
 	r.Provider, r.Mode, r.ServiceAccount, r.Vault, r.Write = s.Provider, s.Mode, s.ServiceAccount, s.Vault, s.Write
+	r.ExtraVaults = s.ExtraVaults
 	var tok string
 	if s.HandsFree() {
 		envVar := opEnvToken
@@ -257,9 +293,9 @@ func verifyServiceAccount(r ProbeResult, s Settings, tok string) (bool, string) 
 }
 
 // InstallServiceAccount stores token in this machine's token store and sets
-// 1password service-account mode, recording the account, the vault and
-// whether the account may write it.
-func InstallServiceAccount(token, account, vault string, write bool) (string, error) {
+// 1password service-account mode, recording the account, the vault, the
+// extra vaults it reads and whether the account may write the vault.
+func InstallServiceAccount(token, account, vault string, extras []string, write bool) (string, error) {
 	if err := checkToken(token); err != nil {
 		return "", err
 	}
@@ -267,7 +303,11 @@ func InstallServiceAccount(token, account, vault string, write bool) (string, er
 	if err != nil {
 		return "", err
 	}
-	s := Settings{Provider: Provider1Password, Mode: ModeServiceAccount, TokenStore: cur.TokenStore, ServiceAccount: account, Vault: vault, Write: write}
+	extras, err = CheckExtraVaults(vault, extras)
+	if err != nil {
+		return "", err
+	}
+	s := Settings{Provider: Provider1Password, Mode: ModeServiceAccount, TokenStore: cur.TokenStore, ServiceAccount: account, Vault: vault, ExtraVaults: extras, Write: write}
 	if err := validateSettings(s); err != nil {
 		return "", err
 	}

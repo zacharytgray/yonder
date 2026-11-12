@@ -59,7 +59,7 @@ and do not read Yonder's token store or the user's password manager directly.
 Use only the names `yonder secret ls` shows. Do not add a reference to some other vault item with
 `yonder secret add`.
 
-`yonder secret ls` lists names from `secrets.toml` and from the user's agent vault in 1Password.
+`yonder secret ls` lists names from `secrets.toml`, the user's agent vault in 1Password and any extra vaults this machine reads.
 
 To keep a secret you generate, such as a new API token, pipe it straight into the vault:
 

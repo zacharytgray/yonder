@@ -29,21 +29,37 @@ func SecretProbe(_ context.Context, args []string, _ io.Reader, out, errw io.Wri
 	return 0
 }
 
-// SecretProvision is `yonder _secret-provision <account> <vault> [--write]`. the token
-// comes in $YONDER_OP_TOKEN, which _exec sets from the envelope, so it is
-// never in argv and _exec scrubs it from output and the log.
+// SecretProvision is `yonder _secret-provision <account> <vault> [--write]
+// [--extra-vault V]...`. the token comes in $YONDER_OP_TOKEN, which _exec
+// sets from the envelope, so it is never in argv and _exec scrubs it from
+// output and the log.
 func SecretProvision(_ context.Context, args []string, _ io.Reader, out, errw io.Writer) int {
-	write := len(args) == 3 && args[2] == "--write"
-	if len(args) != 2 && !write {
-		fmt.Fprintln(errw, "usage: yonder _secret-provision <account> <vault> [--write]  (token in $"+secrets.ProvisionTokenEnv+")")
+	usage := func() int {
+		fmt.Fprintln(errw, "usage: yonder _secret-provision <account> <vault> [--write] [--extra-vault V]...  (token in $"+secrets.ProvisionTokenEnv+")")
 		return 2
+	}
+	if len(args) < 2 {
+		return usage()
+	}
+	write := false
+	var extras []string
+	for i := 2; i < len(args); i++ {
+		switch {
+		case args[i] == "--write":
+			write = true
+		case args[i] == "--extra-vault" && i+1 < len(args):
+			i++
+			extras = append(extras, args[i])
+		default:
+			return usage()
+		}
 	}
 	tok := os.Getenv(secrets.ProvisionTokenEnv)
 	if tok == "" {
 		fmt.Fprintf(errw, "yonder _secret-provision: no token in $%s; run `yonder secret setup` from a machine with the 1Password app\n", secrets.ProvisionTokenEnv)
 		return 1
 	}
-	kind, err := ProvisionHere(tok, args[0], args[1], write)
+	kind, err := ProvisionHere(tok, args[0], args[1], extras, write)
 	if err != nil {
 		fmt.Fprintf(errw, "yonder _secret-provision: %v\n", err)
 		return 1
@@ -55,8 +71,8 @@ func SecretProvision(_ context.Context, args []string, _ io.Reader, out, errw io
 // ProvisionHere installs a service account token on this machine and notes
 // the account name and its write access on its own record, so they sync to
 // the fleet.
-func ProvisionHere(token, account, vault string, write bool) (string, error) {
-	kind, err := secrets.InstallServiceAccount(token, account, vault, write)
+func ProvisionHere(token, account, vault string, extras []string, write bool) (string, error) {
+	kind, err := secrets.InstallServiceAccount(token, account, vault, extras, write)
 	if err != nil {
 		return "", err
 	}

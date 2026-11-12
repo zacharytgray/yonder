@@ -51,3 +51,34 @@ func TestSecretProvision(t *testing.T) {
 		t.Fatal("unknown flag")
 	}
 }
+
+func TestSecretProvisionExtraVaults(t *testing.T) {
+	setup(t)
+	if err := secrets.SaveSettings(secrets.Settings{TokenStore: "file"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(secrets.ProvisionTokenEnv, "ops_DUMMYtoken9")
+	var out, errb bytes.Buffer
+	args := []string{"yonder-gpu-box", "Agents", "--extra-vault", "Ops", "--write", "--extra-vault", "Build Keys"}
+	if code := SecretProvision(context.Background(), args, nil, &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	s, _ := secrets.LoadSettings()
+	if s.Vault != "Agents" || !s.Write || strings.Join(s.ExtraVaults, ",") != "Ops,Build Keys" {
+		t.Fatalf("settings: %+v", s)
+	}
+	if p := secrets.Probe(false); strings.Join(p.ExtraVaults, ",") != "Ops,Build Keys" || !p.CanExtraVaults {
+		t.Fatalf("probe: %+v", p)
+	}
+	for _, bad := range [][]string{
+		{"yonder-gpu-box", "Agents", "--extra-vault"},
+		{"yonder-gpu-box", "Agents", "--bogus"},
+	} {
+		if code := SecretProvision(context.Background(), bad, nil, &out, &errb); code != 2 {
+			t.Errorf("%v: exit %d", bad, code)
+		}
+	}
+	if code := SecretProvision(context.Background(), []string{"a", "Agents", "--extra-vault", "Personal"}, nil, &out, &errb); code != 1 {
+		t.Fatalf("reserved vault: exit %d", code)
+	}
+}
