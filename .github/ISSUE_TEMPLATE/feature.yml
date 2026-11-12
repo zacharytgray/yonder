@@ -1,0 +1,27 @@
+name: Feature idea
+description: Something yonder should do, or do differently.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Yonder stays small on purpose: one person's own one to five machines, plain SSH over
+        Tailscale, no daemon and no server. Ideas that fit inside that are the easiest to say
+        yes to.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you were trying to do
+      description: The task, and where yonder got in the way or fell short.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: A command, a flag, a change in output. Rough is fine.
+  - type: textarea
+    id: agents
+    attributes:
+      label: Which agents and machines
+      description: For example Claude Code on a Mac reaching a Linux GPU box.
