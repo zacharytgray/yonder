@@ -103,3 +103,28 @@ func TestLayerDefaultsAndSet(t *testing.T) {
 		t.Fatalf("forget should drop the fleet's layers: %+v", ls)
 	}
 }
+
+// a fleet that wrote the old memory slot: it counts as no layer here, and
+// still passes through sync like any name this version doesn't know
+func TestUnknownLayerInFile(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	if err := writeFile(s.layersPath(), []byte("[memory]\non = true\nupdated_at = 2026-11-11T20:00:00Z\n")); err != nil {
+		t.Fatal(err)
+	}
+	if on := s.LayersOn(); len(on) != 2 || on["memory"] {
+		t.Fatalf("LayersOn: %v", on)
+	}
+	if err := s.SetLayer("memory", true, "laptop"); err == nil {
+		t.Fatal("memory is not a layer")
+	}
+	b, err := s.Bundle()
+	if err != nil || !b.Layers["memory"].On {
+		t.Fatalf("an unknown layer should pass through: %+v %v", b.Layers, err)
+	}
+	if _, err := s.MergeFrom(Bundle{}, "gpu-box"); err != nil {
+		t.Fatal(err)
+	}
+	if ls, _ := s.LayerSettings(); !ls["memory"].On {
+		t.Fatalf("a merge should keep it: %+v", ls)
+	}
+}

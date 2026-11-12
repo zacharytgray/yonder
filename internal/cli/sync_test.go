@@ -16,7 +16,7 @@ import (
 )
 
 func init() {
-	store.Register(store.Kind{Name: "testnotes", Layer: registry.LayerMemory})
+	store.Register(store.Kind{Name: "testnotes", Layer: registry.LayerAgents})
 	backgroundOff = true // a background sync here would re-run the test binary
 }
 
@@ -55,7 +55,7 @@ func twoHomes(t *testing.T) (*app, string, *bytes.Buffer) {
 			}
 		}
 	}
-	if err := a.store.SetLayer(registry.LayerMemory, true, "laptop"); err != nil {
+	if err := a.store.SetLayer(registry.LayerAgents, true, "laptop"); err != nil {
 		t.Fatal(err)
 	}
 	return a, peerHome, out
@@ -117,14 +117,14 @@ func TestSyncCommand(t *testing.T) {
 
 	// turned off there: skipped, not failed
 	ps := &registry.Store{Dir: filepath.Join(peerHome, "config")}
-	if err := ps.SetLayer(registry.LayerMemory, false, "gpu-box"); err != nil {
+	if err := ps.SetLayer(registry.LayerAgents, false, "gpu-box"); err != nil {
 		t.Fatal(err)
 	}
 	out.Reset()
 	if err := a.syncStore("testnotes", "laptop", nil, syncOpts{}); !err {
 		t.Fatalf("a peer with the layer off is skipped, not failed:\n%s", out)
 	}
-	if !strings.Contains(out.String(), "skipped: the memory layer is off there") {
+	if !strings.Contains(out.String(), "skipped: the agents layer is off there") {
 		t.Fatalf("output: %s", out)
 	}
 }

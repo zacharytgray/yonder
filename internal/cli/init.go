@@ -206,9 +206,7 @@ func (a *app) initLayers(self string, interactive bool, layers []string) error {
 	case interactive:
 		var opts []huh.Option[string]
 		for _, l := range registry.Layers {
-			if l.Available {
-				opts = append(opts, huh.NewOption(l.Name+"  "+l.Summary, l.Name).Selected(cur[l.Name]))
-			}
+			opts = append(opts, huh.NewOption(l.Name+"  "+l.Summary, l.Name).Selected(cur[l.Name]))
 		}
 		var sel []string
 		err := huh.NewMultiSelect[string]().
@@ -226,9 +224,6 @@ func (a *app) initLayers(self string, interactive bool, layers []string) error {
 	}
 	var on []string
 	for _, l := range registry.Layers {
-		if !l.Available {
-			continue
-		}
 		if want[l.Name] != cur[l.Name] {
 			if err := a.store.SetLayer(l.Name, want[l.Name], self); err != nil {
 				return err

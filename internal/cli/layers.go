@@ -67,9 +67,6 @@ func newLayersCmd() *cobra.Command {
 				if v.On {
 					state = "on"
 				}
-				if !v.Available {
-					state = "-"
-				}
 				detail := v.Summary
 				if v.Set {
 					detail += fmt.Sprintf(" (set %s by %s)", ago(*v.UpdatedAt), orDash(v.By))
@@ -87,7 +84,6 @@ func newLayersCmd() *cobra.Command {
 type layerView struct {
 	Name      string     `json:"name"`
 	On        bool       `json:"on"`
-	Available bool       `json:"available"`
 	Set       bool       `json:"set"` // false: nobody has set it, so it uses its default
 	By        string     `json:"by"`
 	UpdatedAt *time.Time `json:"updated_at"` // null when not set
@@ -101,7 +97,7 @@ func (a *app) layerViews() ([]layerView, error) {
 	}
 	var out []layerView
 	for _, l := range registry.Layers {
-		v := layerView{Name: l.Name, On: a.store.LayerOn(l.Name), Available: l.Available, Summary: l.Summary}
+		v := layerView{Name: l.Name, On: a.store.LayerOn(l.Name), Summary: l.Summary}
 		if st, ok := ls[l.Name]; ok {
 			t := st.UpdatedAt
 			v.Set, v.By, v.UpdatedAt = true, st.By, &t
@@ -119,15 +115,11 @@ func layerList() string {
 	return s
 }
 
-// checkLayerNames refuses unknown layers and ones not in this version.
+// checkLayerNames refuses names that aren't layers.
 func checkLayerNames(names []string) error {
 	for _, n := range names {
-		l, ok := registry.LookupLayer(n)
-		if !ok {
+		if _, ok := registry.LookupLayer(n); !ok {
 			return &usageError{fmt.Errorf("no layer named %q (layers: %s)", n, strings.Join(registry.LayerNames(), ", "))}
-		}
-		if !l.Available {
-			return &usageError{fmt.Errorf("the %s layer isn't in this version of yonder yet", n)}
 		}
 	}
 	return nil

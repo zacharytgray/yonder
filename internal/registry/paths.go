@@ -29,7 +29,7 @@ func StateDir() string {
 	return filepath.Join(homeDir(), ".local", "state", "yonder")
 }
 
-// DataDir holds the synced stores (agents/, later memory/).
+// DataDir holds the synced stores (agents/).
 func DataDir() string {
 	if h := yonderHome(); h != "" {
 		return filepath.Join(h, "data")

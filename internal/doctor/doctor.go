@@ -215,7 +215,6 @@ func layersDetail(on map[string]bool) string {
 	var yes, no []string
 	for _, l := range registry.Layers {
 		switch {
-		case !l.Available:
 		case on[l.Name]:
 			yes = append(yes, l.Name)
 		default:

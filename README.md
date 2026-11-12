@@ -178,7 +178,6 @@ Connecting your machines is always on. On top of it sit optional layers, each on
 |---|---|
 | `secrets` | Commands that use secrets from 1Password or Bitwarden |
 | `agents` | Agent instructions, skills, subagents and hooks, synced between machines |
-| `memory` | Shared agent memory. Not in this version yet |
 
 `yonder init` asks which ones you want, or takes `--layers secrets,agents`. Change them any time:
 

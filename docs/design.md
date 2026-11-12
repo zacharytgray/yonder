@@ -7,7 +7,7 @@ no server, no account. Tailscale carries the network; plain OpenSSH carries the 
 ## Principles
 
 - Plain SSH over the tailnet. Yonder adds a registry, discovery, a log and a skill. Connecting the
-  machines is always on; secrets, agent config sync and (later) memory are optional layers on top
+  machines is always on; secrets and agent config sync are optional layers on top
   (see Layers).
 - Agents handle secret names. Values stay out of command lines, logs and accidental output.
   This does not stop an agent that deliberately reads, transforms or prints a value (see
@@ -480,7 +480,7 @@ Agents parse these. Keys are always present; new keys may be added, none removed
 {
   "self": "laptop",
   "tailscale_error": "",
-  "layers": {"secrets": true, "agents": false, "memory": false},
+  "layers": {"secrets": true, "agents": false},
   "machines": [
     {
       "name": "gpu-box", "self": false,
@@ -569,29 +569,31 @@ record (including `yonder_path`, `ssh_host_key`, `ssh_client_keys`).
 ## Layers
 
 Connecting the machines (registry, discovery, `run`, `cp`, `jobs`, `log`, `mesh`, `doctor`, the
-skill) is always on. Three layers sit on top, each optional and fleet-wide:
+skill) is always on. Two layers sit on top, each optional and fleet-wide:
 
 - `secrets`: `--secret`, `secret read`, `test` and `set` (see Secrets).
 - `agents`: the agents store and its sync (see Agents store).
-- `memory`: a slot for a later release. Naming it is accepted in settings so a newer yonder's
-  setting passes through an older one, but `enable memory` says it isn't in this version.
+
+There is no memory layer. General agent memory stays in each agent's own memory.
 
 `yonder enable <layer>...` and `yonder disable <layer>...` change them; `yonder layers [--json]`
-shows them (`{"layers":[{"name","on","available","set","by","updated_at","summary"}]}`, `set` false
+shows them (`{"layers":[{"name","on","set","by","updated_at","summary"}]}`, `set` false
 when nobody has set it). `init` asks with a multi-select (the current state starts ticked), or takes `--layers secrets,agents` (`none` for none); `init --yes` without the
 flag keeps what is set. Only layers whose value changes are written, so an unchanged one keeps
 its date. `ls` prints one line under the table (`layers: secrets on, agents off`) and `ls --json`
-has `"layers": {"secrets": true, "agents": false, "memory": false}`. `doctor` has a `layers` line.
+has `"layers": {"secrets": true, "agents": false}`. `doctor` has a `layers` line.
 
 The setting lives in `layers.toml`, one table per layer: `on`, `updated_at`, `by` (the machine that
 set it). It rides in the registry bundle as `"layers"`, merged per layer, newest `updated_at`
 wins, with the same 5-minute skew guard as records. An older yonder ignores the key and leaves it
 out of its reply, which never clears the setting here. `SetLayer` always dates a change after the
-one it replaces, even within one second.
+one it replaces, even within one second. A name this version doesn't know (a newer yonder's
+layer, or a hand-written one) is never on here, is refused by `enable`, and still passes through
+sync unchanged.
 
 A layer nobody has set uses its default: `secrets` is on where `[secrets] provider` is set, so a
 0.1 fleet that used secrets keeps them, and `secret setup` on a fresh machine turns it on unless
-someone turned it off. `agents` and `memory` start off.
+someone turned it off. `agents` starts off.
 
 Turning a layer off stops it and keeps its data:
 
@@ -869,7 +871,7 @@ harness's config is the agents store, below.)
 A store is a folder under `~/.local/share/yonder/<store>` that syncs peer to peer over the same
 pinned ssh transport as everything else. There is no git remote and no daemon. Data stays on
 the tailnet. A user who wants git history can `git init` inside a store; yonder ignores `.git/`
-and never runs git. The agents store is the first; memory plugs into the same engine later. A
+and never runs git. The agents store is the only one so far; another plugs into the same engine. A
 store registers a kind: its name, its layer, which paths it ignores, a check every file must pass
 on both sides, which incoming changes wait for review, and a hook that runs after a sync changes
 files there.

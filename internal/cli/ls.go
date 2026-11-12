@@ -307,9 +307,6 @@ func writeJSON(w io.Writer, v any) error {
 func layersLine(on map[string]bool) string {
 	var parts []string
 	for _, l := range registry.Layers {
-		if !l.Available {
-			continue
-		}
 		state := "off"
 		if on[l.Name] {
 			state = "on"

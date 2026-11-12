@@ -14,21 +14,18 @@ import (
 const (
 	LayerSecrets = "secrets"
 	LayerAgents  = "agents"
-	LayerMemory  = "memory"
 )
 
 // LayerInfo describes one optional layer.
 type LayerInfo struct {
-	Name      string
-	Summary   string
-	Available bool // false: named so the slot exists, not in this version yet
+	Name    string
+	Summary string
 }
 
 // Layers is every layer this version knows, in display order.
 var Layers = []LayerInfo{
-	{Name: LayerSecrets, Summary: "run commands with secrets from 1Password or Bitwarden", Available: true},
-	{Name: LayerAgents, Summary: "sync agent instructions, skills, subagents and hooks between machines", Available: true},
-	{Name: LayerMemory, Summary: "shared agent memory (not in this version yet)", Available: false},
+	{Name: LayerSecrets, Summary: "run commands with secrets from 1Password or Bitwarden"},
+	{Name: LayerAgents, Summary: "sync agent instructions, skills, subagents and hooks between machines"},
 }
 
 // LookupLayer finds a layer by name.
@@ -41,13 +38,11 @@ func LookupLayer(name string) (LayerInfo, bool) {
 	return LayerInfo{}, false
 }
 
-// LayerNames lists the layers that can be turned on in this version.
+// LayerNames lists the layers.
 func LayerNames() []string {
 	var out []string
 	for _, l := range Layers {
-		if l.Available {
-			out = append(out, l.Name)
-		}
+		out = append(out, l.Name)
 	}
 	return out
 }

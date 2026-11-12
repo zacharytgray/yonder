@@ -58,10 +58,10 @@ func TestLocalEndToEnd(t *testing.T) {
 			By   string
 		}
 	}
-	if err := json.Unmarshal([]byte(f.must("layers", "--json").stdout), &lv); err != nil || len(lv.Layers) != 3 || !lv.Layers[0].On || !lv.Layers[0].Set || lv.Layers[0].By != "laptop" || lv.Layers[1].On {
+	if err := json.Unmarshal([]byte(f.must("layers", "--json").stdout), &lv); err != nil || len(lv.Layers) != 2 || !lv.Layers[0].On || !lv.Layers[0].Set || lv.Layers[0].By != "laptop" || lv.Layers[1].On {
 		t.Fatalf("layers --json: %+v %v", lv, err)
 	}
-	if r := f.run("", "enable", "memory"); r.code != 2 || !strings.Contains(r.stderr, "isn't in this version") {
+	if r := f.run("", "enable", "memory"); r.code != 2 || !strings.Contains(r.stderr, `no layer named "memory" (layers: secrets, agents)`) {
 		t.Fatalf("enable memory: %+v", r)
 	}
 	if r := f.run("", "enable", "nope"); r.code != 2 {
@@ -271,7 +271,7 @@ func TestLayers(t *testing.T) {
 		t.Fatalf("ls: %s", r.stdout)
 	}
 	var ls struct{ Layers map[string]bool }
-	if err := json.Unmarshal([]byte(f.must("ls", "--json", "--no-refresh").stdout), &ls); err != nil || !ls.Layers["agents"] || ls.Layers["secrets"] || ls.Layers["memory"] {
+	if err := json.Unmarshal([]byte(f.must("ls", "--json", "--no-refresh").stdout), &ls); err != nil || !ls.Layers["agents"] || ls.Layers["secrets"] || len(ls.Layers) != 2 {
 		t.Fatalf("ls --json layers: %+v %v", ls, err)
 	}
 	// --yes without --layers keeps what is set
