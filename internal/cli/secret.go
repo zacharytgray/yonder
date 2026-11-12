@@ -8,11 +8,15 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/zacharytgray/yonder/internal/registry"
+	"github.com/zacharytgray/yonder/internal/remote"
+	"github.com/zacharytgray/yonder/internal/runlog"
 	"github.com/zacharytgray/yonder/internal/secrets"
 )
 
@@ -28,11 +32,12 @@ exactly NAME in the agent vault. secrets.toml maps NAME to a reference
 synced. Vault items work by name on every machine that reads the vault.
 ` + "`yonder secret set NAME`" + ` stores a new one there from stdin or a hidden prompt.
 ` + "`yonder run m --secret NAME`" + ` resolves NAME here and passes it to the command's
-environment on m. Output is scrubbed to [NAME].`,
+environment on m. Output is scrubbed to [NAME].
+` + "`yonder secret read NAME`" + ` prints a value, for programs that need a key on stdout.`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	cmd.AddCommand(newSecretAddCmd(), newSecretSetCmd(), newSecretLsCmd(), newSecretRmCmd(), newSecretTestCmd(), newSecretSetupCmd(), newSecretTokenCmd())
+	cmd.AddCommand(newSecretAddCmd(), newSecretSetCmd(), newSecretLsCmd(), newSecretRmCmd(), newSecretTestCmd(), newSecretReadCmd(), newSecretSetupCmd(), newSecretTokenCmd())
 	return cmd
 }
 
@@ -293,6 +298,57 @@ func newSecretTestCmd() *cobra.Command {
 			fmt.Fprintf(newApp(cmd).out, "%s: ok, %d chars\n", name, utf8.RuneCountInString(vals[name]))
 			return nil
 		},
+	}
+}
+
+func newSecretReadCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "read NAME",
+		Short: "Print a secret's value, for programs that need a key on stdout",
+		Long: `Print the value of NAME, then one newline, like ` + "`op read`" + `. It resolves on this
+machine only, the same way --secret does here: secrets.toml, then the vaults this
+machine reads. Desktop mode may ask for Touch ID.
+
+This is for programs that need a key on stdout, such as an auth helper in a config file:
+
+  auth_command = "yonder secret read MODEL_API_KEY"
+
+Agents should use ` + "`yonder run <machine> --secret NAME`" + ` instead, which keeps the value
+out of their output. The read is logged here by name, never the value.`,
+		Args: usageArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if err := secrets.ValidName(name); err != nil {
+				return &usageError{err}
+			}
+			a := newApp(cmd)
+			start := time.Now()
+			vals, err := secrets.Resolve([]string{name})
+			if err == nil {
+				_, err = fmt.Fprintln(a.out, vals[name])
+			}
+			a.logRead(name, start, err)
+			return err
+		},
+	}
+}
+
+// logRead records a secret read in this machine's log, by name only.
+func (a *app) logRead(name string, start time.Time, err error) {
+	self := ""
+	if c, cerr := a.store.Config(); cerr == nil {
+		self = c.Self
+	}
+	e := runlog.Entry{
+		Time: start.UTC(), ID: remote.NewID(), From: self, To: self, Harness: detectHarness(),
+		User: localUser(), Command: "secret read " + name, Secrets: []string{name},
+		Exit: runlog.Exit(ExitCode(err)), MS: time.Since(start).Milliseconds(),
+	}
+	if err != nil {
+		e.Error = err.Error()
+	}
+	if werr := runlog.Append(registry.LogPath(), e); werr != nil {
+		a.warnf("could not write log: %v", werr)
 	}
 }
 

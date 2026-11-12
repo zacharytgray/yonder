@@ -72,6 +72,9 @@ to it as `$HF_TOKEN` in the command. Yonder removes its value from the output, s
 cut or encoded value gets through, so never print a secret in any form. Do not try to read the value,
 and do not read Yonder's token store or the user's password manager directly.
 
+Do not run `yonder secret read` yourself. It prints the value and is meant for config files that
+need a key from a command; use `--secret` instead.
+
 Use only the names `yonder secret ls` shows. Do not add a reference to some other vault item with
 `yonder secret add`.
 

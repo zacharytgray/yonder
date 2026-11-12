@@ -50,6 +50,18 @@ func TestSecretsEndToEnd(t *testing.T) {
 	if r.stdout != "API_KEY: ok, 15 chars\n" || strings.Contains(r.stdout+r.stderr, "dummy-value") {
 		t.Fatalf("test: %+v", r)
 	}
+	if r := f.must("secret", "read", "API_KEY"); r.stdout != "dummy-value-123\n" || r.stderr != "" {
+		t.Fatalf("read: %+v", r)
+	}
+	if r := f.run("", "secret", "read", "NOPE"); r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "known: API_KEY, OTHER") {
+		t.Fatalf("read unknown: %+v", r)
+	}
+	if r := f.run("", "secret", "read", "bad-name"); r.code != 2 || r.stdout != "" {
+		t.Fatalf("read bad name: %+v", r)
+	}
+	if r := f.run("", "secret", "read"); r.code != 2 {
+		t.Fatalf("read with no name: %+v", r)
+	}
 	r = f.must("run", "laptop", "--secret", "API_KEY", "--", "echo $API_KEY; echo ${#API_KEY}")
 	if r.stdout != "[API_KEY]\n15\n" {
 		t.Fatalf("run --secret: %+v", r)
@@ -65,6 +77,17 @@ func TestSecretsEndToEnd(t *testing.T) {
 	log, err := os.ReadFile(filepath.Join(f.home, "yonder", "state", "log.jsonl"))
 	if err != nil || !strings.Contains(string(log), `"secrets":["API_KEY"]`) || strings.Contains(string(log), "dummy-value") {
 		t.Fatalf("log: %s %v", log, err)
+	}
+	var reads []string
+	for _, l := range strings.Split(string(log), "\n") {
+		if strings.Contains(l, `"command":"secret read `) {
+			reads = append(reads, l)
+		}
+	}
+	if len(reads) != 2 || !strings.Contains(reads[0], `"command":"secret read API_KEY"`) || !strings.Contains(reads[0], `"exit":0`) ||
+		!strings.Contains(reads[0], `"from":"laptop"`) || !strings.Contains(reads[0], `"harness":"`) ||
+		!strings.Contains(reads[1], `"command":"secret read NOPE"`) || !strings.Contains(reads[1], `"exit":1`) {
+		t.Fatalf("read log entries: %q", reads)
 	}
 }
 
