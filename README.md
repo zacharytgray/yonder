@@ -292,7 +292,7 @@ approval, Yonder will support it as another mode.
 | `yonder ls` / `yonder show <machine>` | Machines, roles, state, hardware, models, agents. `--json` for scripts |
 | `yonder run <machine> [--secret NAME] [--detach] -- <cmd>` | Run a command there |
 | `yonder cp [--force] <src>... <dest>` | Send files and folders between machines, like scp. Each side is a path or `<machine>:<path>` |
-| `yonder jobs <machine> [id]` | List detached jobs, or print one job's output |
+| `yonder jobs <machine> [id] [--follow\|--kill]` | List detached jobs, or print one job's output. `--follow` waits for it and exits with its code. `--kill` stops it |
 | `yonder log` | What ran where, across every machine |
 | `yonder add <machine>` | Add one more machine |
 | `yonder refresh [machine]` | Rediscover facts and sync the registry everywhere |

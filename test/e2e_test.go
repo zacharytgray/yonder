@@ -87,6 +87,20 @@ func TestLocalEndToEnd(t *testing.T) {
 	if r := f.must("jobs", "laptop", id); r.stdout != "started\n" {
 		t.Fatalf("job log: %q", r.stdout)
 	}
+	if r := f.run("", "jobs", "laptop", id, "--follow"); r.code != 4 || r.stdout != "started\n" {
+		t.Fatalf("follow a finished job: %+v", r)
+	}
+	r = f.must("run", "--detach", "laptop", "--", "sleep 30")
+	long := strings.TrimSpace(r.stdout)
+	if r := f.must("jobs", "laptop", long, "--kill"); !strings.Contains(r.stdout, "stopped job "+long+" with SIGTERM") {
+		t.Fatalf("kill: %+v", r)
+	}
+	if r := f.run("", "jobs", "laptop", long, "--follow"); r.code != 143 {
+		t.Fatalf("follow a killed job: %+v", r)
+	}
+	if r := f.run("", "jobs", "laptop", "--kill"); r.code != 2 {
+		t.Fatalf("--kill without an id: %+v", r)
+	}
 
 	// ls --json: stable shape agents parse
 	var ls struct {

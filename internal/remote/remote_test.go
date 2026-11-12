@@ -183,6 +183,92 @@ func TestDetach(t *testing.T) {
 	}
 }
 
+// startJob detaches command as job id and waits until its command is running.
+func startJob(t *testing.T, id, command string) {
+	t.Helper()
+	env := Envelope{ID: id, Command: command, From: "laptop", Detach: true}
+	if code := Exec(context.Background(), nil, input(t, env, ""), io.Discard, os.Stderr); code != 0 {
+		t.Fatalf("detach exit %d", code)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		st, err := loadStatus(registry.JobsDir(), id)
+		log, _ := os.ReadFile(filepath.Join(registry.JobsDir(), id+".log"))
+		if err == nil && st.PGID > 0 && strings.Contains(string(log), "up") {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("job %s never started", id)
+}
+
+func TestFollowAndKill(t *testing.T) {
+	setup(t)
+	jobPoll = 20 * time.Millisecond
+	killGrace = 500 * time.Millisecond
+	ctx := context.Background()
+	killer := func(id string) (int, string, string) {
+		var out, errb bytes.Buffer
+		code := Kill(ctx, []string{id}, input(t, Envelope{Command: "kill job " + id, From: "laptop", Harness: "codex"}, ""), &out, &errb)
+		return code, out.String(), errb.String()
+	}
+
+	// follow streams to the end and exits with the job's code
+	startJob(t, "job-f", `echo up; sleep 0.3; echo two; exit 5`)
+	var out bytes.Buffer
+	if code := Jobs(ctx, []string{"job-f", "--follow"}, nil, &out, os.Stderr); code != 5 || out.String() != "up\ntwo\n" {
+		t.Fatalf("follow: code %d out %q", code, out.String())
+	}
+	if code, _, errs := killer("job-f"); code != 1 || !strings.Contains(errs, "not running (exited 5)") {
+		t.Fatalf("kill of a finished job: %d %q", code, errs)
+	}
+
+	// sigterm is enough for a plain command
+	startJob(t, "job-t", `echo up; sleep 30`)
+	if code, msg, errs := killer("job-t"); code != 0 || !strings.Contains(msg, "with SIGTERM (exit 143)") {
+		t.Fatalf("kill: %d %q %q", code, msg, errs)
+	}
+	if code := Jobs(ctx, []string{"job-t", "--follow"}, nil, io.Discard, io.Discard); code != 143 {
+		t.Fatalf("follow after kill: %d", code)
+	}
+
+	// a command that ignores sigterm gets sigkill after the grace period
+	startJob(t, "job-k", `trap "" TERM; echo up; sleep 30`)
+	if code, msg, errs := killer("job-k"); code != 0 || !strings.Contains(msg, "with SIGKILL after") || !strings.Contains(msg, "(exit 137)") {
+		t.Fatalf("kill -9: %d %q %q", code, msg, errs)
+	}
+	st, err := loadStatus(registry.JobsDir(), "job-k")
+	if err != nil || st.State != "exited" || *st.Exit != 137 {
+		t.Fatalf("status after kill: %+v %v", st, err)
+	}
+
+	if code, _, _ := killer("no-such-job"); code != 1 {
+		t.Fatal("kill of a missing job must fail")
+	}
+	if code := Jobs(ctx, []string{"--follow"}, nil, io.Discard, io.Discard); code != 2 {
+		t.Fatal("--follow without an id is a usage error")
+	}
+
+	// every kill is logged here, with who asked
+	es, err := runlog.Read(registry.LogPath(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kills []runlog.Entry
+	for _, e := range es {
+		if strings.HasPrefix(e.Command, "kill job ") {
+			kills = append(kills, e)
+		}
+	}
+	if len(kills) != 4 || *kills[0].Exit != 1 || kills[0].Error == "" {
+		t.Fatalf("want 4 kill entries, got %+v", kills)
+	}
+	k := kills[1]
+	if k.Command != "kill job job-t: echo up; sleep 30" || k.From != "laptop" || k.Harness != "codex" || *k.Exit != 0 || k.Side != runlog.SideTarget {
+		t.Fatalf("kill entry %+v", k)
+	}
+}
+
 func TestSync(t *testing.T) {
 	setup(t)
 	t0 := time.Date(2026, 11, 11, 20, 0, 0, 0, time.UTC)

@@ -33,6 +33,8 @@ yonder run <machine> -- <command>
 - Quote shell syntax so it runs remotely, not here: `yonder run gpu-box -- 'df -h / && nvidia-smi'`.
 - For anything that runs longer than a few minutes, add `--detach`. It prints a job id at once.
   Read the output later with `yonder jobs <machine> <id>`.
+- To wait for a job, `yonder jobs <machine> <id> --follow` streams its output and exits with its code.
+- To stop a job, `yonder jobs <machine> <id> --kill`. Ask the user first unless they asked for it.
 - Run on the machine named `self` in `ls` without Yonder. Just run the command.
 
 ## Send a file to another machine
