@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/remote"
 	"github.com/zacharytgray/yonder/internal/transport"
@@ -119,7 +120,8 @@ func (a *app) yonderJSON(r transport.Runner, m registry.Machine, args []string, 
 	return nil
 }
 
-// stripLostHere applies lost tombstones to this machine's authorized_keys.
+// stripLostHere applies lost tombstones to this machine's authorized_keys, and drops
+// the lines mesh added for any removed machine.
 func (a *app) stripLostHere() {
 	b, err := a.store.Bundle()
 	if err != nil {
@@ -127,10 +129,13 @@ func (a *app) stripLostHere() {
 		return
 	}
 	lines, err := remote.StripLost(b.Tombstones, b.Machines)
-	for _, l := range lines {
+	more, merr := mesh.StripRemoved(b.Tombstones, b.Machines)
+	for _, l := range append(lines, more...) {
 		fmt.Fprintln(a.out, l)
 	}
-	if err != nil {
-		a.warnf("%v", err)
+	for _, e := range []error{err, merr} {
+		if e != nil {
+			a.warnf("%v", e)
+		}
 	}
 }

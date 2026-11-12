@@ -23,6 +23,7 @@ type fakeRemote struct {
 	err     map[string]error
 	names   map[string][]string
 	skills  map[string]agents.Report
+	keys    map[string]string
 }
 
 func (f fakeRemote) Version(m registry.Machine) (string, error) {
@@ -44,7 +45,7 @@ func (f fakeRemote) Skills(m registry.Machine) (agents.Report, error) {
 	return f.skills[m.Name], nil
 }
 
-func (f fakeRemote) AuthorizedKeys(registry.Machine) (string, error) { return "", nil }
+func (f fakeRemote) AuthorizedKeys(m registry.Machine) (string, error) { return f.keys[m.Name], nil }
 
 func machine(name string, discovered time.Time) registry.Machine {
 	return registry.Machine{Name: name, OS: "linux", Arch: "amd64", TailscaleIP: "100.64.0.9", SSHUser: "me", SSHPort: 22,
@@ -292,5 +293,45 @@ func TestLostKeyThroughSymlinkStillFails(t *testing.T) {
 	c, ok := find(Run(e), groupLocal, "authorized_keys")
 	if !ok || c.Status != Fail || !strings.Contains(c.Fix, "by hand") || !strings.Contains(c.Detail, "symlink") {
 		t.Fatalf("want a FAIL naming the symlink: %+v", c)
+	}
+}
+
+func TestMeshUnreachedAndLeftover(t *testing.T) {
+	const (
+		laptopKey = "ssh-ed25519 AAAAlaptop me@laptop"
+		gpuKey    = "ssh-ed25519 AAAAgpu me@gpu-box"
+	)
+	gpu := machine("gpu-box", now)
+	gpu.DNSName, gpu.SSHClientKeys = "gpu-box.example.ts.net", []string{gpuKey}
+	e := env(t, gpu)
+	self, _ := e.Store.Machine("laptop")
+	self.SSHClientKeys = []string{laptopKey}
+	if err := e.Store.SaveMachine(self); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Store.SaveTombstone(registry.Tombstone{Name: "old-box", RemovedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	e.Status.Peers = []tailnet.Peer{peer("gpu-box", true)}
+	e.Remote = fakeRemote{version: map[string]string{"gpu-box": "1.0.0"}, names: map[string][]string{"gpu-box": {"gpu-box", "laptop"}},
+		keys: map[string]string{"gpu-box": "ssh-ed25519 AAAAold yonder:old-box\n"}}
+	ak := transport.AuthorizedKeysPath(e.Home)
+	_ = os.MkdirAll(filepath.Dir(ak), 0o700)
+	if err := os.WriteFile(ak, []byte(gpuKey+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cs := Run(e)
+	if c, ok := find(cs, groupLocal, "mesh"); !ok || c.Status != Pass {
+		t.Fatalf("this machine trusts gpu-box: %+v", c)
+	}
+	var warns []Check
+	for _, c := range cs {
+		if c.Group == "gpu-box" && c.Name == "mesh" {
+			warns = append(warns, c)
+		}
+	}
+	if len(warns) != 2 || !strings.Contains(warns[0].Detail, "laptop can't ssh in") || warns[0].Fix != "yonder mesh gpu-box" ||
+		!strings.Contains(warns[1].Detail, "removed machine old-box") || !strings.HasPrefix(warns[1].Fix, "yonder remove old-box --yes") {
+		t.Fatalf("gpu-box mesh checks: %+v", warns)
 	}
 }

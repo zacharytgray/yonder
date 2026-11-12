@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/zacharytgray/yonder/internal/discover"
+	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/runlog"
 	"github.com/zacharytgray/yonder/internal/tailnet"
@@ -56,7 +57,8 @@ func Dispatch(ctx context.Context, args []string, in io.Reader, out, errw io.Wri
 
 // Sync is `yonder _sync`: bundle JSON on stdin, merged bundle JSON on stdout.
 // under sshd it merges only from a known fleet machine, under FromPeer's rules.
-// it also strips lost machines' keys from authorized_keys here, once each.
+// it also strips lost machines' keys from authorized_keys here, once each, and
+// the lines mesh added for removed machines.
 func Sync(ctx context.Context, _ []string, in io.Reader, out, errw io.Writer) int {
 	var b registry.Bundle
 	if err := json.NewDecoder(io.LimitReader(in, 16<<20)).Decode(&b); err != nil {
@@ -82,6 +84,9 @@ func Sync(ctx context.Context, _ []string, in io.Reader, out, errw io.Writer) in
 	}
 	if _, err := StripLost(merged.Tombstones, merged.Machines); err != nil {
 		fmt.Fprintf(errw, "yonder _sync: %v\n", err) // doctor flags keys left behind
+	}
+	if _, err := mesh.StripRemoved(merged.Tombstones, merged.Machines); err != nil {
+		fmt.Fprintf(errw, "yonder _sync: %v\n", err)
 	}
 	if err := json.NewEncoder(out).Encode(merged); err != nil {
 		return 1

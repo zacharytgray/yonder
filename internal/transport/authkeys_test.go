@@ -162,3 +162,27 @@ func TestStripRefusesSymlinks(t *testing.T) {
 		check(t, filepath.Join(dir, ".ssh", "authorized_keys"), real)
 	})
 }
+
+func TestEditAuthorizedKeysCreateAndSymlink(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".ssh", "authorized_keys")
+	add := func(c string) (string, []string) { return c + otherKey + "\n", []string{otherKey} }
+	if _, backup, err := EditAuthorizedKeys(path, true, add); err != nil || backup != "" {
+		t.Fatalf("create: %q %v", backup, err)
+	}
+	if st, err := os.Stat(path); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("created %v %v", st, err)
+	}
+	if _, _, err := EditAuthorizedKeys(filepath.Join(dir, "none"), false, add); err != nil {
+		t.Fatalf("missing without create: %v", err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := EditAuthorizedKeys(link, true, add)
+	var se *SymlinkError
+	if !errors.As(err, &se) || !se.Add || !strings.Contains(err.Error(), "Add these 1 line(s) to") {
+		t.Fatalf("want an add refusal, got %v", err)
+	}
+}

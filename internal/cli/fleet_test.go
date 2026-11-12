@@ -40,6 +40,9 @@ func (f *fakeSSH) Shell(_ context.Context, _ transport.Target, script string, st
 	f.mu.Lock()
 	f.scripts = append(f.scripts, script)
 	f.mu.Unlock()
+	if f.shell == nil {
+		return 1, fmt.Errorf("shell not faked")
+	}
 	return f.shell(script, stdio)
 }
 

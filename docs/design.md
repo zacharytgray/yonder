@@ -30,6 +30,7 @@ internal/discover/     hardware, models, harnesses
 internal/secrets/      providers (1password, bws) and output scrubbing
 internal/agents/       embedded SKILL.md and per-harness install
 internal/doctor/       checks
+internal/mesh/         which fleet keys each machine's authorized_keys should hold; the sh that edits a peer's
 internal/version/      version string, set with -ldflags
 skill/yonder/SKILL.md  the agent skill (embedded into the binary)
 test/                  end-to-end tests against the built binary (+ docker integration)
@@ -269,7 +270,7 @@ Transport: the caller pipes `yonder _send` on the source machine into `yonder _r
 destination, each run through the usual runner: in process for this machine, ssh with the pinned
 host key for a peer. Both machines go through `Reach` first (offline: exit 75; address changed:
 refused). Between two other machines the data is relayed through the caller, since peers don't
-hold ssh keys for each other. Both commands take the `_exec` envelope line first, with a `copy`
+necessarily trust each other's keys (see Mesh). Both commands take the `_exec` envelope line first, with a `copy`
 object (`sources`, `dest`, `force`) and the text `cp <m>:<src>... -> <m>:<dest>` as `command`;
 `_exec` refuses an envelope with `copy` set. A tar stream over the existing ssh channel was picked
 over scp or sftp: it reuses the pinned transport and the envelope as is, behaves the same whatever
@@ -340,6 +341,45 @@ Nothing in the interactive list starts selected. After adding
 peers, init also installs the skill on each machine it added that is online and set up (the
 `agents install --all-machines` path), asking once "Install the skill on <names> too?" unless
 `--yes`, and prints one line per machine. Failures there are warnings.
+
+After a successful `add`, and after `init` added at least one peer, yonder offers the mesh step
+(see Mesh): "Let these machines ssh into each other?", default yes. `--yes`, or no terminal,
+takes the default; `--no-mesh` skips it. `add` meshes only the pairs that involve the new
+machine; `init` meshes the whole fleet. A mesh failure is a warning, since the add itself worked.
+
+## Mesh
+
+`add` copies a key from the machine it runs on, so only that machine can ssh into the new one.
+`yonder mesh [<m>] [--yes] [--allow-shared]` closes the gap: every online machine's
+`~/.ssh/authorized_keys` gets the `ssh_client_keys` of every other fleet machine. With `<m>`, only
+the pairs that involve `m`: `m` gets everyone's keys, everyone else gets `m`'s. It prints the plan
+(per machine, whose keys it adds) and asks once, default yes; `--yes` or no terminal takes it.
+Offline machines are named, to mesh later. Exit 1 if any machine could not be updated.
+
+Keys come only from records this machine holds (Trust model): set up, with a pinned host key (so
+sync can no longer change their `ssh_client_keys`), no tombstone, and still the tailnet node they
+were added as (the peer behind the record is at the recorded `tailscale_ip`). A machine the
+tailscale account doesn't own is left out unless `--allow-shared`. A key any lost tombstone lists
+(`ssh_client_keys` or `held_keys`) is never handed out, so a later mesh can't re-trust a key `remove
+--lost --include-shared` took away. Each key is written as its `type base64` only, never with
+options or the original comment, and a type or base64 with any other character is skipped.
+
+Each line added is `<type> <base64> yonder:<machine>`; the tag is how `remove` finds it. Mesh only
+appends: existing lines stay byte for byte, and a key already in the file is skipped, wherever it
+sits (with options, under another tag, or commented out with `#`, so a key the user disabled by
+hand stays disabled). A run with nothing to add writes nothing. Otherwise the original goes to
+`authorized_keys.yonder-bak.<unix-nanos>` first, as with `remove --lost`, and the file keeps its
+mode; a missing file is created 0600 in a 0700 `~/.ssh`. If `~/.ssh/authorized_keys` or `~/.ssh`
+is a symlink, nothing is written and the lines to add by hand are printed.
+
+This machine's file is edited in Go (`transport.EditAuthorizedKeys`, the same code as the strip).
+A peer's is read and replaced with plain `sh` over the pinned ssh connection, not a yonder
+subcommand, so mesh works on peers running an older yonder (an `add` may have installed an older
+release there, and the fleets that need repairing predate mesh). The read prints the file's
+`cksum`, whether it is a symlink, and its content; yonder computes the new content; the write
+script refuses a symlink, refuses (exit 4) if the `cksum` changed since the read, makes the
+timestamped backup, and renames a temp file into place. A changed file is read and tried once
+more.
 
 Sync: the caller sends its bundle (`{"machines":[...],"tombstones":[...],"clear_lost":[...]}`) to
 each online machine's `_sync`, merges each reply as coming from that machine (same rules as
@@ -704,14 +744,20 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   with a live record is its own FAIL, naming those machines, with fix "make new keys there, then
   `yonder remove <lost> --lost --include-shared --yes`"; when `authorized_keys` or `~/.ssh` is a
   symlink the check reads through it and the fix says to delete the lines by hand);
-  `secrets.Health()`.
+  `secrets.Health()`. Mesh (below) for this machine's own file.
 - Each fleet machine, in parallel: in tailscale status; online (offline is a WARN with last seen
   and notes, and its other checks are skipped); pending (WARN; with no held pin the detail is
   "<m> is online now; run `yonder add <m>` to finish setup", with a pin the fix is `yonder refresh <m>`); no pinned host key (fix `yonder add
   <m>`); record address matches the tailnet (FAIL, fix `yonder remove <m> && yonder add <m>`); ssh with the pinned host key, by running
   `yonder version` there (BatchMode, 5s connect timeout); same yonder version as here; stale
   record (`discovered_at` older than 7 days, fix `yonder refresh <m>`); skill state from
-  `yonder agents status --json`; its `authorized_keys` when there are lost machines.
+  `yonder agents status --json`; its `authorized_keys` for lost machines' keys and for mesh.
+- Mesh, for each machine whose `authorized_keys` it reads (this one, and each online set-up
+  peer): WARN when a fleet machine that mesh would hand keys out for has none of its recorded keys
+  in that file, "laptop can't ssh in: none of its keys on record are in ~/.ssh/authorized_keys",
+  fix `yonder mesh <m>`. A machine with no keys on record can't be checked and is left out. WARN
+  for each removed machine that still has lines tagged for it (the same count `remove` would
+  strip), fix `yonder remove <name> --yes`.
 - Registry consistency: each online machine's `_sync` reply to an empty bundle (it merges nothing
   and returns what that machine has) must name the same machines as this one.
 
@@ -754,6 +800,16 @@ caller-side entry (`"command":"yonder remove <m>[ --lost]"`).
   `include_shared` on the tombstone (same `removed_at`), so machines offline now strip the shared
   keys at their next sync; `doctor` fails while any machine still
   trusts a lost key.
+- Every remove (plain, `--lost`, and reruns) also deletes the lines `yonder mesh` added for `m`
+  (tagged `yonder:<m>`), here and on every online machine, with the same read-edit-write as mesh
+  (backup first, symlink refused, nothing else touched). A key a live record also lists is kept,
+  since mesh tagged a shared key with whichever machine came first, unless `--lost
+  --include-shared`. Lines the user added by hand are left alone, so plain remove still says the
+  machine's other keys are trusted. A machine offline now drops the lines at its next sync: after
+  merging, `_sync` (and the caller after every sync) strips the tagged lines of every machine it
+  holds a tombstone for, under the same keep rule (`include_shared` from the tombstone). That
+  needs no applied-list: a run with nothing to strip doesn't write. `yonder remove <m>` on an
+  already removed `m` reruns only this cleanup on the machines online now and exits 0.
 - Offline peers keep the record until a sync reaches them; any later `yonder refresh` from a
   machine that has the tombstone pushes it, and a lost tombstone strips the keys there too. A removed machine that comes back and syncs is refused
   by every machine holding its tombstone (see Trust model).
@@ -803,6 +859,10 @@ way, such as the same LAN.
   then its sync sends `"clear_lost":["m"]`; a peer drops its lost tombstone for `m` unless the
   sender is `m` itself. A peer that was offline during the re-add keeps its lost tombstone and
   wins it back on its next sync; run `yonder add <m>` again once it is online.
+- Mesh hands out only keys of set-up records, which sync can't change, at the address they were
+  added at, owned by this account unless `--allow-shared`, and never a key a lost tombstone lists.
+  A record that arrived through sync and was set up elsewhere counts: every machine trusts every
+  other fully.
 - Lost-key cleanup strips only keys in both the tombstone and the record this machine held for
   that name, never a key any live record lists. A machine that never held the record strips
   nothing through sync; `yonder remove <m> --lost` run there still strips the tombstone's keys.
