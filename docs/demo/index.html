@@ -1,0 +1,322 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>yonder demo</title>
+<style>
+  /* brand: docs/brand.md, dark variant. fonts are bundled so the render works offline. */
+  @font-face { font-family: "Fraunces"; src: url(fonts/fraunces-latin.woff2) format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: "Instrument Sans"; src: url(fonts/instrument-sans-latin.woff2) format("woff2"); font-weight: 400 700; }
+  @font-face { font-family: "JetBrains Mono"; src: url(fonts/jetbrains-mono-latin.woff2) format("woff2"); font-weight: 400 700; }
+  :root {
+    --bg: #1a1828; --raised: #221f33; --line: #36314a; --text: #f3eada; --dim: #aba3b8;
+    --accent: #f08a55; --online: #9fbf8c; --warn: #f2b54e; --info: #a9c8da;
+    --display: "Fraunces", "Iowan Old Style", Georgia, serif;
+    --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+  #stage {
+    position: relative; width: 1920px; height: 1080px; overflow: hidden; color: var(--text);
+    font-family: var(--sans);
+    /* the one gradient the brand allows: night at the top, dusk at the horizon */
+    background: linear-gradient(180deg, #1a1828 0%, #1a1828 25%, #2e2440 78%, #2a2139 100%);
+  }
+
+  /* phone */
+  #phone {
+    position: absolute; left: 0; top: 0; width: 400px; height: 820px; transform-origin: 0 0;
+    border-radius: 58px; background: #110f1b; padding: 12px;
+    box-shadow: 0 0 0 2px var(--line), 0 40px 120px rgba(10,8,18,0.6);
+  }
+  #screen {
+    position: relative; width: 100%; height: 100%; border-radius: 47px; overflow: hidden;
+    background: var(--bg);
+  }
+  .ph-status { height: 52px; display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 34px 0; font-size: 17px; font-weight: 600; color: var(--text); }
+  .ph-island { position: absolute; top: 12px; left: 50%; width: 112px; height: 32px; margin-left: -56px;
+    border-radius: 18px; background: #08070d; }
+  .ph-head { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0 14px;
+    border-bottom: 1px solid var(--line); }
+  .avatar { width: 52px; height: 52px; display: block; }
+  .ph-name { font-size: 17px; font-weight: 600; }
+  .ph-sub { font-size: 13px; color: var(--dim); margin-top: -4px; font-family: var(--mono); }
+  #thread { position: absolute; left: 0; right: 0; top: 168px; bottom: 86px; padding: 18px 16px;
+    display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; }
+  .bubble { max-width: 300px; padding: 12px 17px; border-radius: 22px; font-size: 24px; line-height: 1.3; }
+  .me { align-self: flex-end; background: #3d6680; color: var(--text); border-bottom-right-radius: 6px; }
+  .them { align-self: flex-start; background: #2c2840; color: var(--text); border-bottom-left-radius: 6px; }
+  .dots { display: flex; gap: 6px; padding: 16px 18px; }
+  .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); display: block; }
+  #compose { position: absolute; left: 14px; right: 14px; bottom: 26px; height: 48px; border-radius: 24px;
+    border: 1px solid var(--line); padding: 0 18px; display: flex; align-items: center; font-size: 19px; color: var(--text); }
+  #compose .ph { color: #6f6884; }
+  .caret { display: inline-block; width: 2px; height: 22px; background: var(--info); margin-left: 1px; vertical-align: -4px; }
+
+  /* fleet chips */
+  #fleet { position: absolute; left: 540px; top: 190px; width: 1300px; height: 92px; }
+  #fleet svg { position: absolute; inset: 0; overflow: visible; }
+  .chip { position: absolute; top: 14px; width: 250px; height: 64px; border-radius: 14px; background: var(--raised);
+    border: 1px solid var(--line); display: flex; align-items: center; gap: 14px; padding: 0 18px; }
+  .chip .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--dim); flex: none; }
+  .chip .nm { font: 500 22px var(--mono); }
+  .chip .rl { font-size: 15px; color: var(--dim); margin-top: 2px; }
+  .chip .tag { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--accent); border: 1px solid rgba(240,138,85,0.45);
+    border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+
+  /* terminal */
+  #term { position: absolute; top: 310px; height: 450px; border-radius: 14px; background: var(--raised);
+    border: 1px solid var(--line); box-shadow: 0 30px 90px rgba(10,8,18,0.45); overflow: hidden; }
+  .tbar { height: 46px; display: flex; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+  .tbar i { width: 13px; height: 13px; border-radius: 50%; display: block; background: var(--line); }
+  .tbar span { margin-left: 14px; font-size: 16px; color: var(--dim); font-family: var(--mono); }
+  #tbody { padding: 24px 28px; font: 24px/1.5 var(--mono); white-space: pre; color: var(--text); }
+  #term.wide #tbody { font-size: 26px; }
+  #term.big #tbody { font-size: 42px; padding: 40px 44px; }
+  .p { color: var(--dim); }
+  .c { color: var(--text); }
+  .d { color: var(--dim); }
+  .r { color: var(--warn); }
+  .g { color: var(--online); }
+  .a { color: var(--accent); }
+  .ln { display: block; }
+  .hl { background: rgba(240,138,85,0.13); box-shadow: -10px 0 0 rgba(240,138,85,0.13), 10px 0 0 rgba(240,138,85,0.13); border-radius: 4px; }
+  .sec { color: #1a1828; background: var(--accent); border-radius: 5px; padding: 0 4px; }
+  .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--text); vertical-align: -0.22em; }
+
+  /* captions and titles: fraunces, soft and wonky */
+  .disp { font-family: var(--display); font-weight: 600; font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144; letter-spacing: -0.01em; }
+  #caption { position: absolute; left: 0; width: 1920px; top: 826px; text-align: center; font-size: 50px; line-height: 1.1;
+    font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 72; }
+  #caption em { font-style: normal; color: var(--accent); }
+  #title { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 34px; }
+  .mark { width: 880px; display: block; }
+  .tline { font-size: 72px; line-height: 1.1; }
+  .tsub { font-size: 30px; color: var(--dim); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="fleet">
+    <svg width="1300" height="92">
+      <line id="l-lap" x1="250" y1="46" x2="525" y2="46" stroke="#36314a" stroke-width="2" stroke-dasharray="6 8"/>
+      <line id="l-gpu" x1="775" y1="46" x2="1050" y2="46" stroke="#36314a" stroke-width="2" stroke-dasharray="6 8"/>
+      <line id="l-gpu-on" x1="775" y1="46" x2="1050" y2="46" stroke="#a9c8da" stroke-width="3"/>
+      <circle id="pkt" cx="775" cy="46" r="7" fill="#a9c8da"/>
+    </svg>
+    <div class="chip" id="c-laptop" style="left:0"><div class="dot"></div><div><div class="nm">laptop</div><div class="rl">M3 Pro · 36 GB</div></div></div>
+    <div class="chip" id="c-mini" style="left:525px"><div class="dot"></div><div><div class="nm">mini</div><div class="rl">M4 · 16 GB</div></div><div class="tag">agent here</div></div>
+    <div class="chip" id="c-gpu" style="left:1050px"><div class="dot"></div><div><div class="nm">gpu-box</div><div class="rl" id="gpu-rl">RTX 4090 · 64 GB</div></div></div>
+  </div>
+
+  <div id="term"><div class="tbar"><i></i><i></i><i></i><span>hermes · mini</span></div><div id="tbody"></div></div>
+
+  <div id="phone"><div id="screen">
+    <div class="ph-island"></div>
+    <div class="ph-status"><span>9:41</span><span>●●●</span></div>
+    <div class="ph-head"><img class="avatar" src="../brand/yonder-icon.svg" alt=""><div class="ph-name">agent</div><div class="ph-sub">on mini</div></div>
+    <div id="thread">
+      <div class="bubble me" id="m1">ollama on the gpu box is down, can you fix it?</div>
+      <div class="bubble them dots" id="typing"><i></i><i></i><i></i></div>
+      <div class="bubble them" id="m2">Ollama on gpu-box ran out of memory and stopped. I restarted it. All three models are back.</div>
+    </div>
+    <div id="compose"></div>
+  </div></div>
+
+  <div id="caption" class="disp"></div>
+
+  <div id="title">
+    <img class="mark" src="../brand/yonder-logo-dark.svg" alt="yonder">
+    <div class="tline disp" id="tline">Text one agent. Fix any machine.</div>
+    <div class="tsub" id="tsub">github.com/zacharytgray/yonder</div>
+  </div>
+</div>
+
+<script>
+// every frame is a pure function of t (seconds). 100 bpm: beat 0.6s, bar 2.4s.
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const eo = x => 1 - Math.pow(1 - clamp(x), 3);
+const ei = x => Math.pow(clamp(x), 3);
+const eio = x => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const lerp = (a, b, k) => a + (b - a) * k;
+// fade in over [a,b], out over [c,d]
+const win = (t, a, b, c = 1e9, d = 1e9) => Math.min(eo((t - a) / (b - a)), 1 - ei((t - c) / (d - c)));
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const typed = (s, t, t0, cps = 26) => s.slice(0, clamp(Math.floor((t - t0) * cps), 0, s.length));
+
+const PHONE_C = { x: 736, y: 80, s: 1.12 };
+const PHONE_L = { x: 120, y: 190, s: 0.88 };
+
+// terminal scenes. lines are prebuilt html; out = time the first line lands, gap = per line.
+const SCENES = [
+  { from: 9.6, to: 16.8, cmd: 'yonder ls', type: 10.6, out: 11.4, gap: 0.3, lines: [
+      '<span class="d">NAME     ROLE    STATE         HARDWARE                MODELS  HARNESSES</span>',
+      'gpu-box  gpu     <span class="g">online</span>        RTX 4090 24 GB · 64 GB  3       -',
+      'laptop   laptop  <span class="g">online</span>        M3 Pro · 36 GB          2       claude-code,codex',
+      'mini     server  <span class="a">this machine</span>  M4 · 16 GB              0       claude-code,hermes',
+    ], hl: { line: 1, at: 13.4 } },
+  { from: 16.8, to: 24.0, cmd: 'yonder run gpu-box -- systemctl --user status ollama', type: 17.1, out: 19.8, gap: 0.3, lines: [
+      '<span class="r">×</span> ollama.service - Ollama Service',
+      '     Loaded: loaded (~/.config/systemd/user/ollama.service; enabled)',
+      '     Active: <span class="r">failed (Result: oom-kill)</span> since Wed 09:12:44 UTC',
+      '   Main PID: 1843 (code=killed, signal=KILL)',
+    ], hl: { line: 2, at: 21.0 } },
+  { from: 24.0, to: 31.2, cmd: "yonder run gpu-box -- 'systemctl --user restart ollama && ollama list'", type: 24.3, out: 28.2, gap: 0.3, lines: [
+      '<span class="d">NAME                       ID              SIZE      MODIFIED</span>',
+      'qwen3-coder:30b            06c1097efce0    18 GB     2 weeks ago',
+      'llama3.3:70b               a6eb4748fd29    42 GB     3 weeks ago',
+      'nomic-embed-text:latest    0a109f422b47    274 MB    2 months ago',
+    ] },
+  { from: 38.4, to: 45.6, cmd: "yonder run gpu-box --secret HF_TOKEN -- 'echo $HF_TOKEN'", type: 39.4, out: 42.0, gap: 0.2, lines: [
+      '<span class="sec">[HF_TOKEN]</span>',
+    ] },
+  { from: 45.6, to: 52.8, cmd: 'yonder log', type: 45.9, out: 46.5, gap: 0.3, lines: [
+      '<span class="d">TIME                 FROM  TO       HARNESS  EXIT  MS    COMMAND</span>',
+      '2026-11-11 09:41:12  mini  gpu-box  hermes   <span class="r">3</span>     187   systemctl --user status ollama',
+      '2026-11-11 09:41:19  mini  gpu-box  hermes   <span class="g">0</span>     2310  systemctl --user restart ollama &amp;&amp; ollama list',
+      '2026-11-11 09:42:05  mini  gpu-box  hermes   <span class="g">0</span>     96    echo $HF_TOKEN  <span class="a">[secrets: [HF_TOKEN]]</span>',
+    ] },
+];
+const SWITCHES = [16.8, 24.0, 45.6];
+
+const CAPTIONS = [
+  { a: 10.4, b: 16.6, html: 'It sees <em>every machine</em>.' },
+  { a: 17.2, b: 23.8, html: 'It runs commands there, over <em>your own tailnet</em>.' },
+  { a: 24.4, b: 31.0, html: 'It <em>fixes it</em>, and checks.' },
+  { a: 39.0, b: 45.4, html: 'Secrets go by name. <em>If a command prints one, you see the name.</em>' },
+  { a: 46.0, b: 52.6, html: 'Every command, <em>logged where it ran</em>.' },
+];
+
+const MSG1 = 'ollama on the gpu box is down, can you fix it?';
+const SEND = 2.1, REPLY = 32.4;
+const LS_LAND = 11.4, LS_GAP = 0.3;
+const STATUS_RUN = 19.2, RESTART_RUN = 27.3;
+
+function cursorOn(t) { return (t % 1.0) < 0.55; }
+
+function termBody(t) {
+  const sc = SCENES.filter(s => t >= s.from).pop();
+  if (!sc) return '';
+  const cmd = typed(sc.cmd, t, sc.type);
+  const typing = t < sc.out;
+  let html = '<span class="ln"><span class="p">$</span> ' + esc(cmd) + (typing && cursorOn(t) ? '<span class="cur"></span>' : (typing ? '<span class="cur" style="opacity:0"></span>' : '')) + '</span>';
+  sc.lines.forEach((l, i) => {
+    const k = eo((t - (sc.out + i * sc.gap)) / 0.18);
+    if (k <= 0) return;
+    const hl = sc.hl && sc.hl.line === i && t >= sc.hl.at ? ' hl' : '';
+    html += `<span class="ln${hl}" style="opacity:${k};transform:translateY(${(1 - k) * 8}px)">${l}</span>`;
+  });
+  const done = sc.out + (sc.lines.length - 1) * sc.gap + 0.4;
+  if (t >= done) html += '<span class="ln"><span class="p">$</span> ' + (cursorOn(t) ? '<span class="cur"></span>' : '') + '</span>';
+  return html;
+}
+
+function render(t) {
+  // phone
+  const ph = $('phone');
+  let g = PHONE_C;
+  if (t >= 9.6) g = PHONE_L;
+  if (t >= 31.4) { const k = eio((t - 31.4) / 0.8); g = { x: lerp(PHONE_L.x, PHONE_C.x, k), y: lerp(PHONE_L.y, PHONE_C.y, k), s: lerp(PHONE_L.s, PHONE_C.s, k) }; }
+  let po = Math.max(win(t, 0, 0.5, 4.8, 5.1), win(t, 9.7, 10.2, 38.4, 38.7));
+  const rise = t < 4.8 ? (1 - eo(t / 0.6)) * 40 : (t < 20 ? (1 - eo((t - 9.7) / 0.5)) * -40 : 0);
+  ph.style.opacity = po;
+  ph.style.transform = `translate(${g.x + (t >= 9.6 && t < 20 ? rise : 0)}px, ${g.y + (t < 4.8 ? rise : 0)}px) scale(${g.s})`;
+
+  // compose field and thread
+  const sent = t >= SEND;
+  const draft = sent ? '' : typed(MSG1, t, 0.5, 31);
+  $('compose').innerHTML = draft ? esc(draft) + '<span class="caret"></span>' : '<span class="ph">Message</span>';
+  const m1 = $('m1');
+  m1.style.display = sent ? '' : 'none';
+  const k1 = eo((t - SEND) / 0.3);
+  m1.style.opacity = k1; m1.style.transform = `translateY(${(1 - k1) * 20}px) scale(${0.96 + 0.04 * k1})`;
+  const typingOn = t >= 10.4 && t < REPLY;
+  const ty = $('typing');
+  ty.style.display = typingOn ? '' : 'none';
+  ty.style.opacity = eo((t - 10.4) / 0.3);
+  [...ty.children].forEach((d, i) => { d.style.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((t * 2 * Math.PI / 1.2) - i * 0.9)); });
+  const m2 = $('m2');
+  m2.style.display = t >= REPLY ? '' : 'none';
+  const k2 = eo((t - REPLY) / 0.3);
+  m2.style.opacity = k2; m2.style.transform = `translateY(${(1 - k2) * 20}px)`;
+
+  // terminal
+  const term = $('term');
+  const wide = t >= 38.4;
+  term.className = wide ? (t < 45.6 ? 'wide big' : 'wide') : '';
+  term.style.left = wide ? '120px' : '540px';
+  term.style.width = wide ? '1680px' : '1300px';
+  term.style.top = wide ? '290px' : '310px';
+  term.style.height = wide ? '460px' : '450px';
+  const to = Math.max(win(t, 9.9, 10.4, 31.2, 31.5), win(t, 38.7, 39.2, 52.8, 53.1));
+  term.style.opacity = to;
+  term.style.transform = `translateY(${(1 - to) * 16}px)`;
+  let bo = 1;
+  for (const s of SWITCHES) { const d = Math.abs(t - s); if (d < 0.22) bo = Math.min(bo, d / 0.22); }
+  const body = $('tbody');
+  body.style.opacity = bo;
+  body.innerHTML = termBody(t);
+
+  // fleet
+  $('fleet').style.opacity = win(t, 10.0, 10.4, 31.2, 31.5);
+  const lit = (name, i) => {
+    const el = $('c-' + name);
+    const k = eo((t - (LS_LAND + i * LS_GAP)) / 0.25);
+    el.style.borderColor = k > 0 ? `rgba(159,191,140,${0.15 + 0.35 * k})` : '';
+    const dot = el.querySelector('.dot');
+    dot.style.background = k > 0.01 ? '#9fbf8c' : 'transparent';
+    dot.style.borderColor = k > 0.01 ? '#9fbf8c' : '';
+    return k;
+  };
+  lit('gpu', 1); lit('laptop', 2); lit('mini', 3);
+  const gpu = $('c-gpu'), gdot = gpu.querySelector('.dot'), grl = $('gpu-rl');
+  if (t >= 28.2) { gdot.style.background = gdot.style.borderColor = '#9fbf8c'; gpu.style.borderColor = 'rgba(159,191,140,0.6)'; grl.innerHTML = '<span class="g">ollama: running</span>'; }
+  else if (t >= 19.8) { gdot.style.background = gdot.style.borderColor = '#f2b54e'; gpu.style.borderColor = 'rgba(242,181,78,0.6)'; grl.innerHTML = '<span class="r">ollama: failed</span>'; }
+  else grl.textContent = 'RTX 4090 · 64 GB';
+  // link mini -> gpu-box while a remote command is in flight
+  const link = (t0) => clamp((t - t0) / 0.5);
+  let lk = 0, active = false;
+  for (const r of [STATUS_RUN, RESTART_RUN]) if (t >= r) { lk = link(r); active = true; }
+  const on = $('l-gpu-on'), pkt = $('pkt');
+  on.setAttribute('x2', 775 + 275 * eo(lk));
+  on.style.opacity = active ? 1 : 0;
+  pkt.setAttribute('cx', 775 + 275 * eo(lk));
+  pkt.style.opacity = active && lk < 1 ? 1 : 0;
+
+  // caption
+  const cap = CAPTIONS.find(c => t >= c.a - 0.01 && t < c.b + 0.3);
+  const ce = $('caption');
+  if (cap) { const k = win(t, cap.a, cap.a + 0.35, cap.b, cap.b + 0.25); ce.innerHTML = cap.html; ce.style.opacity = k; ce.style.transform = `translateY(${(1 - k) * 14}px)`; }
+  else ce.style.opacity = 0;
+  ce.style.left = wide ? '0px' : '540px';
+  ce.style.width = wide ? '1920px' : '1300px';
+
+  // titles: scene 2 and the outro
+  const ti = $('title'), mk = ti.querySelector('.mark'), tl = $('tline'), ts = $('tsub');
+  const intro = t >= 4.8 && t < 9.6, outro = t >= 53.1;
+  ti.style.display = intro || outro ? '' : 'none';
+  if (intro) {
+    const km = win(t, 5.0, 5.6, 9.2, 9.6), kl = win(t, 5.8, 6.3, 9.2, 9.6);
+    mk.style.opacity = km; mk.style.transform = `scale(${0.94 + 0.06 * km})`;
+    tl.style.opacity = kl; tl.style.transform = `translateY(${(1 - kl) * 16}px)`;
+    ts.textContent = 'Your own machines, over Tailscale and SSH.'; ts.style.fontFamily = 'var(--sans)'; ts.style.letterSpacing = '0';
+    ts.style.opacity = win(t, 6.8, 7.3, 9.2, 9.6);
+  }
+  if (outro) {
+    const km = eo((t - 53.3) / 0.6), kl = eo((t - 53.9) / 0.5), ks = eo((t - 54.6) / 0.5);
+    mk.style.opacity = km; mk.style.transform = `scale(${0.94 + 0.06 * km})`;
+    tl.style.opacity = kl; tl.style.transform = `translateY(${(1 - kl) * 16}px)`;
+    ts.textContent = 'github.com/zacharytgray/yonder  ·  macOS & Linux  ·  MIT'; ts.style.fontFamily = 'var(--mono)';
+    ts.style.opacity = ks;
+  }
+}
+
+window.DURATION = 60.0;
+window.render = render;
+render(Number(new URLSearchParams(location.search).get('t') || 0));
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+I texted my agent "ollama on the gpu box is down, can you fix it?" It ran `yonder ls`, found the box, restarted the service over my own tailnet and texted back that all three models were up. Yonder: text one agent, fix any machine. github.com/zacharytgray/yonder

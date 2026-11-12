@@ -23,9 +23,11 @@ Ask Claude Code on your laptop why the GPU box is out of disk, and it goes and l
 **[<kbd> <br> Limits <br> </kbd>](#limits)**&nbsp;
 **[<kbd> <br> Design <br> </kbd>](docs/design.md)**
 
-<!-- DEMO SLOT: the demo video goes here. Replace this comment with a linked GIF or MP4, e.g.
-<a href="docs/readme/demo.mp4"><img src="docs/readme/demo.gif" width="100%" alt="..."></a>
-Keep the text transcript below as the fallback. -->
+<a href="docs/demo/yonder-demo.mp4">
+  <img src="docs/demo/hero.gif" width="100%" alt="A text from a phone says ollama on the gpu box is down. The agent on mini runs yonder ls, checks the service on gpu-box with yonder run, restarts it, and texts back that all three models are up. Then a secret prints as [HF_TOKEN], and yonder log shows what ran where.">
+</a>
+
+**[▶ Watch the one-minute demo, with sound](docs/demo/yonder-demo.mp4)**
 
 </div>
 
