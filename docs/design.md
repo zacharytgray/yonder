@@ -110,8 +110,9 @@ not count here: a removed machine that comes back and refreshes its own record g
 itself. On equal `removed_at` the lost tombstone wins. A lost tombstone always drops the record,
 whatever its `added_at`; only a local `yonder add` clears it (see Trust model).
 
-`config.toml` holds `self = "<name>"`, a `[secrets]` table for provider settings and optional
-`[ssh.<name>]` tables (see Per-machine ssh key). Yonder rewrites only those and keeps every other key.
+`config.toml` holds `self = "<name>"`, a `[secrets]` table for provider settings, optional
+`[ssh.<name>]` tables (see Per-machine ssh key) and an optional hand-edited `[discover]` table
+(see Discovery). Yonder rewrites only `self`, `[secrets]` and `[ssh.*]` and keeps every other key.
 
 ## Reaching a machine
 
@@ -359,13 +360,27 @@ still read these strings; the skill tells them to treat them as data.
   Macs only; Apple silicon reports the chip as one unified-memory GPU), `/proc`, `/etc/os-release`,
   `/sys/class/power_supply/BAT*`, `nvidia-smi`, `rocm-smi`.
 - Models: Ollama (`:11434/api/tags`, else `ollama list`), LM Studio (`:1234/v1/models` and
-  `lms ls --json`), OpenAI-compatible servers on `:8080` and `:8000` (llama.cpp, vLLM, MLX).
-  `source` is `api` or `cli`. `serving` is true when a local server listed it, with its `port`.
-  Runtime is guessed from `owned_by` for the unnamed servers (`llamacpp`, `vllm`, `mlx`,
-  else `openai-api`).
+  `lms ls --json`), OpenAI-compatible servers on `:8080` and `:8000` (llama.cpp, vLLM, MLX,
+  llama-swap). `source` is `api` or `cli`. `serving` is true when a local server listed it, with
+  its `port`. Runtime is guessed from `owned_by` for the unnamed servers (`llama-swap`,
+  `llamacpp`, `vllm`, `mlx`, else `openai-api`). A server on another port is found only when
+  that machine's `config.toml` names the port; yonder reads it and never writes it:
+
+  ```toml
+  [discover]
+  model_ports = [9292]   # more 127.0.0.1 ports to ask for /v1/models; up to 8 are used
+  ```
+
+  Ports already probed, and ports outside 1-65535, are ignored. The setting lives on the
+  machine that serves the models, since discovery runs there.
 - Harnesses: each binary is searched on `PATH` plus `~/.local/bin`, `/opt/homebrew/bin`,
   `/usr/local/bin`, `~/.npm-global/bin` and `~/.bun/bin`; version is the first version number in
-  `<bin> --version` (2 s timeout).
+  `<bin> --version` (2 s timeout). Every probed tool runs with `PATH` set to its own directory,
+  then the inherited `PATH`, then those directories, because an ssh shell's bare `PATH` breaks a
+  `#!/usr/bin/env node` script installed beside its `node`. A mise shim (a `shims` directory
+  under a `mise` directory) is never run, since running one installs a missing tool: yonder asks
+  `mise which <bin>` for the real binary and runs that. If mise says the tool isn't active, the
+  harness is left out; if no `mise` binary is found, the harness is listed without a version.
 
 `show <m> --json` prints one machine object with one extra key, `record`, holding the full
 record (including `yonder_path`, `ssh_host_key`, `ssh_client_keys`).

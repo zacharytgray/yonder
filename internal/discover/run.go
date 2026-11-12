@@ -49,7 +49,7 @@ func run(ctx context.Context, timeout time.Duration, bin string, args ...string)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
-	cmd.Env = append(os.Environ(), "NO_COLOR=1", "CI=1")
+	cmd.Env = append(os.Environ(), "NO_COLOR=1", "CI=1", "PATH="+probePath(bin))
 	cmd.WaitDelay = 200 * time.Millisecond // don't wait on stray grandchildren
 	if err := cmd.Run(); err != nil {
 		return "", false
@@ -59,6 +59,21 @@ func run(ctx context.Context, timeout time.Duration, bin string, args ...string)
 		s = errb.String() // some tools print --version to stderr
 	}
 	return s, strings.TrimSpace(s) != ""
+}
+
+// probePath is the PATH a probed tool runs with: its own dir first, then the
+// caller's PATH, then the usual install dirs. an ssh shell's bare PATH would
+// otherwise break a `#!/usr/bin/env node` script installed beside its node.
+func probePath(bin string) string {
+	dirs := []string{}
+	if filepath.IsAbs(bin) {
+		dirs = append(dirs, filepath.Dir(bin))
+	}
+	if p := os.Getenv("PATH"); p != "" {
+		dirs = append(dirs, p)
+	}
+	dirs = append(dirs, extraDirs()...)
+	return strings.Join(dirs, string(os.PathListSeparator))
 }
 
 // Find is find for other packages: PATH first, then the usual install dirs,

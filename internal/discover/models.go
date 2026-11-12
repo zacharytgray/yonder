@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +22,28 @@ const (
 
 var client = &http.Client{Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true}}
 
-func probeModels(ctx context.Context) []registry.Model {
+// defaultPorts are probed on every machine; model_ports in config.toml adds more.
+var defaultPorts = []int{11434, 1234, 8080, 8000}
+
+// maxExtraPorts caps model_ports, so a typo'd range can't stall discovery.
+const maxExtraPorts = 8
+
+// extraPorts keeps the valid model_ports that aren't probed already.
+func extraPorts(ports []int) []int {
+	var out []int
+	for _, p := range ports {
+		if p < 1 || p > 65535 || slices.Contains(defaultPorts, p) || slices.Contains(out, p) {
+			continue
+		}
+		out = append(out, p)
+		if len(out) == maxExtraPorts {
+			break
+		}
+	}
+	return out
+}
+
+func probeModels(ctx context.Context, extra []int) []registry.Model {
 	var (
 		mu  sync.Mutex
 		all []registry.Model
@@ -40,6 +62,9 @@ func probeModels(ctx context.Context) []registry.Model {
 	do(func() []registry.Model { return probeLMStudio(ctx, "http://127.0.0.1:1234") })
 	do(func() []registry.Model { return probeOpenAI(ctx, "http://127.0.0.1:8080") })
 	do(func() []registry.Model { return probeOpenAI(ctx, "http://127.0.0.1:8000") })
+	for _, p := range extraPorts(extra) {
+		do(func() []registry.Model { return probeOpenAI(ctx, "http://127.0.0.1:"+strconv.Itoa(p)) })
+	}
 	wg.Wait()
 	return all
 }
@@ -244,6 +269,8 @@ func parseOpenAIModels(body []byte, runtime string, port int) []registry.Model {
 func guessRuntime(ownedBy, id string) string {
 	s := strings.ToLower(ownedBy)
 	switch {
+	case strings.Contains(s, "llama-swap"), strings.Contains(s, "llamaswap"):
+		return "llama-swap"
 	case strings.Contains(s, "vllm"):
 		return "vllm"
 	case strings.Contains(s, "llamacpp"), strings.Contains(s, "llama.cpp"):

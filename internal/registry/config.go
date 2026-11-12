@@ -9,9 +9,15 @@ import (
 
 // Config is this machine's config.toml.
 type Config struct {
-	Self    string         `toml:"self"`
-	Secrets map[string]any `toml:"secrets,omitempty"` // provider settings, step 3
-	SSH     map[string]SSH `toml:"ssh,omitempty"`     // per-target ssh settings, this machine only
+	Self     string         `toml:"self"`
+	Secrets  map[string]any `toml:"secrets,omitempty"`  // provider settings, step 3
+	SSH      map[string]SSH `toml:"ssh,omitempty"`      // per-target ssh settings, this machine only
+	Discover Discover       `toml:"discover,omitempty"` // hand-edited discovery settings, this machine only
+}
+
+// Discover tunes discovery on this machine. yonder only reads it.
+type Discover struct {
+	ModelPorts []int `toml:"model_ports,omitempty"` // more local openai-compatible ports to probe
 }
 
 // SSH is how this machine reaches one target. it never leaves this machine.

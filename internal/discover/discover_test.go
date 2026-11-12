@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -166,6 +167,10 @@ func TestParseOpenAIModels(t *testing.T) {
 	if ms := parseOpenAIModels([]byte(vllm), "", 8000); ms[0].Runtime != "vllm" {
 		t.Fatalf("vllm %+v", ms)
 	}
+	swap := `{"data":[{"id":"gpt-oss-20b","owned_by":"llama-swap"}]}`
+	if ms := parseOpenAIModels([]byte(swap), "", 9292); ms[0].Runtime != "llama-swap" || ms[0].Port != 9292 {
+		t.Fatalf("llama-swap %+v", ms)
+	}
 	mlx := `{"data":[{"id":"mlx-community/Qwen3-4bit","owned_by":"me"}]}`
 	if ms := parseOpenAIModels([]byte(mlx), "", 8080); ms[0].Runtime != "mlx" {
 		t.Fatalf("mlx %+v", ms)
@@ -286,5 +291,131 @@ func TestSanitizeEscapeSequenceModelName(t *testing.T) {
 	}
 	if f.CPU != "cpu[31mred" || f.Harnesses[0].Version != "1.0[0m" {
 		t.Fatalf("cpu %q version %q", f.CPU, f.Harnesses[0].Version)
+	}
+}
+
+func TestExtraPorts(t *testing.T) {
+	got := extraPorts([]int{9292, 8080, 0, 70000, 9292, 5000})
+	if !slices.Equal(got, []int{9292, 5000}) {
+		t.Fatalf("got %v", got)
+	}
+	many := make([]int, 20)
+	for i := range many {
+		many[i] = 20000 + i
+	}
+	if n := len(extraPorts(many)); n != maxExtraPorts {
+		t.Fatalf("got %d ports", n)
+	}
+}
+
+func TestProbeModelsExtraPort(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`{"data":[{"id":"example-model","owned_by":"llama-swap"}]}`))
+	}))
+	defer srv.Close()
+	port := portOf(srv.URL)
+	find := func(ms []registry.Model) *registry.Model {
+		for i := range ms {
+			if ms[i].Port == port {
+				return &ms[i]
+			}
+		}
+		return nil
+	}
+	if m := find(probeModels(context.Background(), nil)); m != nil {
+		t.Fatalf("port %d probed without model_ports: %+v", port, m)
+	}
+	m := find(probeModels(context.Background(), []int{port}))
+	if m == nil || m.Name != "example-model" || m.Runtime != "llama-swap" || !m.Serving {
+		t.Fatalf("got %+v", m)
+	}
+}
+
+// an ssh shell has a bare PATH; a script whose interpreter sits beside it
+// (`#!/usr/bin/env node` in /opt/homebrew/bin) still has to answer --version.
+func TestRunFindsInterpreterBesideScript(t *testing.T) {
+	dir := t.TempDir()
+	interp := filepath.Join(dir, "yonder-fake-interp")
+	if err := os.WriteFile(interp, []byte("#!/bin/sh\necho 'fake 4.5.6'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "tool")
+	if err := os.WriteFile(bin, []byte("#!/usr/bin/env yonder-fake-interp\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", "/usr/bin:/bin")
+	out, ok := run(context.Background(), 2*time.Second, bin, "--version")
+	if !ok || parseVersion(out) != "4.5.6" {
+		t.Fatalf("got %q ok=%v", out, ok)
+	}
+}
+
+// fakeMise lays out a mise shims dir and a mise binary whose `which` knows
+// only the tools in active. running a shim leaves a marker, like an install.
+func fakeMise(t *testing.T, active ...string) (shims, marker string) {
+	t.Helper()
+	root := t.TempDir()
+	shims = filepath.Join(root, "share", "mise", "shims")
+	bin := filepath.Join(root, "bin")
+	real := filepath.Join(root, "installs")
+	for _, d := range []string{shims, bin, real} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	marker = filepath.Join(root, "installed")
+	write := func(p, body string) {
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	which := "case \"$2\" in\n"
+	for _, a := range active {
+		write(filepath.Join(real, a), "echo '"+a+" 2.3.4'\n")
+		which += "  " + a + ") echo " + filepath.Join(real, a) + " ;;\n"
+	}
+	which += "  *) echo \"mise ERROR $2 is not currently active\" >&2; exit 1 ;;\nesac\n"
+	write(filepath.Join(bin, "mise"), "[ \"$1\" = which ] || exit 1\n"+which)
+	for _, s := range []string{"tool-a", "tool-b"} {
+		write(filepath.Join(shims, s), "touch "+marker+"\necho '9.9.9'\n")
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", bin+":/usr/bin:/bin")
+	return shims, marker
+}
+
+func TestResolveShimMise(t *testing.T) {
+	shims, marker := fakeMise(t, "tool-a")
+	ctx := context.Background()
+
+	real, ok := resolveShim(ctx, "tool-a", filepath.Join(shims, "tool-a"))
+	if !ok || filepath.Base(real) != "tool-a" || filepath.Dir(real) == shims {
+		t.Fatalf("active: real=%q ok=%v", real, ok)
+	}
+	out, _ := run(ctx, 2*time.Second, real, "--version")
+	if parseVersion(out) != "2.3.4" {
+		t.Fatalf("version from %q: %q", real, out)
+	}
+	if _, ok := resolveShim(ctx, "tool-b", filepath.Join(shims, "tool-b")); ok {
+		t.Fatal("inactive tool should be dropped")
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a shim ran, which would install a tool")
+	}
+	// no mise to ask: keep the harness, never run the shim
+	old := findMise
+	findMise = func() string { return "" }
+	t.Cleanup(func() { findMise = old })
+	if real, ok := resolveShim(ctx, "tool-a", filepath.Join(shims, "tool-a")); !ok || real != "" {
+		t.Fatalf("no mise: real=%q ok=%v", real, ok)
+	}
+	// not a shim: unchanged
+	if real, ok := resolveShim(ctx, "claude", "/usr/local/bin/claude"); !ok || real != "/usr/local/bin/claude" {
+		t.Fatalf("plain: real=%q ok=%v", real, ok)
 	}
 }

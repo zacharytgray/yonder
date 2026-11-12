@@ -19,14 +19,15 @@ type Facts = registry.Facts
 // overall cap, so a stuck probe can never stall `add` or `refresh`.
 const overall = 3 * time.Second
 
-// Local gathers this machine's facts.
+// Local gathers this machine's facts, with the model ports from its config.toml.
 func Local() Facts {
 	ctx, cancel := context.WithTimeout(context.Background(), overall)
 	defer cancel()
-	return collect(ctx)
+	c, _ := registry.Open().Config() // a broken config just means no extra ports
+	return collect(ctx, c.Discover.ModelPorts)
 }
 
-func collect(ctx context.Context) Facts {
+func collect(ctx context.Context, modelPorts []int) Facts {
 	host, _ := os.Hostname()
 	f := Facts{
 		Hostname: host,
@@ -43,7 +44,7 @@ func collect(ctx context.Context) Facts {
 	)
 	wg.Add(3)
 	go func() { defer wg.Done(); hw = probeHardware(ctx) }()
-	go func() { defer wg.Done(); models = probeModels(ctx) }()
+	go func() { defer wg.Done(); models = probeModels(ctx, modelPorts) }()
 	go func() { defer wg.Done(); harness = probeHarnesses(ctx) }()
 	wg.Wait()
 

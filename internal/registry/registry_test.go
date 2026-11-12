@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -202,6 +203,26 @@ func TestSetSelfKeepsOtherKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.Self != "laptop" || c.Secrets["provider"] != "bws" {
+		t.Fatalf("got %+v", c)
+	}
+}
+
+func TestDiscoverModelPortsKept(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	if err := os.WriteFile(filepath.Join(s.Dir, "config.toml"), []byte("self = \"old\"\n[discover]\nmodel_ports = [9292, 5000]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSelf("laptop"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetIdentity("gpu-box", "~/.ssh/id_example"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Self != "laptop" || !slices.Equal(c.Discover.ModelPorts, []int{9292, 5000}) {
 		t.Fatalf("got %+v", c)
 	}
 }
