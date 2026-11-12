@@ -1,1 +1,9 @@
-I text one agent, and it uses all my machines: it fixed Ollama on the GPU box from my mini, then started a fine-tune there because that box had the free GPU. Secrets come from 1Password or Bitwarden by name, and every command is logged where it ran. Yonder: text one agent, fix any machine. github.com/zacharytgray/yonder
+I was about to give a talk, and my slides were still on my Mac Mini. So I texted the agent on the Mini. It ran yonder ls, saw my laptop was online, and sent Talk.key to the laptop's Desktop with yonder cp.
+
+That's Yonder. It connects my own machines over Tailscale and SSH, so one agent can use every one of them. It sees what each machine has, runs commands there, and logs each command on the machine that ran it.
+
+Secrets live in 1Password or Bitwarden. The agent asks for one by name. The value stays out of command lines, logs and accidental output. It is not hidden from an agent that sets out to read it.
+
+It works in Claude Code, Codex, Pi and Hermes. Open source, macOS and Linux.
+
+github.com/zacharytgray/yonder
