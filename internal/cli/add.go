@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zacharytgray/yonder/internal/discover"
+	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/tailnet"
 	"github.com/zacharytgray/yonder/internal/transport"
@@ -29,6 +30,7 @@ type addOpts struct {
 	identity    string // ssh key for this machine, as typed (~ unexpanded); stored locally
 	interactive bool
 	allowShared bool   // take a peer another tailscale account owns
+	noMesh      bool   // don't authorize fleet keys to and from it
 	pin         string // a host key held from before: checked strictly, never replaced
 }
 
@@ -61,7 +63,8 @@ account) is refused unless --allow-shared is given.`,
 	f.StringVar(&o.notes, "notes", "", "free text shown when the machine is offline")
 	f.StringVar(&o.identity, "identity", "", "ssh private key to use for this machine (kept on this machine only)")
 	f.BoolVar(&o.allowShared, "allow-shared", false, "allow a peer another tailscale account owns (node sharing)")
-	f.BoolVar(&yes, "yes", false, "never prompt")
+	f.BoolVar(&yes, "yes", false, "never prompt (and authorize fleet keys to and from it)")
+	f.BoolVar(&o.noMesh, "no-mesh", false, "don't add fleet machines' ssh keys to it, or its keys to them")
 	return cmd
 }
 
@@ -109,7 +112,19 @@ func (a *app) addCommand(arg string, o addOpts) error {
 	}
 	fmt.Fprintf(a.out, "added %s (%s/%s, %s@%s)\n", m.Name, m.OS, m.Arch, m.SSHUser, m.TailscaleIP)
 	a.syncFleet(self)
+	a.offerMesh(self, m.Name, o)
 	return nil
+}
+
+// offerMesh lets the fleet and a machine just added reach each other.
+// a failure is a warning: the add itself worked.
+func (a *app) offerMesh(self, focus string, o addOpts) {
+	if o.noMesh {
+		return
+	}
+	if err := a.mesh(self, focus, !o.interactive, o.allowShared); err != nil {
+		a.warnf("%v", err)
+	}
 }
 
 // resolvePeer finds the one tailnet peer arg names (short or full dns name).
@@ -369,8 +384,21 @@ func (a *app) addPeer(p tailnet.Peer, o addOpts) (registry.Machine, error) {
 	if _, err := a.store.MergeIn(registry.Bundle{Machines: []registry.Machine{m}}); err != nil {
 		return m, err
 	}
-	if err := a.yonderJSON(a.ssh, m, []string{"_init-self", name}, nil, &bytes.Buffer{}); err != nil {
+	var self bytes.Buffer
+	if err := a.yonderJSON(a.ssh, m, []string{"_init-self", name}, nil, &self); err != nil {
 		return m, fmt.Errorf("setting %s's own name: %w", name, err)
+	}
+	// the keys it offers when it sshes out; an older yonder reports none
+	var rep struct {
+		MeshKeys []string `json:"mesh_keys"`
+	}
+	if json.Unmarshal(self.Bytes(), &rep) == nil && len(rep.MeshKeys) > 0 {
+		m.MeshKeys = mesh.Clean(rep.MeshKeys)
+		m.SSHClientKeys = mesh.Union(m.SSHClientKeys, m.MeshKeys) // strip what mesh may grant
+		m.UpdatedAt = time.Now().UTC()
+		if _, err := a.store.MergeIn(registry.Bundle{Machines: []registry.Machine{m}}); err != nil {
+			return m, err
+		}
 	}
 	return m, nil
 }

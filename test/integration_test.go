@@ -152,6 +152,12 @@ func TestFleetOverSSH(t *testing.T) {
 
 	a := startNode(t, "node-a", string(pub), linuxBin)
 	b := startNode(t, "node-b", string(pub), linuxBin)
+	// node-a's default key, which add's mesh step hands node-b, and a .pub it
+	// only holds (a deploy key, say), which mesh must not hand out
+	docker(t, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAInodea me@node-a\n", "exec", "-i", a.container, "sh", "-c",
+		"cat > /home/me/.ssh/id_ed25519.pub && echo private > /home/me/.ssh/id_ed25519"+
+			" && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIdeploy deploy' > /home/me/.ssh/deploy.pub"+
+			" && chown me:me /home/me/.ssh/id_ed25519.pub /home/me/.ssh/id_ed25519 /home/me/.ssh/deploy.pub && chmod 600 /home/me/.ssh/id_ed25519")
 
 	f := newFleet(t, writeFixture(t, "node-a", "node-b", "node-c"))
 	f.env = append(f.env, "YONDER_SSH_IDENTITY="+key)
@@ -175,6 +181,15 @@ func TestFleetOverSSH(t *testing.T) {
 		t.Fatalf("a fleet machine's sync was refused: %s", r.stderr)
 	}
 
+	// add meshed node-a's key onto node-b, appended and backed up, with the host's key kept
+	r := f.must("run", "node-b", "--", "cat ~/.ssh/authorized_keys; ls ~/.ssh")
+	if !strings.Contains(r.stdout, strings.TrimSpace(string(pub))) || !strings.Contains(r.stdout, "AAAAInodea yonder:node-a") || !strings.Contains(r.stdout, "authorized_keys.yonder-bak.") || strings.Contains(r.stdout, "AAAAIdeploy") {
+		t.Fatalf("mesh on node-b: %s", r.stdout)
+	}
+	if r := f.must("mesh", "--yes"); !strings.Contains(r.stdout, "already trusts") {
+		t.Fatalf("second mesh: %+v", r)
+	}
+
 	if r := f.must("run", "node-a", "--", "echo hi from $(whoami)"); r.stdout != "hi from me\n" {
 		t.Fatalf("run: %+v", r)
 	}
@@ -186,7 +201,7 @@ func TestFleetOverSSH(t *testing.T) {
 	}
 
 	// the registry reached node-b, and node-b knows its own name
-	r := f.must("run", "node-b", "--", "cat ~/.config/yonder/machines/node-a.toml ~/.config/yonder/config.toml")
+	r = f.must("run", "node-b", "--", "cat ~/.config/yonder/machines/node-a.toml ~/.config/yonder/config.toml")
 	if !strings.Contains(r.stdout, "node-a") || !strings.Contains(r.stdout, "node-b") || !strings.Contains(r.stdout, "ssh_host_key") {
 		t.Fatalf("registry on node-b: %s", r.stdout)
 	}

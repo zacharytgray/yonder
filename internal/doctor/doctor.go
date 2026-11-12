@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/zacharytgray/yonder/internal/agents"
+	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/remote"
 	"github.com/zacharytgray/yonder/internal/secrets"
@@ -153,23 +154,34 @@ func Run(e Env) []Check {
 	out = append(out, skillChecks(groupLocal, agents.Status(e.Home), e.Home, "yonder agents install")...)
 
 	lost := lostKeys(tombs, ms)
-	if len(lost) > 0 {
-		data, err := os.ReadFile(transport.AuthorizedKeysPath(e.Home))
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			add(groupLocal, "authorized_keys", Warn, "can't read ~/.ssh/authorized_keys: "+err.Error(), "")
-		} else {
-			cs := keyChecks(groupLocal, string(data), lost)
-			// remove --lost won't write through a symlink; the lines go by hand
-			if real, ok := symlinkedKeys(e.Home); ok {
-				for i := range cs {
-					if cs[i].Status == Fail {
-						cs[i].Detail += " (authorized_keys is a symlink to " + real + ")"
-						cs[i].Fix = "delete those lines from " + real + " by hand; `" + cs[i].Fix + "` prints them"
-					}
+	var src []mesh.Source
+	var skips []mesh.Skip
+	if e.Status != nil {
+		src, skips = mesh.Sources(e.Self, ms, tombs, e.Status, false)
+	} else {
+		for _, m := range ms { // nothing known: prune nothing
+			skips = append(skips, mesh.Skip{Name: m.Name, Keep: true})
+		}
+	}
+	fl := fleet{lost: lost, src: src, skips: skips, tombs: tombs, live: ms}
+	data, keysErr := os.ReadFile(transport.AuthorizedKeysPath(e.Home))
+	if keysErr != nil && !errors.Is(keysErr, os.ErrNotExist) {
+		add(groupLocal, "authorized_keys", Warn, "can't read ~/.ssh/authorized_keys: "+keysErr.Error(), "")
+	} else if haveSelf {
+		out = append(out, meshChecks(groupLocal, e.Self, string(data), fl)...)
+	}
+	if len(lost) > 0 && (keysErr == nil || errors.Is(keysErr, os.ErrNotExist)) {
+		cs := keyChecks(groupLocal, string(data), lost)
+		// remove --lost won't write through a symlink; the lines go by hand
+		if real, ok := symlinkedKeys(e.Home); ok {
+			for i := range cs {
+				if cs[i].Status == Fail {
+					cs[i].Detail += " (authorized_keys is a symlink to " + real + ")"
+					cs[i].Fix = "delete those lines from " + real + " by hand; `" + cs[i].Fix + "` prints them"
 				}
 			}
-			out = append(out, cs...)
 		}
+		out = append(out, cs...)
 	}
 
 	out = append(out, identityChecks(e)...)
@@ -190,7 +202,66 @@ func Run(e Env) []Check {
 		add("fleet", "fleet", Warn, "skipped: tailscale status is unavailable", "fix the tailscale lines above first")
 		return out
 	}
-	out = append(out, fleetChecks(e, ms, lost)...)
+	out = append(out, fleetChecks(e, ms, fl)...)
+	return out
+}
+
+// fleet is what the per-machine authorized_keys checks compare against.
+type fleet struct {
+	lost  []lostMachine
+	src   []mesh.Source
+	skips []mesh.Skip
+	tombs []registry.Tombstone
+	live  []registry.Machine
+}
+
+// meshChecks: every fleet machine's mesh key is in target's authorized_keys,
+// no line yonder added for a removed machine is left, and no line yonder
+// tagged is outside the grant set.
+func meshChecks(group, target, content string, fl fleet) []Check {
+	var out []Check
+	if un := mesh.Unreached(content, target, fl.src); len(un) > 0 {
+		out = append(out, Check{Group: group, Name: "mesh", Status: Warn,
+			Detail: fmt.Sprintf("%s can't ssh in: none of %s keys on record are in ~/.ssh/authorized_keys", strings.Join(un, ", "), plural(len(un), "its", "their")),
+			Fix:    "yonder mesh " + target})
+	}
+	left := mesh.Leftover(content, fl.tombs, fl.live)
+	names := make([]string, 0, len(left))
+	for n := range left {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	for _, n := range names {
+		out = append(out, Check{Group: group, Name: "mesh", Status: Warn,
+			Detail: fmt.Sprintf("%d line(s) yonder added for removed machine %s are still in ~/.ssh/authorized_keys", left[n], n),
+			Fix:    "yonder remove " + n + " --yes  (removes them on every online machine)"})
+	}
+	_, _, pruned := mesh.Plan(content, target, "", fl.src, fl.skips)
+	extra := map[string]int{}
+	var who []string
+	for _, l := range pruned {
+		n := mesh.TagOf(l)
+		if _, removed := left[n]; removed {
+			continue // reported above
+		}
+		if extra[n] == 0 {
+			who = append(who, n)
+		}
+		extra[n]++
+	}
+	if len(who) > 0 {
+		slices.Sort(who)
+		parts := make([]string, len(who))
+		for i, n := range who {
+			parts[i] = fmt.Sprintf("%s (%d)", n, extra[n])
+		}
+		out = append(out, Check{Group: group, Name: "mesh", Status: Warn,
+			Detail: "trusts keys yonder added that mesh no longer grants, of " + strings.Join(parts, ", "),
+			Fix:    "yonder mesh"})
+	}
+	if len(out) == 0 && len(fl.src) > 1 {
+		out = append(out, Check{Group: group, Name: "mesh", Status: Pass, Detail: "every fleet machine's key is authorized here"})
+	}
 	return out
 }
 
@@ -448,7 +519,7 @@ type peerResult struct {
 	names  []string // its registry, nil if not read
 }
 
-func fleetChecks(e Env, ms []registry.Machine, lost []lostMachine) []Check {
+func fleetChecks(e Env, ms []registry.Machine, fl fleet) []Check {
 	var peers []registry.Machine
 	for _, m := range ms {
 		if m.Name != e.Self {
@@ -464,7 +535,7 @@ func fleetChecks(e Env, ms []registry.Machine, lost []lostMachine) []Check {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i] = peerChecks(e, m, lost)
+			results[i] = peerChecks(e, m, fl)
 		}()
 	}
 	wg.Wait()
@@ -477,7 +548,7 @@ func fleetChecks(e Env, ms []registry.Machine, lost []lostMachine) []Check {
 	return out
 }
 
-func peerChecks(e Env, m registry.Machine, lost []lostMachine) peerResult {
+func peerChecks(e Env, m registry.Machine, fl fleet) peerResult {
 	var res peerResult
 	add := func(name string, st Status, detail, fix string) {
 		res.checks = append(res.checks, Check{Group: m.Name, Name: name, Status: st, Detail: detail, Fix: fix})
@@ -560,12 +631,13 @@ func peerChecks(e Env, m registry.Machine, lost []lostMachine) peerResult {
 		res.checks = append(res.checks, skillChecks(m.Name, factsOnly(r, m), "", "yonder agents install --all-machines")...)
 	}
 
-	if len(lost) > 0 {
-		if keys, err := e.Remote.AuthorizedKeys(m); err != nil {
-			add("authorized_keys", Warn, "can't read it: "+err.Error(), "")
-		} else {
-			res.checks = append(res.checks, keyChecks(m.Name, keys, lost)...)
+	if keys, err := e.Remote.AuthorizedKeys(m); err != nil {
+		add("authorized_keys", Warn, "can't read it: "+err.Error(), "")
+	} else {
+		if len(fl.lost) > 0 {
+			res.checks = append(res.checks, keyChecks(m.Name, keys, fl.lost)...)
 		}
+		res.checks = append(res.checks, meshChecks(m.Name, m.Name, keys, fl)...)
 	}
 	return res
 }

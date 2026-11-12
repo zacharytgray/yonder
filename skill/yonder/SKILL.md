@@ -98,5 +98,9 @@ user stores it with `yonder secret set NAME`.
   a fact looks wrong.
 - `yonder doctor` checks the whole setup and prints a fix for each problem. Run it when a Yonder
   command fails for a reason other than a machine being offline.
+- If ssh to a fleet machine fails with `Permission denied (publickey)`, this machine's key is not
+  trusted there yet. Tell the user; `yonder mesh` fixes it. If mesh says a machine has no mesh
+  keys on record, relay its fix (upgrade yonder there or give it a default key, then
+  `yonder add <machine>`).
 
 Leave `yonder add`, `yonder remove` and `yonder secret add` to the user unless they ask you to run them.

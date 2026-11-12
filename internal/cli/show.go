@@ -40,6 +40,9 @@ func newShowCmd() *cobra.Command {
 				if rec.SSHClientKeys == nil {
 					rec.SSHClientKeys = []string{}
 				}
+				if rec.MeshKeys == nil {
+					rec.MeshKeys = []string{}
+				}
 				v.Record = &rec
 				return writeJSON(a.out, v)
 			}

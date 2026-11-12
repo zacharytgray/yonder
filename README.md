@@ -127,8 +127,19 @@ yonder init
 (offering to copy your key if it is missing), installs Yonder on them, and discovers what each
 one has. It asks for each machine's role and any notes, such as "sleeps at night" or "heavy jobs
 only". These are optional. Your agents read them when they choose a machine. Change them later
-with `yonder set <machine> --role server --notes "always on"`. Last, it puts the skill into every
-agent harness it finds.
+with `yonder set <machine> --role server --notes "always on"`. Then it offers to
+let every machine SSH into every other one, so an agent on the laptop can reach the PC even
+though you only copied your key from the machine you ran `init` on. Last, it puts the skill into
+every agent harness it finds.
+
+`yonder add` makes the same offer for the machine it just added. Each machine is trusted only
+with the key it actually uses to connect: its default SSH key (`~/.ssh/id_ed25519` and the other
+names SSH tries on its own), plus any key you set for it with `yonder ssh-key`. Other keys in its
+`~/.ssh`, such as a GitHub deploy key, are never handed out. Yonder backs up each
+`~/.ssh/authorized_keys` first and marks every line it adds with `yonder:<machine>`. It only ever
+removes lines with that mark, and never touches lines you added yourself. `yonder mesh` does the
+whole fleet again, for example after a machine that was asleep comes back, and removes marked
+lines that are no longer needed. `--no-mesh` skips it.
 
 Every prompt has a flag, so an agent can run setup too:
 
@@ -297,6 +308,7 @@ approval, Yonder will support it as another mode.
 | `yonder log` | What ran where, across every machine |
 | `yonder add <machine>` | Add one more machine |
 | `yonder set <machine> [--role R] [--notes TEXT]` | Change a machine's role or notes |
+| `yonder mesh [machine]` | Let every machine SSH into every other one |
 | `yonder refresh [machine]` | Rediscover facts and sync the registry everywhere |
 | `yonder doctor` | Check everything and print the fix for each problem |
 | `yonder secret set\|add\|ls\|rm\|test\|setup\|token` | Manage secrets. `set` stores one in the vault. `setup` makes hands-free 1Password for your machines |
@@ -336,7 +348,8 @@ yonder remove laptop --lost
 ```
 
 That removes the laptop from every machine's registry, so it can't add itself back. It deletes the
-laptop's SSH keys from every other machine's `authorized_keys`, keeping a backup. Then it prints
+laptop's SSH keys from every other machine's `authorized_keys`, keeping a backup. A plain
+`yonder remove` deletes only the lines `yonder mesh` added for that machine. Then it prints
 what's left, such as revoking the laptop's secrets token if it had one. Machines that were offline
 clean themselves up the next time they sync, for example on `yonder refresh`.
 
@@ -351,7 +364,8 @@ against another. See the [trust model](docs/design.md#trust-model).
 
 `yonder ls` refreshes any online machine whose facts are more than a day old. `yonder doctor`
 flags machines that are unreachable or offline, facts more than a week old, Yonder versions that
-don't match, skills that are out of date, machines that still trust a removed machine's key, and secrets that won't unlock. Each problem
+don't match, skills that are out of date, a machine that can't SSH into another one, machines that
+still trust a removed machine's key, and secrets that won't unlock. Each problem
 comes with the command that fixes it.
 
 ## Limits

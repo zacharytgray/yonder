@@ -117,6 +117,7 @@ func newRoot() *cobra.Command {
 		newLogCmd(),
 		newRefreshCmd(),
 		newDoctorCmd(),
+		newMeshCmd(),
 		newRemoveCmd(),
 		newSecretCmd(),
 		newAgentsCmd(),

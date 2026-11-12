@@ -16,6 +16,7 @@ import (
 
 	"github.com/zacharytgray/yonder/internal/agents"
 	"github.com/zacharytgray/yonder/internal/discover"
+	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/secrets"
 	"github.com/zacharytgray/yonder/internal/tailnet"
@@ -31,6 +32,7 @@ func newInitCmd() *cobra.Command {
 		idents   []string
 		noSkill  bool
 		shared   bool
+		noMesh   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -53,13 +55,14 @@ unless --allow-shared is given. Two peers with one short name: pass the full dns
 			if err != nil {
 				return &usageError{err}
 			}
-			return a.initCommand(interactive, machines, user, ids, noSkill, shared)
+			return a.initCommand(interactive, machines, user, ids, noSkill, shared, noMesh)
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "never prompt")
 	cmd.Flags().StringSliceVar(&machines, "machines", nil, "peers to add, comma-separated")
 	cmd.Flags().StringVar(&user, "user", "", "ssh user on the peers (default: the current user)")
 	cmd.Flags().BoolVar(&noSkill, "no-skill", false, "don't install the agent skill on any machine")
+	cmd.Flags().BoolVar(&noMesh, "no-mesh", false, "don't add the fleet machines' ssh keys to each other's authorized_keys")
 	cmd.Flags().BoolVar(&shared, "allow-shared", false, "allow peers another tailscale account owns (node sharing)")
 	cmd.Flags().StringArrayVar(&idents, "identity", nil, "ssh key for a peer, as machine=path (repeatable, kept on this machine only)")
 	return cmd
@@ -85,7 +88,7 @@ func parseIdentities(in []string) (map[string]string, error) {
 	return out, nil
 }
 
-func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string, noSkill, allowShared bool) error {
+func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string, noSkill, allowShared, noMesh bool) error {
 	st, err := a.status()
 	if err != nil {
 		if errors.Is(err, tailnet.ErrNotInstalled) || errors.Is(err, tailnet.ErrNotRunning) {
@@ -156,6 +159,9 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	}
 
 	a.syncFleet(self)
+	if len(added) > 0 {
+		a.offerMesh(self, "", addOpts{interactive: interactive, allowShared: allowShared, noMesh: noMesh})
+	}
 	if !noSkill {
 		a.installSkillOn(self, added, interactive)
 	}
@@ -218,9 +224,10 @@ func (a *app) selfRecord(p tailnet.Peer) registry.Machine {
 		Name: p.Name(), OS: runtime.GOOS, Arch: runtime.GOARCH,
 		TailscaleIP: p.IP(), DNSName: p.DNSName,
 		SSHUser: localUser(), SSHPort: 22, YonderPath: exe,
-		SSHHostKey: localHostKey(), SSHClientKeys: localClientKeys(),
+		SSHHostKey: localHostKey(), MeshKeys: mesh.Own(a.store),
 		UpdatedAt: now, DiscoveredAt: now, AddedAt: now, Facts: discover.Local(),
 	}
+	m.SSHClientKeys = mesh.Union(localClientKeys(), m.MeshKeys)
 	if old, err := a.store.Machine(m.Name); err == nil {
 		m.Role, m.Notes, m.AddedAt, m.SecretsAccount, m.SecretsWrite = old.Role, old.Notes, old.AddedAt, old.SecretsAccount, old.SecretsWrite
 		if old.SSHPort != 0 {

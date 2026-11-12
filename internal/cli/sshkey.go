@@ -41,6 +41,7 @@ func (a *app) sshKeyCommand(args []string, clearKey bool) error {
 			return err
 		}
 		fmt.Fprintf(a.out, "%s: no ssh key set; ssh uses its default identities\n", name)
+		a.updateOwnMeshKeys()
 	case len(args) == 2:
 		if err := checkIdentity(args[1]); err != nil {
 			return &usageError{err}
@@ -49,6 +50,7 @@ func (a *app) sshKeyCommand(args []string, clearKey bool) error {
 			return err
 		}
 		fmt.Fprintf(a.out, "%s: ssh key set to %s (this machine only)\n", name, args[1])
+		a.updateOwnMeshKeys()
 	default:
 		if id := a.store.Identity(name); id != "" {
 			fmt.Fprintf(a.out, "%s: %s\n", name, id)
@@ -57,4 +59,14 @@ func (a *app) sshKeyCommand(args []string, clearKey bool) error {
 		}
 	}
 	return nil
+}
+
+// updateOwnMeshKeys keeps this machine's own record in step with its keys.
+// other machines hold their own copy, which sync doesn't change.
+func (a *app) updateOwnMeshKeys() {
+	self, err := a.selfName()
+	if err != nil || !a.syncOwnMeshKeys(self) {
+		return
+	}
+	fmt.Fprintf(a.out, "the keys %s offers to the fleet changed; on each other machine, `yonder add %s` takes them, then `yonder mesh`\n", self, self)
 }

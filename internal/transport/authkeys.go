@@ -89,16 +89,22 @@ func AuthorizedKeysPath(home string) string {
 	return filepath.Join(home, ".ssh", "authorized_keys")
 }
 
-// SymlinkError is a strip refused because authorized_keys (or ~/.ssh) is a
-// symlink. Lines are the exact lines to delete by hand from Real.
+// SymlinkError is an edit refused because authorized_keys (or ~/.ssh) is a
+// symlink. Lines are the exact lines to delete by hand in Real; with Add, each
+// is "+ line" to add or "- line" to delete.
 type SymlinkError struct {
 	Path, Real string
 	Lines      []string
+	Add        bool
 }
 
 func (e *SymlinkError) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s is a symlink to %s, so yonder won't rewrite it. Delete these %d line(s) from %s by hand:", e.Path, e.Real, len(e.Lines), e.Real)
+	if e.Add {
+		fmt.Fprintf(&b, "%s is a symlink to %s, so yonder won't rewrite it. Make these %d change(s) to %s by hand (+ add the line, - delete it):", e.Path, e.Real, len(e.Lines), e.Real)
+	} else {
+		fmt.Fprintf(&b, "%s is a symlink to %s, so yonder won't rewrite it. Delete these %d line(s) from %s by hand:", e.Path, e.Real, len(e.Lines), e.Real)
+	}
 	for _, l := range e.Lines {
 		b.WriteString("\n    " + l)
 	}
@@ -121,57 +127,75 @@ func symlinked(path string) bool {
 // file is not an error. returns how many lines it removed.
 // it never writes through a symlink: that is a *SymlinkError naming the lines.
 func StripAuthorizedKeys(path string, keys []string) (removed int, backup string, err error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, "", nil
-	}
-	if err != nil {
-		return 0, "", err
-	}
 	set := keySet(keys)
 	if len(set) == 0 {
 		return 0, "", nil
 	}
-	if symlinked(path) {
-		lines := MatchingKeys(string(data), keys)
-		if len(lines) == 0 {
-			return 0, "", nil
+	lines, backup, err := EditAuthorizedKeys(path, false, func(content string) (string, []string) {
+		var kept strings.Builder
+		var gone []string
+		for _, line := range strings.SplitAfter(content, "\n") {
+			if id, ok := KeyID(line); ok && set[id] {
+				gone = append(gone, strings.TrimRight(line, "\r\n"))
+				continue
+			}
+			kept.WriteString(line)
 		}
+		return kept.String(), gone
+	})
+	return len(lines), backup, err
+}
+
+// EditAuthorizedKeys rewrites path with edit, which returns the new content and
+// the lines it removed or added. no lines leaves the file alone. otherwise the
+// original goes to authorized_keys.yonder-bak.<unix-nanos> first (never
+// overwriting an earlier backup), and the new file keeps its mode.
+// a missing file is empty with create (made 0600, its folder 0700), else nothing to do.
+// it never writes through a symlink: that is a *SymlinkError naming the lines.
+func EditAuthorizedKeys(path string, create bool, edit func(content string) (string, []string)) (lines []string, backup string, err error) {
+	data, err := os.ReadFile(path)
+	exists := err == nil
+	switch {
+	case errors.Is(err, os.ErrNotExist) && !create:
+		return nil, "", nil
+	case err != nil && !errors.Is(err, os.ErrNotExist):
+		return nil, "", err
+	}
+	if !exists && symlinked(path) { // a dangling link, or a linked ~/.ssh
+		data = nil
+	}
+	content, lines := edit(string(data))
+	if len(lines) == 0 {
+		return nil, "", nil
+	}
+	if symlinked(path) {
 		real, rerr := filepath.EvalSymlinks(path)
 		if rerr != nil {
 			real = path
 		}
-		return 0, "", &SymlinkError{Path: path, Real: real, Lines: lines}
-	}
-	lines := strings.SplitAfter(string(data), "\n")
-	var kept strings.Builder
-	for _, line := range lines {
-		if id, ok := KeyID(line); ok && set[id] {
-			removed++
-			continue
-		}
-		kept.WriteString(line)
-	}
-	if removed == 0 {
-		return 0, "", nil
+		return nil, "", &SymlinkError{Path: path, Real: real, Lines: lines, Add: create}
 	}
 	mode := os.FileMode(0o600)
-	if st, err := os.Stat(path); err == nil {
-		mode = st.Mode().Perm()
-	}
-	for n := time.Now().UnixNano(); ; n++ { // never overwrite an earlier backup
-		backup = filepath.Join(filepath.Dir(path), fmt.Sprintf("authorized_keys.yonder-bak.%d", n))
-		if _, err := os.Lstat(backup); errors.Is(err, os.ErrNotExist) {
-			break
+	if exists {
+		if st, err := os.Stat(path); err == nil {
+			mode = st.Mode().Perm()
 		}
+		for n := time.Now().UnixNano(); ; n++ { // never overwrite an earlier backup
+			backup = filepath.Join(filepath.Dir(path), fmt.Sprintf("authorized_keys.yonder-bak.%d", n))
+			if _, err := os.Lstat(backup); errors.Is(err, os.ErrNotExist) {
+				break
+			}
+		}
+		if err := writeAtomic(backup, data, mode); err != nil {
+			return nil, "", err
+		}
+	} else if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, "", err
 	}
-	if err := writeAtomic(backup, data, mode); err != nil {
-		return 0, "", err
+	if err := writeAtomic(path, []byte(content), mode); err != nil {
+		return nil, backup, err
 	}
-	if err := writeAtomic(path, []byte(kept.String()), mode); err != nil {
-		return 0, backup, err
-	}
-	return removed, backup, nil
+	return lines, backup, nil
 }
 
 func writeAtomic(path string, data []byte, mode os.FileMode) error {

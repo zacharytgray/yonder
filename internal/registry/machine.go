@@ -18,9 +18,13 @@ type Machine struct {
 	YonderPath    string   `toml:"yonder_path" json:"yonder_path"`
 	SSHHostKey    string   `toml:"ssh_host_key" json:"ssh_host_key"`
 	SSHClientKeys []string `toml:"ssh_client_keys" json:"ssh_client_keys"`
-	Role          string   `toml:"role,omitempty" json:"role"`
-	Notes         string   `toml:"notes,omitempty" json:"notes"`
-	Pending       bool     `toml:"pending,omitempty" json:"pending"`
+	// the keys this machine itself offers when it sshes to the fleet, as it
+	// reported them: ssh's default identities plus keys set with `yonder ssh-key`
+	// there. mesh grants only these; ssh_client_keys stays the list to strip
+	MeshKeys []string `toml:"mesh_keys,omitempty" json:"mesh_keys"`
+	Role     string   `toml:"role,omitempty" json:"role"`
+	Notes    string   `toml:"notes,omitempty" json:"notes"`
+	Pending  bool     `toml:"pending,omitempty" json:"pending"`
 	// the 1password service account whose token this machine holds, set by
 	// `yonder secret setup` provisioning. a name, never a secret
 	SecretsAccount string `toml:"secrets_account,omitempty" json:"secrets_account,omitempty"`

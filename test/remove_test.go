@@ -180,7 +180,8 @@ added_at = 2026-11-01T00:00:00Z
 	if !strings.Contains(r.stdout, "removed gpu-box (it was never set up)") || strings.Contains(r.stdout, "wasn't reachable") || strings.Contains(r.stdout, "ssh key is still trusted") {
 		t.Fatalf("graceful: %s", r.stdout)
 	}
-	if r := f.run("", "remove", "gpu-box", "--yes"); r.code != 1 || !strings.Contains(r.stderr, "already removed") {
+	// a rerun only cleans up mesh lines on machines that were offline
+	if r := f.run("", "remove", "gpu-box", "--yes"); r.code != 0 || !strings.Contains(r.stdout, "already removed") {
 		t.Fatalf("second remove: %+v", r)
 	}
 	if r := f.must("remove", "--forget-local", "--yes"); !strings.Contains(r.stdout, "cleared") {

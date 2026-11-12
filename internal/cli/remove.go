@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zacharytgray/yonder/internal/agents"
+	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/remote"
 	"github.com/zacharytgray/yonder/internal/runlog"
@@ -131,7 +132,14 @@ func (a *app) removeCommand(name string, lost, yes, includeShared bool) error {
 		case hadTomb && lost:
 			return fmt.Errorf("%s was removed on %s and yonder has no ssh keys on record for it; remove them from ~/.ssh/authorized_keys by hand", name, tomb.RemovedAt.Format("2006-01-02"))
 		case hadTomb:
-			return fmt.Errorf("%s was already removed on %s; `yonder remove %s --lost` also strips its ssh keys", name, tomb.RemovedAt.Format("2006-01-02"), name)
+			// a rerun finishes the mesh cleanup on machines that were offline
+			fmt.Fprintf(a.out, "%s was already removed on %s; removing the lines yonder added for it on every online machine. `yonder remove %s --lost` also strips its other ssh keys.\n", name, tomb.RemovedAt.Format("2006-01-02"), name)
+			all, err := a.store.Machines()
+			if err != nil {
+				return err
+			}
+			a.stripMeshEverywhere(self, name, all, mesh.Keep(all, name))
+			return nil
 		default:
 			_, err := a.machine(name)
 			return err
@@ -280,6 +288,12 @@ func (a *app) removeCommand(name string, lost, yes, includeShared bool) error {
 		}
 	}
 
+	keep := mesh.Keep(live, name)
+	if lost && includeShared {
+		keep = nil
+	}
+	a.stripMeshEverywhere(self, name, all, keep)
+
 	a.syncFleet(self)
 
 	a.logRemoval(self, name, lost, start)
@@ -312,11 +326,29 @@ func (a *app) removeCommand(name string, lost, yes, includeShared bool) error {
 	default:
 		fmt.Fprintf(a.out, "%s wasn't reachable, so it still has the skill and its registry copy. When it's back, run there:\n  yonder agents uninstall && yonder remove --forget-local\n", name)
 	}
-	fmt.Fprintf(a.out, "Its ssh key is still trusted by the other machines. If it was lost or compromised, run `yonder remove %s --lost`.\n", name)
+	fmt.Fprintf(a.out, "Keys of it that weren't added by yonder are still trusted by the other machines. If it was lost or compromised, run `yonder remove %s --lost`.\n", name)
 	if account != "" {
 		fmt.Fprintf(a.out, "Its 1Password service account %s still works. Revoke it at %s.\n", account, secrets.RevokeWhere)
 	}
 	return nil
+}
+
+// stripMeshEverywhere drops the lines `yonder mesh` added for name, here and on
+// every online machine, keeping keys in keep. a machine it can't reach drops
+// them at its next sync.
+func (a *app) stripMeshEverywhere(self, name string, ms []registry.Machine, keep map[string]bool) {
+	for _, p := range ms {
+		if p.Name == name || (p.Name != self && !a.isOnline(p)) {
+			continue
+		}
+		lines, backup, err := a.stripMesh(p, self, name, keep)
+		switch {
+		case err != nil:
+			a.warnf("%s: mesh lines for %s: %v", p.Name, name, err)
+		case len(lines) > 0:
+			fmt.Fprintf(a.out, "%s: removed %d line(s) yonder added for %s (backup: %s)\n", p.Name, len(lines), name, agents.Tilde(backup, homeFor(p, self)))
+		}
+	}
 }
 
 func uninstallLine(path string) string {
