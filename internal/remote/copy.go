@@ -398,7 +398,7 @@ func receive(ctx context.Context, spec CopySpec, r io.Reader, errw io.Writer) (C
 		}
 		if err := place(src, t.final, stage, spec.Force); err != nil {
 			if len(res.Items) > 0 {
-				err = fmt.Errorf("%v (already copied: %s)", err, res.Items[0].Path)
+				err = fmt.Errorf("%w (already copied: %s)", err, res.Items[0].Path)
 			}
 			return res, 1, err
 		}
