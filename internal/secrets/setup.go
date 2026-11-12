@@ -67,6 +67,8 @@ const modesExplained = `How 1Password modes work:
   service-account  hands-free. A read-only 1Password service account token, stored in this
                    machine's keychain. It can only see vaults you grant it, and never your
                    Personal/Private vault, so make a vault just for this.
+                   Create it on 1Password.com (not in the app): Developer > Directory >
+                   Other > Create a Service Account. Owners and admins can by default.
                    Individual and Families plans allow 1,000 reads a day.
 1Password cannot approve CLI reads from its phone app today.`
 

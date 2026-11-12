@@ -279,7 +279,7 @@ func (a *app) lostChecklist(name string, keys, stillTrust []string) {
 	fmt.Fprintf(a.out, "Now finish by hand:\n")
 	steps := []string{
 		"Delete " + name + " from your tailnet: Tailscale admin console → Machines → " + name + " → Remove. Its tailnet key stops working at once.",
-		"If it had a hands-free secrets token, revoke it. 1Password: Developer → Service accounts → its account → revoke the token. Bitwarden: Machine accounts → its account → Access tokens → revoke.",
+		"If it had a hands-free secrets token, revoke it. 1Password.com: Developer → Service accounts → its account → revoke the token. Bitwarden: Machine accounts → its account → Access tokens → revoke.",
 		"Rotate any secret that vault or account could read, and any API keys or tokens stored on " + name + " itself.",
 		"Remove its ssh keys anywhere else that trusts them, such as GitHub or GitLab (Settings → SSH keys) and servers outside the fleet:\n" + keyList(keys),
 	}
