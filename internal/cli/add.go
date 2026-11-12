@@ -25,6 +25,7 @@ type addOpts struct {
 	port        int
 	role        string
 	notes       string
+	identity    string // ssh key for this machine, as typed (~ unexpanded); stored locally
 	interactive bool
 }
 
@@ -40,6 +41,9 @@ yonder there, gather its facts, and sync the registry to every online machine.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a := newApp(cmd)
 			o.interactive = !yes && isTerminal(os.Stdin)
+			if err := checkIdentity(o.identity); err != nil {
+				return &usageError{err}
+			}
 			return a.addCommand(args[0], o)
 		},
 	}
@@ -48,6 +52,7 @@ yonder there, gather its facts, and sync the registry to every online machine.`,
 	f.IntVar(&o.port, "port", 0, "ssh port (default 22)")
 	f.StringVar(&o.role, "role", "", "laptop | desktop | server | gpu | other")
 	f.StringVar(&o.notes, "notes", "", "free text shown when the machine is offline")
+	f.StringVar(&o.identity, "identity", "", "ssh private key to use for this machine (kept on this machine only)")
 	f.BoolVar(&yes, "yes", false, "never prompt")
 	return cmd
 }
@@ -106,6 +111,9 @@ func (a *app) withDefaults(name string, o addOpts) addOpts {
 			o.notes = old.Notes
 		}
 	}
+	if o.identity == "" {
+		o.identity = a.store.Identity(name)
+	}
 	if o.user == "" {
 		o.user = localUser()
 	}
@@ -123,6 +131,9 @@ func (a *app) savePending(p tailnet.Peer, o addOpts) error {
 		SSHClientKeys: []string{}, Pending: true, UpdatedAt: now, AddedAt: now,
 	}
 	if err := a.store.ClearLost(m.Name); err != nil {
+		return err
+	}
+	if err := a.saveIdentity(m.Name, o.identity); err != nil {
 		return err
 	}
 	_, err := a.store.MergeIn(registry.Bundle{Machines: []registry.Machine{m}})
@@ -193,14 +204,32 @@ func unameArch(s string) string {
 // addPeer does the full add for an online peer and saves the record.
 func (a *app) addPeer(p tailnet.Peer, o addOpts) (registry.Machine, error) {
 	name := p.Name()
-	t := transport.Target{Name: name, Host: p.IP(), Port: o.port, User: o.user}
+	t := transport.Target{Name: name, Host: p.IP(), Port: o.port, User: o.user, Identity: registry.ExpandHome(o.identity)}
 
 	var out, errb bytes.Buffer
 	key, code, err := a.ssh.Pin(a.ctx, t, probeScript, transport.IO{Stdout: &out, Stderr: &errb})
-	if ue, ok := transport.IsUnreachable(err); ok && ue.AuthFailed() && key != "" {
+	authFailed := func() bool {
+		ue, ok := transport.IsUnreachable(err)
+		return ok && ue.AuthFailed() && key != ""
+	}
+	if authFailed() {
 		t.HostKey = key
+		if o.interactive && o.identity == "" {
+			if id := a.askIdentity(name); id != "" {
+				o.identity, t.Identity = id, registry.ExpandHome(id)
+				out.Reset()
+				errb.Reset()
+				code, err = a.ssh.Shell(a.ctx, t, probeScript, transport.IO{Stdout: &out, Stderr: &errb})
+			}
+		}
+	}
+	if authFailed() {
+		copyLine := fmt.Sprintf("ssh-copy-id -p %d %s@%s", t.Port, o.user, t.Host)
+		if o.identity != "" {
+			copyLine = fmt.Sprintf("ssh-copy-id -i %s -p %d %s@%s", o.identity, t.Port, o.user, t.Host)
+		}
 		if !o.interactive || !a.confirm(fmt.Sprintf("ssh key auth to %s@%s failed. Copy your key there with ssh-copy-id now?", o.user, t.Host)) {
-			return registry.Machine{}, fmt.Errorf("ssh key auth to %s failed; run `ssh-copy-id -p %d %s@%s`, then `yonder add %s` again", name, t.Port, o.user, t.Host, name)
+			return registry.Machine{}, fmt.Errorf("ssh key auth to %s failed; run `%s`, then `yonder add %s` again. If you reach it with a specific key, run `yonder add %s --identity <key>` instead", name, copyLine, name, name)
 		}
 		if err := a.ssh.CopyID(a.ctx, t, transport.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}); err != nil {
 			return registry.Machine{}, fmt.Errorf("ssh-copy-id: %w", err)
@@ -220,6 +249,10 @@ func (a *app) addPeer(p tailnet.Peer, o addOpts) (registry.Machine, error) {
 	}
 	if key == "" {
 		return registry.Machine{}, fmt.Errorf("could not read %s's ssh host key", name)
+	}
+	// ssh works with this key, so keep it before any call that goes through the store
+	if err := a.saveIdentity(name, o.identity); err != nil {
+		return registry.Machine{}, err
 	}
 	t.HostKey = key
 	pr := parseProbe(out.String())
@@ -247,7 +280,7 @@ func (a *app) addPeer(p tailnet.Peer, o addOpts) (registry.Machine, error) {
 		m.SSHClientKeys = []string{}
 	}
 	if old, err := a.store.Machine(name); err == nil {
-		m.SecretsAccount = old.SecretsAccount // its token outlives a re-add
+		m.SecretsAccount, m.SecretsWrite = old.SecretsAccount, old.SecretsWrite // its token outlives a re-add
 	}
 	if f, err := a.remoteFacts(a.ssh, m); err != nil {
 		a.warnf("could not read facts from %s: %v", name, err)
@@ -358,6 +391,44 @@ func (a *app) remoteSh(t transport.Target, script string) error {
 		return fmt.Errorf("%s on %s exited %d: %s", script, t.Name, code, strings.TrimSpace(errb.String()))
 	}
 	return nil
+}
+
+// checkIdentity refuses a key path that isn't a file. "" is fine.
+func checkIdentity(id string) error {
+	if id == "" {
+		return nil
+	}
+	st, err := os.Stat(registry.ExpandHome(id))
+	switch {
+	case err != nil:
+		return fmt.Errorf("identity %s: %v", id, err)
+	case st.IsDir():
+		return fmt.Errorf("identity %s is a directory, not a private key", id)
+	}
+	return nil
+}
+
+// saveIdentity keeps target's key in this machine's config.toml. "" leaves it alone.
+func (a *app) saveIdentity(name, id string) error {
+	if id == "" || a.store.Identity(name) == id {
+		return nil
+	}
+	return a.store.SetIdentity(name, id)
+}
+
+// askIdentity is the prompt after key auth fails. Enter skips.
+func (a *app) askIdentity(name string) string {
+	var id string
+	err := huh.NewInput().
+		Title(fmt.Sprintf("Which key do you use for %s? (Enter to skip)", name)).
+		Description("path to the private key, like ~/.ssh/id_ed25519").
+		Value(&id).
+		Validate(checkIdentity).
+		Run()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(id)
 }
 
 func (a *app) confirm(question string) bool {

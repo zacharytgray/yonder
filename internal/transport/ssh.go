@@ -50,10 +50,18 @@ func (s *SSH) opts(t Target, knownHosts, checking string) []string {
 	if t.User != "" {
 		o = append(o, "-o", "User="+t.User)
 	}
-	if s.Identity != "" {
-		o = append(o, "-i", s.Identity, "-o", "IdentitiesOnly=yes")
+	if id := s.identity(t); id != "" {
+		o = append(o, "-i", id, "-o", "IdentitiesOnly=yes")
 	}
 	return o
+}
+
+// identity is the key for t: its own setting wins over the runner-wide one.
+func (s *SSH) identity(t Target) string {
+	if t.Identity != "" {
+		return t.Identity
+	}
+	return s.Identity
 }
 
 // knownHosts writes a temp known_hosts holding the pinned key (or nothing).
@@ -190,8 +198,11 @@ func (s *SSH) CopyID(ctx context.Context, t Target, stdio IO) error {
 		"-o", "UserKnownHostsFile=" + kh,
 		"-o", "GlobalKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=yes",
-		t.User + "@" + t.Host,
 	}
+	if id := s.identity(t); id != "" {
+		args = append(args, "-i", id, "-o", "IdentitiesOnly=yes")
+	}
+	args = append(args, t.User+"@"+t.Host)
 	cmd := exec.CommandContext(ctx, "ssh-copy-id", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdio.Stdin, stdio.Stdout, stdio.Stderr
 	return cmd.Run()

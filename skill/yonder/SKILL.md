@@ -52,8 +52,21 @@ The secret arrives as an environment variable with that name, inside the remote 
 to it as `$HF_TOKEN` in the command. Yonder removes its value from the output, so you will see
 `[HF_TOKEN]` if the command prints it. Do not try to read the value.
 
+`yonder secret ls` lists names from `secrets.toml` and from the user's agent vault in 1Password.
+
+To keep a secret you generate, such as a new API token, pipe it straight into the vault:
+
+```
+some-cli create-token | yonder secret set NEW_TOKEN
+```
+
+Never echo it, print it, write it to a file or put it in a command line. `secret set` prints only the
+name and the length. It refuses a name that exists; add `--replace` only if the user asked to change
+it. If it says this machine's service account is read-only, give the user the command it prints and
+stop.
+
 If a secret the task needs is missing from `yonder secret ls`, tell the user its name and stop. The
-user adds it with `yonder secret add`.
+user stores it with `yonder secret set NAME`.
 
 ## Other commands
 

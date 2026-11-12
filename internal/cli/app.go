@@ -104,7 +104,8 @@ func (a *app) machine(name string) (registry.Machine, error) {
 	return m, err
 }
 
-func target(m registry.Machine) transport.Target {
+// target builds the ssh target for m, with this machine's key for it if one is set.
+func (a *app) target(m registry.Machine) transport.Target {
 	port := m.SSHPort
 	if port == 0 {
 		port = 22
@@ -116,6 +117,7 @@ func target(m registry.Machine) transport.Target {
 		User:       m.SSHUser,
 		HostKey:    m.SSHHostKey,
 		YonderPath: m.YonderPath,
+		Identity:   registry.ExpandHome(a.store.Identity(m.Name)),
 	}
 }
 

@@ -207,7 +207,7 @@ func TestValueNeverInErrors(t *testing.T) {
 	for name, h := range cases {
 		installFake(t, &fakeExec{handler: h})
 		p := &onePassword{mode: ModeDesktop, tokens: &fakeTokens{}}
-		_, err := resolveWith(p, []string{"API_KEY", "B"}, refs)
+		_, err := resolveWith(p, []string{"API_KEY", "B"}, refs, "")
 		if err == nil {
 			t.Fatalf("%s: want an error", name)
 		}

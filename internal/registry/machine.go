@@ -23,11 +23,13 @@ type Machine struct {
 	Pending       bool     `toml:"pending,omitempty" json:"pending"`
 	// the 1password service account whose token this machine holds, set by
 	// `yonder secret setup` provisioning. a name, never a secret
-	SecretsAccount string    `toml:"secrets_account,omitempty" json:"secrets_account,omitempty"`
-	UpdatedAt      time.Time `toml:"updated_at" json:"updated_at"`
-	DiscoveredAt   time.Time `toml:"discovered_at" json:"discovered_at"`
-	AddedAt        time.Time `toml:"added_at,omitempty" json:"added_at"` // last `yonder add`; only this beats a tombstone
-	Facts          Facts     `toml:"facts" json:"facts"`
+	SecretsAccount string `toml:"secrets_account,omitempty" json:"secrets_account,omitempty"`
+	// that account may also write the agent vault
+	SecretsWrite bool      `toml:"secrets_write,omitempty" json:"secrets_write,omitempty"`
+	UpdatedAt    time.Time `toml:"updated_at" json:"updated_at"`
+	DiscoveredAt time.Time `toml:"discovered_at" json:"discovered_at"`
+	AddedAt      time.Time `toml:"added_at,omitempty" json:"added_at"` // last `yonder add`; only this beats a tombstone
+	Facts        Facts     `toml:"facts" json:"facts"`
 }
 
 // Facts is written by discovery and owned by the machine itself.

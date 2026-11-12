@@ -19,6 +19,7 @@ type SetupOptions struct {
 	Force       bool // ask again even if a provider is set
 	Provider    string
 	Mode        string
+	Vault       string // 1password: the agent vault, for setups made by hand
 }
 
 // SetupInteractive runs Setup for init. it leaves an existing setup alone.
@@ -90,12 +91,27 @@ func Setup(o SetupOptions) error {
 		s := Settings{Provider: o.Provider, Mode: o.Mode, TokenStore: cur.TokenStore}
 		if s.Provider == Provider1Password && s.Mode == "" {
 			s.Mode = recommendedMode()
+			if cur.Provider == Provider1Password {
+				s.Mode = cur.Mode
+			}
 		}
 		if s.Provider == cur.Provider && s.Mode == cur.Mode {
-			s.ServiceAccount, s.Vault = cur.ServiceAccount, cur.Vault
+			s.ServiceAccount, s.Write = cur.ServiceAccount, cur.Write
+		}
+		if s.Provider == cur.Provider {
+			s.Vault = cur.Vault
 		}
 		if s.Provider != Provider1Password && s.Mode != "" {
 			return fmt.Errorf("--mode only applies to 1password")
+		}
+		if o.Vault != "" {
+			if s.Provider != Provider1Password {
+				return fmt.Errorf("--vault only applies to 1password")
+			}
+			if err := CheckVaultName(o.Vault); err != nil {
+				return err
+			}
+			s.Vault = o.Vault
 		}
 		return saveAndExplain(o.Out, s)
 	}
@@ -212,6 +228,12 @@ func explainNext(w io.Writer, s Settings) error {
 		if _, err := tokens.Get(s.Provider); errors.Is(err, ErrNoToken) {
 			fmt.Fprintf(w, "next: store the token with `yonder secret token set` (hidden prompt, or < tokenfile); it goes in the %s\n", tokens.Kind())
 		}
+	}
+	if s.Provider == Provider1Password && s.Vault == "" {
+		fmt.Fprintln(w, "next: to store secrets with `yonder secret set`, name the agent vault: yonder secret setup --provider 1password --vault NAME")
+	}
+	if s.Vault != "" {
+		fmt.Fprintf(w, "secrets: agent vault %q (%s); `yonder secret set NAME` stores a secret there\n", s.Vault, s.Access())
 	}
 	fmt.Fprintf(w, "next: add references, e.g. `yonder secret add API_KEY %s`, then `yonder secret test API_KEY`\n", exampleRef(s.Provider))
 	return nil

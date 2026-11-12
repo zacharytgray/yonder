@@ -29,12 +29,13 @@ func SecretProbe(_ context.Context, args []string, _ io.Reader, out, errw io.Wri
 	return 0
 }
 
-// SecretProvision is `yonder _secret-provision <account> <vault>`. the token
+// SecretProvision is `yonder _secret-provision <account> <vault> [--write]`. the token
 // comes in $YONDER_OP_TOKEN, which _exec sets from the envelope, so it is
 // never in argv and _exec scrubs it from output and the log.
 func SecretProvision(_ context.Context, args []string, _ io.Reader, out, errw io.Writer) int {
-	if len(args) != 2 {
-		fmt.Fprintln(errw, "usage: yonder _secret-provision <account> <vault>  (token in $"+secrets.ProvisionTokenEnv+")")
+	write := len(args) == 3 && args[2] == "--write"
+	if len(args) != 2 && !write {
+		fmt.Fprintln(errw, "usage: yonder _secret-provision <account> <vault> [--write]  (token in $"+secrets.ProvisionTokenEnv+")")
 		return 2
 	}
 	tok := os.Getenv(secrets.ProvisionTokenEnv)
@@ -42,7 +43,7 @@ func SecretProvision(_ context.Context, args []string, _ io.Reader, out, errw io
 		fmt.Fprintf(errw, "yonder _secret-provision: no token in $%s; run `yonder secret setup` from a machine with the 1Password app\n", secrets.ProvisionTokenEnv)
 		return 1
 	}
-	kind, err := ProvisionHere(tok, args[0], args[1])
+	kind, err := ProvisionHere(tok, args[0], args[1], write)
 	if err != nil {
 		fmt.Fprintf(errw, "yonder _secret-provision: %v\n", err)
 		return 1
@@ -52,16 +53,17 @@ func SecretProvision(_ context.Context, args []string, _ io.Reader, out, errw io
 }
 
 // ProvisionHere installs a service account token on this machine and notes
-// the account name on its own record, so the name syncs to the fleet.
-func ProvisionHere(token, account, vault string) (string, error) {
-	kind, err := secrets.InstallServiceAccount(token, account, vault)
+// the account name and its write access on its own record, so they sync to
+// the fleet.
+func ProvisionHere(token, account, vault string, write bool) (string, error) {
+	kind, err := secrets.InstallServiceAccount(token, account, vault, write)
 	if err != nil {
 		return "", err
 	}
 	s := registry.Open()
 	if c, err := s.Config(); err == nil && c.Self != "" {
 		if m, err := s.Machine(c.Self); err == nil {
-			m.SecretsAccount, m.UpdatedAt = account, time.Now().UTC()
+			m.SecretsAccount, m.SecretsWrite, m.UpdatedAt = account, write, time.Now().UTC()
 			if err := s.SaveMachine(m); err != nil {
 				return kind, err
 			}

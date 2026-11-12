@@ -151,3 +151,72 @@ func TestQuoteLeadingEqualsInEveryShell(t *testing.T) {
 		t.Skip("no shell found")
 	}
 }
+
+func TestIdentityOnlyForItsTarget(t *testing.T) {
+	// ssh and scp both just print their args
+	echo := `for a in "$@"; do echo "$a"; done`
+	s := fakeSSH(t, echo)
+	run := func(t Target) string {
+		var out bytes.Buffer
+		if _, err := s.Yonder(context.Background(), t, []string{"_exec"}, IO{Stdout: &out}); err != nil {
+			panic(err)
+		}
+		return out.String()
+	}
+	with := tgt
+	with.Identity = "/keys/id_example"
+	got := run(with)
+	for _, want := range []string{"-i\n/keys/id_example\n", "IdentitiesOnly=yes"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if got := run(tgt); strings.Contains(got, "-i\n") || strings.Contains(got, "IdentitiesOnly") {
+		t.Errorf("target without a key got one:\n%s", got)
+	}
+
+	// the per-target key beats the runner-wide one (YONDER_SSH_IDENTITY)
+	s.Identity = "/keys/global"
+	if got := run(with); !strings.Contains(got, "/keys/id_example") || strings.Contains(got, "/keys/global") {
+		t.Errorf("per-target should win:\n%s", got)
+	}
+	if got := run(tgt); !strings.Contains(got, "/keys/global") {
+		t.Errorf("runner-wide key is the fallback:\n%s", got)
+	}
+}
+
+func TestIdentityOnScpAndCopyID(t *testing.T) {
+	dir := t.TempDir()
+	for _, bin := range []string{"scp", "ssh-copy-id"} {
+		body := "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > " + filepath.Join(dir, bin+".args") + "\n"
+		if err := os.WriteFile(filepath.Join(dir, bin), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	s := &SSH{}
+	with := tgt
+	with.Identity = "/keys/id_example"
+	if err := s.Copy(context.Background(), with, "/tmp/f", "f"); err != nil {
+		t.Fatal(err)
+	}
+	args := func(bin string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, bin+".args"))
+		return string(b)
+	}
+	if got := args("scp"); !strings.Contains(got, "-i\n/keys/id_example\n") || !strings.Contains(got, "IdentitiesOnly=yes") {
+		t.Errorf("scp args:\n%s", got)
+	}
+	if err := s.CopyID(context.Background(), with, IO{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := args("ssh-copy-id"); !strings.Contains(got, "-i\n/keys/id_example\n") || !strings.Contains(got, "IdentitiesOnly=yes") {
+		t.Errorf("ssh-copy-id args:\n%s", got)
+	}
+	if err := s.CopyID(context.Background(), tgt, IO{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := args("ssh-copy-id"); strings.Contains(got, "-i\n") {
+		t.Errorf("no key set, but:\n%s", got)
+	}
+}

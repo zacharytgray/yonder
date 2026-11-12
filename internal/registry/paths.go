@@ -3,6 +3,7 @@ package registry
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ConfigDir is where config.toml, machines/ and removed/ live.
@@ -58,4 +59,15 @@ func yonderHome() string {
 		return abs
 	}
 	return h
+}
+
+// ExpandHome turns a leading ~ into UserHome. other paths pass through.
+func ExpandHome(p string) string {
+	switch {
+	case p == "~":
+		return UserHome()
+	case strings.HasPrefix(p, "~/"):
+		return filepath.Join(UserHome(), p[2:])
+	}
+	return p
 }

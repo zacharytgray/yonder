@@ -89,7 +89,7 @@ func (d doctorRemote) yonder(m registry.Machine, args []string) ([]byte, error) 
 	ctx, cancel := context.WithTimeout(d.a.ctx, 20*time.Second)
 	defer cancel()
 	var out, errb bytes.Buffer
-	code, err := d.a.ssh.Yonder(ctx, target(m), args, transport.IO{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errb})
+	code, err := d.a.ssh.Yonder(ctx, d.a.target(m), args, transport.IO{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errb})
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (d doctorRemote) Registry(m registry.Machine) (registry.Bundle, error) {
 	ctx, cancel := context.WithTimeout(d.a.ctx, 20*time.Second)
 	defer cancel()
 	var out, errb bytes.Buffer
-	code, err := d.a.ssh.Yonder(ctx, target(m), []string{"_sync"}, transport.IO{
+	code, err := d.a.ssh.Yonder(ctx, d.a.target(m), []string{"_sync"}, transport.IO{
 		Stdin: strings.NewReader(`{"machines":[],"tombstones":[]}`), Stdout: &out, Stderr: &errb,
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ func (d doctorRemote) AuthorizedKeys(m registry.Machine) (string, error) {
 	ctx, cancel := context.WithTimeout(d.a.ctx, 20*time.Second)
 	defer cancel()
 	var out bytes.Buffer
-	code, err := d.a.ssh.Shell(ctx, target(m), doctor.AuthorizedKeysScript, transport.IO{Stdout: &out})
+	code, err := d.a.ssh.Shell(ctx, d.a.target(m), doctor.AuthorizedKeysScript, transport.IO{Stdout: &out})
 	if err != nil {
 		return "", err
 	}

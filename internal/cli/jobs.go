@@ -34,7 +34,7 @@ func newJobsCmd() *cobra.Command {
 				return err
 			}
 			if len(args) == 2 {
-				code, err := r.Yonder(a.ctx, target(m), []string{"_jobs", args[1]}, transport.IO{Stdout: a.out, Stderr: a.errw})
+				code, err := r.Yonder(a.ctx, a.target(m), []string{"_jobs", args[1]}, transport.IO{Stdout: a.out, Stderr: a.errw})
 				if ue, ok := transport.IsUnreachable(err); ok {
 					return unreachableError(m, ue)
 				}

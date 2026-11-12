@@ -103,7 +103,7 @@ func (a *app) pushBundle(m registry.Machine, b registry.Bundle) (registry.Bundle
 // yonderJSON runs a hidden command and collects stdout; stderr goes into the error.
 func (a *app) yonderJSON(r transport.Runner, m registry.Machine, args []string, stdin []byte, out *bytes.Buffer) error {
 	var errb bytes.Buffer
-	code, err := r.Yonder(a.ctx, target(m), args, transport.IO{
+	code, err := r.Yonder(a.ctx, a.target(m), args, transport.IO{
 		Stdin: bytes.NewReader(stdin), Stdout: out, Stderr: &errb,
 	})
 	if err != nil {

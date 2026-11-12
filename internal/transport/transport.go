@@ -17,6 +17,7 @@ type Target struct {
 	User       string
 	HostKey    string // pinned sshd host key, "type base64"
 	YonderPath string
+	Identity   string // private key for this target, already expanded; "" = ssh defaults
 }
 
 type IO struct {

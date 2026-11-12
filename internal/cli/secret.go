@@ -19,17 +19,20 @@ import (
 func newSecretCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secret",
-		Short: "Manage secret references and this machine's secrets provider",
-		Long: `Manage secret references and this machine's secrets provider.
+		Short: "Manage secrets and this machine's secrets provider",
+		Long: `Manage secrets and this machine's secrets provider.
 
-secrets.toml maps NAME to a reference (op://vault/item/field or bws://<uuid>), never
-a value. It is per machine and not synced: add the same names on each machine an
-agent runs from. ` + "`yonder run m --secret NAME`" + ` resolves NAME here and passes it
-to the command's environment on m. Output is scrubbed to [NAME].`,
+A secret NAME resolves from secrets.toml first, then from the 1Password item titled
+exactly NAME in the agent vault. secrets.toml maps NAME to a reference
+(op://vault/item/field or bws://<uuid>), never a value; it is per machine and not
+synced. Vault items work by name on every machine that reads the vault.
+` + "`yonder secret set NAME`" + ` stores a new one there from stdin or a hidden prompt.
+` + "`yonder run m --secret NAME`" + ` resolves NAME here and passes it to the command's
+environment on m. Output is scrubbed to [NAME].`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	cmd.AddCommand(newSecretAddCmd(), newSecretLsCmd(), newSecretRmCmd(), newSecretTestCmd(), newSecretSetupCmd(), newSecretTokenCmd())
+	cmd.AddCommand(newSecretAddCmd(), newSecretSetCmd(), newSecretLsCmd(), newSecretRmCmd(), newSecretTestCmd(), newSecretSetupCmd(), newSecretTokenCmd())
 	return cmd
 }
 
@@ -70,17 +73,95 @@ func schemeFor(provider string) string {
 	return "op://"
 }
 
+func newSecretSetCmd() *cobra.Command {
+	var replace bool
+	cmd := &cobra.Command{
+		Use:   "set NAME [--replace]",
+		Short: "Store a secret in the agent vault (value from stdin or a hidden prompt)",
+		Long: `Store a secret in the 1Password agent vault as an API Credential item titled NAME,
+tagged yonder. The value comes from stdin when it isn't a terminal, else from a hidden
+prompt. One trailing newline is dropped. It never appears in argv, output or the log.
+
+  some-cli new-token | yonder secret set NAME
+  yonder secret set NAME                 (hidden prompt)
+  yonder secret set NAME --replace       (change an existing item's value)
+
+Every machine that reads the vault can then use --secret NAME, with no mapping.
+Desktop mode asks for one approval. A service account needs write access:
+` + "`yonder secret setup --allow-write`" + `. Bitwarden is not supported.`,
+		Args: usageArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if err := secrets.ValidName(name); err != nil {
+				return &usageError{err}
+			}
+			a := newApp(cmd)
+			val, err := readSecretValue(a.in, name)
+			if err != nil {
+				return err
+			}
+			vault, err := secrets.Store(name, val, replace)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.out, "stored %s in %s (%d chars)\n", name, vault, utf8.RuneCountInString(val))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&replace, "replace", false, "change the value of an existing item with this title")
+	return cmd
+}
+
+// readSecretValue: a hidden prompt on a terminal, else all of stdin minus
+// one trailing newline.
+func readSecretValue(in io.Reader, name string) (string, error) {
+	if f, ok := in.(*os.File); ok && isTerminal(f) {
+		var v string
+		err := huh.NewInput().Title("Value for " + name).Description("Hidden. It goes straight to 1Password.").
+			EchoMode(huh.EchoModePassword).Value(&v).Run()
+		if err != nil {
+			return "", err
+		}
+		if v == "" {
+			return "", errors.New("empty value; nothing stored")
+		}
+		return v, nil
+	}
+	b, err := io.ReadAll(io.LimitReader(in, secrets.MaxValueBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(b) > secrets.MaxValueBytes {
+		return "", fmt.Errorf("the value is over %d KiB; nothing stored", secrets.MaxValueBytes>>10)
+	}
+	v := string(b)
+	if strings.HasSuffix(v, "\r\n") {
+		v = v[:len(v)-2]
+	} else {
+		v = strings.TrimSuffix(v, "\n")
+	}
+	if v == "" {
+		return "", fmt.Errorf("no value on stdin; pipe it in (some-cli new-token | yonder secret set %s) or run in a terminal", name)
+	}
+	return v, nil
+}
+
 type secretJSON struct {
-	Name string `json:"name"`
-	Ref  string `json:"ref"`
+	Name   string `json:"name"`
+	Ref    string `json:"ref"`    // empty for vault items
+	Source string `json:"source"` // "secrets.toml" or "vault"
 }
 
 func newSecretLsCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "ls",
-		Short: "List secret names and references (never values)",
-		Args:  usageArgs(cobra.NoArgs),
+		Short: "List secret names: secrets.toml references and agent vault titles (never values)",
+		Long: `List the secret names this machine can resolve: references in secrets.toml, then
+item titles in the agent vault that are valid names. A name in both resolves from
+secrets.toml. Listing the vault reads titles only, never values; in desktop mode it
+asks for approval like any read.`,
+		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a := newApp(cmd)
 			s, err := secrets.LoadSettings()
@@ -93,20 +174,37 @@ func newSecretLsCmd() *cobra.Command {
 			}
 			list := []secretJSON{}
 			for _, n := range sortedNames(refs) {
-				list = append(list, secretJSON{Name: n, Ref: refs[n]})
+				list = append(list, secretJSON{Name: n, Ref: refs[n], Source: "secrets.toml"})
+			}
+			vault, titles, skipped, verr := secrets.VaultNames()
+			for _, n := range titles {
+				if _, mapped := refs[n]; !mapped {
+					list = append(list, secretJSON{Name: n, Source: "vault"})
+				}
+			}
+			sort.SliceStable(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+			vaultErr := ""
+			if verr != nil {
+				vaultErr = verr.Error()
 			}
 			if asJSON {
 				enc := json.NewEncoder(a.out)
 				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"provider": s.Provider, "mode": s.Mode, "secrets": list})
+				return enc.Encode(map[string]any{"provider": s.Provider, "mode": s.Mode, "vault": vault, "vault_error": vaultErr, "secrets": list})
 			}
 			prov := "none (run `yonder secret setup`)"
 			if s.Provider != "" {
 				prov = s.String()
 			}
 			fmt.Fprintf(a.out, "provider: %s\n", prov)
+			if vault != "" {
+				fmt.Fprintf(a.out, "vault: %s (%s)\n", vault, s.Access())
+			}
+			if verr != nil {
+				a.warnf("could not list the vault %q: %v", vault, verr)
+			}
 			if len(list) == 0 {
-				fmt.Fprintln(a.out, "no secrets yet; add one with `yonder secret add NAME <ref>`")
+				fmt.Fprintln(a.out, "no secrets yet; store one with `yonder secret set NAME` or map one with `yonder secret add NAME <ref>`")
 				return nil
 			}
 			w := 0
@@ -114,7 +212,14 @@ func newSecretLsCmd() *cobra.Command {
 				w = max(w, len(e.Name))
 			}
 			for _, e := range list {
-				fmt.Fprintf(a.out, "%-*s  %s\n", w, e.Name, e.Ref)
+				where := e.Ref
+				if e.Source == "vault" {
+					where = "vault item"
+				}
+				fmt.Fprintf(a.out, "%-*s  %s\n", w, e.Name, where)
+			}
+			if skipped > 0 {
+				fmt.Fprintf(a.out, "(%d vault item(s) not listed: their titles aren't names like API_KEY)\n", skipped)
 			}
 			return nil
 		},
@@ -174,14 +279,16 @@ func newSecretSetupCmd() *cobra.Command {
 		po             provisionOpts
 	)
 	cmd := &cobra.Command{
-		Use:   "setup [--machines a,b | --all-machines] [--vault NAME] [--replace] [--yes]",
+		Use:   "setup [--machines a,b | --all-machines] [--vault NAME] [--allow-write] [--replace] [--yes]",
 		Short: "Set up secrets: hands-free 1Password for your machines, or this machine's provider",
 		Long: `Set up secrets. With no flags it asks.
 
 From a machine with the 1Password app (or an ` + "`op signin`" + ` session), yonder can set up
 hands-free 1Password for the fleet in one run, with one approval: it creates a vault for
-agent secrets (default "` + secrets.DefaultVault + `"), then one read-only service account per
-machine, named yonder-<machine>, and stores each token in that machine's keychain. The
+agent secrets (default "` + secrets.DefaultVault + `"), then one service account per machine,
+named yonder-<machine>, and stores each token in that machine's keychain. The accounts
+are read-only unless --allow-write, which lets agents store secrets with
+` + "`yonder secret set`" + ` (and also change or delete items in that vault). The
 tokens never touch disk here, argv or the log. Every machine needs ` + "`op`" + ` installed.
 By default it sets up every other online machine, and this one only if it has no
 1Password app. 1Password has no command to revoke a service account; do that at
@@ -190,6 +297,7 @@ By default it sets up every other online machine, and this one only if it has no
   yonder secret setup --yes                    the default machines, no prompts
   yonder secret setup --machines gpu-box       just these (offline ones: run this later)
   yonder secret setup --all-machines --vault Agents --expires-in 90d
+  yonder secret setup --machines gpu-box --replace --allow-write
 
 Or choose this machine's provider by hand:
   1password desktop: the 1Password app approves reads with Touch ID or system auth.
@@ -197,7 +305,9 @@ Or choose this machine's provider by hand:
   bws: Bitwarden Secrets Manager with a machine-account access token.
 1Password cannot approve CLI reads from its phone app today.
 
-Hand-chosen hands-free modes need ` + "`yonder secret token set`" + ` afterwards.`,
+Hand-chosen hands-free modes need ` + "`yonder secret token set`" + ` afterwards. With
+--provider 1password, --vault NAME records the agent vault for ` + "`secret set`" + ` and
+name lookups.`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if mode != "" && provider == "" {
@@ -206,8 +316,8 @@ Hand-chosen hands-free modes need ` + "`yonder secret token set`" + ` afterwards
 			a := newApp(cmd)
 			po.interactive = !yes && promptable()
 			if provider != "" {
-				if po.set(false) {
-					return &usageError{errors.New("--provider sets up this machine by hand; it doesn't mix with --machines, --all-machines, --vault, --replace or --expires-in")}
+				if len(po.machines) > 0 || po.all || po.replace || po.expiresIn != "" || po.allowWrite {
+					return &usageError{errors.New("--provider sets up this machine by hand; it doesn't mix with --machines, --all-machines, --replace, --expires-in or --allow-write")}
 				}
 			} else if po.set(yes) {
 				if len(po.machines) > 0 && po.all {
@@ -223,6 +333,7 @@ Hand-chosen hands-free modes need ` + "`yonder secret token set`" + ` afterwards
 				Force:       true,
 				Provider:    provider,
 				Mode:        mode,
+				Vault:       po.vault,
 			})
 		},
 	}
@@ -234,6 +345,7 @@ Hand-chosen hands-free modes need ` + "`yonder secret token set`" + ` afterwards
 	f.StringVar(&po.vault, "vault", "", "1Password vault for agent secrets (default \""+secrets.DefaultVault+"\"; created if missing)")
 	f.BoolVar(&po.replace, "replace", false, "replace a token a machine already has")
 	f.StringVar(&po.expiresIn, "expires-in", "", "service accounts expire after this long, e.g. 90d (default: never)")
+	f.BoolVar(&po.allowWrite, "allow-write", false, "let the service accounts write the vault too, so agents can `yonder secret set`")
 	f.BoolVar(&yes, "yes", false, "never prompt; set up the default machines")
 	return cmd
 }
@@ -254,7 +366,7 @@ func (a *app) secretsChoice(po provisionOpts, force bool) error {
 		Title("Set up secrets").
 		Description("Agents ask for secrets by name. Yonder resolves them on the machine the agent runs on\nand passes them to the target's environment. The model never sees a value.").
 		Options(
-			huh.NewOption("hands-free 1Password for my machines: one vault, one read-only service account each (one approval)", "fleet"),
+			huh.NewOption("hands-free 1Password for my machines: one vault, one service account each (one approval)", "fleet"),
 			huh.NewOption("choose a provider for this machine only", "here"),
 			huh.NewOption("skip for now", ""),
 		).

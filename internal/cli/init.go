@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ func newInitCmd() *cobra.Command {
 		yes      bool
 		machines []string
 		user     string
+		idents   []string
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -35,21 +37,48 @@ func newInitCmd() *cobra.Command {
 
 Offline peers are saved as pending and finish setup on the next ` + "`yonder refresh`" + `.
 Non-interactive: yonder init --yes --machines gpu-box,laptop [--user me]
+If you reach a peer with a specific ssh key: --identity gpu-box=~/.ssh/id_ed25519_gpubox
+(repeat the flag per peer; the key path stays on this machine).
 With --yes and no --machines, only this machine is set up.`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a := newApp(cmd)
 			interactive := !yes && isTerminal(os.Stdin)
-			return a.initCommand(interactive, machines, user)
+			ids, err := parseIdentities(idents)
+			if err != nil {
+				return &usageError{err}
+			}
+			return a.initCommand(interactive, machines, user, ids)
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "never prompt")
 	cmd.Flags().StringSliceVar(&machines, "machines", nil, "peers to add, comma-separated")
 	cmd.Flags().StringVar(&user, "user", "", "ssh user on the peers (default: the current user)")
+	cmd.Flags().StringArrayVar(&idents, "identity", nil, "ssh key for a peer, as machine=path (repeatable, kept on this machine only)")
 	return cmd
 }
 
-func (a *app) initCommand(interactive bool, chosen []string, user string) error {
+// parseIdentities reads repeated machine=path flags.
+func parseIdentities(in []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, kv := range in {
+		name, path, ok := strings.Cut(kv, "=")
+		name, path = strings.TrimSpace(name), strings.TrimSpace(path)
+		if !ok || name == "" || path == "" {
+			return nil, fmt.Errorf("--identity %q: want machine=path", kv)
+		}
+		if err := registry.ValidName(name); err != nil {
+			return nil, fmt.Errorf("--identity %q: %w", kv, err)
+		}
+		if err := checkIdentity(path); err != nil {
+			return nil, err
+		}
+		out[name] = path
+	}
+	return out, nil
+}
+
+func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string) error {
 	st, err := a.status()
 	if err != nil {
 		if errors.Is(err, tailnet.ErrNotInstalled) || errors.Is(err, tailnet.ErrNotRunning) {
@@ -79,9 +108,15 @@ func (a *app) initCommand(interactive bool, chosen []string, user string) error 
 		return err
 	}
 
+	for n := range ids {
+		if !slices.ContainsFunc(picks, func(p tailnet.Peer) bool { return p.Name() == n }) {
+			a.warnf("--identity %s: %s is not one of the peers being added; `yonder ssh-key %s <path>` sets it later", n, n, n)
+		}
+	}
+
 	var failed, added []string
 	for _, p := range picks {
-		o := addOpts{user: user, interactive: interactive}
+		o := addOpts{user: user, interactive: interactive, identity: ids[p.Name()]}
 		if interactive {
 			o.role, o.notes = askRoleNotes(p.Name())
 		}
@@ -177,7 +212,7 @@ func (a *app) selfRecord(p tailnet.Peer) registry.Machine {
 		UpdatedAt: now, DiscoveredAt: now, AddedAt: now, Facts: discover.Local(),
 	}
 	if old, err := a.store.Machine(m.Name); err == nil {
-		m.Role, m.Notes, m.AddedAt, m.SecretsAccount = old.Role, old.Notes, old.AddedAt, old.SecretsAccount
+		m.Role, m.Notes, m.AddedAt, m.SecretsAccount, m.SecretsWrite = old.Role, old.Notes, old.AddedAt, old.SecretsAccount, old.SecretsWrite
 		if old.SSHPort != 0 {
 			m.SSHPort = old.SSHPort
 		}

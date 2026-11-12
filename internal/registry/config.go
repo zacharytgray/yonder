@@ -11,6 +11,12 @@ import (
 type Config struct {
 	Self    string         `toml:"self"`
 	Secrets map[string]any `toml:"secrets,omitempty"` // provider settings, step 3
+	SSH     map[string]SSH `toml:"ssh,omitempty"`     // per-target ssh settings, this machine only
+}
+
+// SSH is how this machine reaches one target. it never leaves this machine.
+type SSH struct {
+	Identity string `toml:"identity,omitempty"` // private key path, ~ left unexpanded
 }
 
 func (s *Store) Config() (Config, error) {
@@ -49,6 +55,45 @@ func (s *Store) SetSecrets(t map[string]any) error {
 		delete(raw, "secrets")
 	} else {
 		raw["secrets"] = t
+	}
+	data, err := toml.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	return writeFile(s.configPath(), data)
+}
+
+// Identity is the ssh key configured for target, as written (~ unexpanded).
+func (s *Store) Identity(target string) string {
+	c, err := s.Config()
+	if err != nil {
+		return ""
+	}
+	return c.SSH[target].Identity
+}
+
+// SetIdentity sets or (with "") clears the ssh key for target and keeps every other key.
+func (s *Store) SetIdentity(target, path string) error {
+	if err := ValidName(target); err != nil {
+		return err
+	}
+	raw := map[string]any{}
+	if err := readTOML(s.configPath(), &raw); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	tbl, _ := raw["ssh"].(map[string]any)
+	if tbl == nil {
+		tbl = map[string]any{}
+	}
+	if path == "" {
+		delete(tbl, target)
+	} else {
+		tbl[target] = map[string]any{"identity": path}
+	}
+	if len(tbl) == 0 {
+		delete(raw, "ssh")
+	} else {
+		raw["ssh"] = tbl
 	}
 	data, err := toml.Marshal(raw)
 	if err != nil {

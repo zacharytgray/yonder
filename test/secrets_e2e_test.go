@@ -129,3 +129,105 @@ func TestSecretProvisionEndToEnd(t *testing.T) {
 		t.Fatalf("op argv:\n%s", argv)
 	}
 }
+
+// fakeOpVault plays op for the agent vault. it logs argv to argv and each
+// call's stdin to stdin.<n>, and keeps the created item in created.json.
+const fakeOpVault = `#!/bin/sh
+n=$(cat "$OP_STATE/n" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$OP_STATE/n"
+echo "$*" >> "$OP_STATE/argv"
+cat > "$OP_STATE/stdin.$n"
+case "$1 $2" in
+"--version "*) echo 2.34.0 ;;
+"whoami "*|"account list") exit 0 ;;
+"item list")
+  if [ -f "$OP_STATE/created.json" ]; then
+    echo '[{"id":"item1","title":"NEW_KEY","category":"API_CREDENTIAL","vault":{"id":"vault1","name":"Agents"}},{"id":"item2","title":"my notes","category":"SECURE_NOTE","vault":{"id":"vault1","name":"Agents"}}]'
+  else echo '[]'; fi ;;
+"item create") cp "$OP_STATE/stdin.$n" "$OP_STATE/created.json" ;;
+"item get") cat "$OP_STATE/created.json" ;;
+"item edit") cp "$OP_STATE/stdin.$n" "$OP_STATE/edited.json" ;;
+"inject "*) sed -E 's/[{][{] op:[/][/][^}]* [}][}]/dummy-value-123/g' "$OP_STATE/stdin.$n" ;;
+*) echo "[ERROR] 2026/11/11 20:00:00 unsupported" >&2; exit 1 ;;
+esac
+`
+
+func TestSecretSetEndToEnd(t *testing.T) {
+	const value, value2 = "sk-new-secret-value", "sk-replaced-value-2"
+	f := newFleet(t, "testdata/fleet.json")
+	bin, state := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "op"), []byte(fakeOpVault), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, kv := range f.env {
+		if strings.HasPrefix(kv, "PATH=") {
+			f.env[i] = "PATH=" + bin + ":" + strings.TrimPrefix(kv, "PATH=")
+		}
+	}
+	f.env = append(f.env, "OP_STATE="+state)
+	f.must("init", "--yes")
+	f.must("secret", "setup", "--provider", "1password", "--mode", "desktop", "--vault", "Agents")
+	var seen strings.Builder
+	keep := func(r result) result { seen.WriteString(r.stdout + r.stderr); return r }
+
+	if r := keep(f.run(value+"\n", "secret", "set", "NEW_KEY")); r.code != 0 || r.stdout != "stored NEW_KEY in Agents (19 chars)\n" {
+		t.Fatalf("set: %+v", r)
+	}
+	created, _ := os.ReadFile(filepath.Join(state, "created.json"))
+	if !strings.Contains(string(created), `"value":"`+value+`"`) || !strings.Contains(string(created), `"title":"NEW_KEY"`) {
+		t.Fatalf("created item: %s", created)
+	}
+	if r := keep(f.run(value2+"\n", "secret", "set", "NEW_KEY")); r.code != 1 || !strings.Contains(r.stderr, "already exists") || !strings.Contains(r.stderr, "--replace") {
+		t.Fatalf("set existing: %+v", r)
+	}
+	if r := keep(f.run(value2, "secret", "set", "NEW_KEY", "--replace")); r.code != 0 || r.stdout != "stored NEW_KEY in Agents (19 chars)\n" {
+		t.Fatalf("set --replace: %+v", r)
+	}
+	edited, _ := os.ReadFile(filepath.Join(state, "edited.json"))
+	if !strings.Contains(string(edited), `"value":"`+value2+`"`) {
+		t.Fatalf("edited item: %s", edited)
+	}
+
+	r := keep(f.must("secret", "ls"))
+	if !strings.Contains(r.stdout, "NEW_KEY  vault item") || !strings.Contains(r.stdout, "vault: Agents (read and write)") || !strings.Contains(r.stdout, "1 vault item(s) not listed") {
+		t.Fatalf("ls: %s", r.stdout)
+	}
+	if r := keep(f.must("secret", "ls", "--json")); !strings.Contains(r.stdout, `"source": "vault"`) || !strings.Contains(r.stdout, `"vault": "Agents"`) {
+		t.Fatalf("ls --json: %s", r.stdout)
+	}
+	if r := keep(f.must("secret", "test", "NEW_KEY")); r.stdout != "NEW_KEY: ok, 15 chars\n" {
+		t.Fatalf("test: %+v", r)
+	}
+	if r := keep(f.must("run", "laptop", "--secret", "NEW_KEY", "--", "echo $NEW_KEY")); r.stdout != "[NEW_KEY]\n" {
+		t.Fatalf("run: %+v", r)
+	}
+	if r := keep(f.run("", "secret", "set", "NEW_KEY")); r.code != 1 || !strings.Contains(r.stderr, "no value on stdin") {
+		t.Fatalf("empty stdin: %+v", r)
+	}
+	if r := keep(f.run("x", "secret", "set", "new-key")); r.code != 2 {
+		t.Fatalf("bad name: %+v", r)
+	}
+	f.must("secret", "setup", "--provider", "bws")
+	if r := keep(f.run("x", "secret", "set", "OTHER")); r.code != 1 || !strings.Contains(r.stderr, "can't store secrets in Bitwarden") {
+		t.Fatalf("bws: %+v", r)
+	}
+
+	argv, _ := os.ReadFile(filepath.Join(state, "argv"))
+	if !strings.Contains(string(argv), "item create --vault Agents --tags yonder -\n") || !strings.Contains(string(argv), "item edit item1 --vault vault1\n") {
+		t.Fatalf("op argv:\n%s", argv)
+	}
+	ins, _ := filepath.Glob(filepath.Join(state, "stdin.*"))
+	byTitle := false
+	for _, p := range ins {
+		b, _ := os.ReadFile(p)
+		byTitle = byTitle || strings.Contains(string(b), "{{ op://vault1/item1/credential }}")
+	}
+	if !byTitle {
+		t.Fatal("NEW_KEY should resolve from the vault item by title")
+	}
+	logData, _ := os.ReadFile(filepath.Join(f.home, "yonder", "state", "log.jsonl"))
+	for name, s := range map[string]string{"op argv": string(argv), "yonder output": seen.String(), "log.jsonl": string(logData)} {
+		if strings.Contains(s, value) || strings.Contains(s, value2) {
+			t.Fatalf("a value leaked into %s:\n%s", name, s)
+		}
+	}
+}

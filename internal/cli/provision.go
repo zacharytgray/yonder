@@ -18,8 +18,9 @@ import (
 )
 
 // hands-free 1password for the fleet in one run: the person here approves
-// once, yonder makes the vault and one read-only service account per machine,
-// and hands each token to its machine inside the _exec envelope.
+// once, yonder makes the vault and one service account per machine (read-only
+// unless allowWrite), and hands each token to its machine inside the _exec
+// envelope.
 
 type provisionOpts struct {
 	vault       string
@@ -27,12 +28,13 @@ type provisionOpts struct {
 	all         bool
 	replace     bool
 	expiresIn   string
+	allowWrite  bool // grant write_items too, so agents can `secret set`
 	interactive bool
 }
 
 // wantsProvision: any provisioning flag means the fleet flow, not the provider prompts.
 func (o provisionOpts) set(yes bool) bool {
-	return yes || len(o.machines) > 0 || o.all || o.replace || o.vault != "" || o.expiresIn != ""
+	return yes || len(o.machines) > 0 || o.all || o.replace || o.vault != "" || o.expiresIn != "" || o.allowWrite
 }
 
 type provTarget struct {
@@ -120,6 +122,9 @@ func (a *app) provision(o provisionOpts) error {
 				return err
 			}
 		}
+		if !o.allowWrite {
+			o.allowWrite = askAllowWrite()
+		}
 		for _, m := range ms {
 			if w, ok := why[m.Name]; ok {
 				fmt.Fprintf(a.out, "%s: can't set up now (%s); later: %s\n", m.Name, w, rerunLine(m.Name))
@@ -197,7 +202,7 @@ func (a *app) provision(o provisionOpts) error {
 	}
 	if len(targets) == 0 {
 		fmt.Fprintln(a.out, "nothing to set up")
-		a.keepDesktopHere(self, chosen)
+		a.keepDesktopHere(self, chosen, o.vault)
 		if failed {
 			return quietExit(ExitError)
 		}
@@ -208,7 +213,11 @@ func (a *app) provision(o provisionOpts) error {
 	for i, t := range targets {
 		names[i] = t.m.Name
 	}
-	fmt.Fprintf(a.out, "Agent secrets go in the 1Password vault %q. The agents on %s can read everything in it.\n", o.vault, strings.Join(names, ", "))
+	can := "read"
+	if o.allowWrite {
+		can = "read, change and delete"
+	}
+	fmt.Fprintf(a.out, "Agent secrets go in the 1Password vault %q. The agents on %s can %s everything in it.\n", o.vault, strings.Join(names, ", "), can)
 	fmt.Fprintln(a.out, "1Password asks you to approve once (Touch ID or your system password).")
 	created, err := secrets.EnsureVault(o.vault)
 	if err != nil {
@@ -228,12 +237,12 @@ func (a *app) provision(o provisionOpts) error {
 			failed = true
 		}
 	}
-	a.keepDesktopHere(self, chosen)
+	a.keepDesktopHere(self, chosen, o.vault)
 	if changed {
 		a.syncFleet(self)
 	}
 	fmt.Fprintf(a.out, "To cut a machine off later, revoke its account at %s (yonder can't revoke it for you).\n", secrets.RevokeWhere)
-	fmt.Fprintf(a.out, "next: put agent secrets in %q, then on each machine an agent runs from: yonder secret add API_KEY 'op://%s/<item>/<field>'\n", o.vault, o.vault)
+	fmt.Fprintf(a.out, "next: store agent secrets with `yonder secret set NAME` (or in 1Password, titled with the name, in %q); every machine above resolves them by name\n", o.vault)
 	if failed {
 		return quietExit(ExitError)
 	}
@@ -244,7 +253,7 @@ func (a *app) provision(o provisionOpts) error {
 // the token lives only in this function's memory and the envelope.
 func (a *app) provisionOne(t provTarget, self string, o provisionOpts) bool {
 	n := t.m.Name
-	tok, err := secrets.CreateServiceAccount(t.account, o.vault, o.expiresIn)
+	tok, err := secrets.CreateServiceAccount(t.account, o.vault, o.expiresIn, o.allowWrite)
 	if err != nil {
 		fmt.Fprintf(a.out, "%s: failed, %v\n  fix: check the 1Password app is unlocked, then: %s\n", n, err, rerunLine(n))
 		return false
@@ -252,9 +261,9 @@ func (a *app) provisionOne(t provTarget, self string, o provisionOpts) bool {
 	revokeFix := fmt.Sprintf("revoke %s at %s, then: %s", t.account, secrets.RevokeWhere, rerunLine(n))
 	var kind string
 	if t.self {
-		kind, err = remote.ProvisionHere(tok, t.account, o.vault)
+		kind, err = remote.ProvisionHere(tok, t.account, o.vault, o.allowWrite)
 	} else {
-		kind, err = a.remoteProvision(t.m, self, tok, t.account, o.vault)
+		kind, err = a.remoteProvision(t.m, self, tok, t.account, o.vault, o.allowWrite)
 	}
 	if err != nil {
 		msg := secrets.ScrubText(err.Error(), map[string]string{"TOKEN": tok})
@@ -263,7 +272,7 @@ func (a *app) provisionOne(t provTarget, self string, o provisionOpts) bool {
 	}
 	if !t.self {
 		if m, err := a.store.Machine(n); err == nil {
-			m.SecretsAccount, m.UpdatedAt = t.account, time.Now().UTC()
+			m.SecretsAccount, m.SecretsWrite, m.UpdatedAt = t.account, o.allowWrite, time.Now().UTC()
 			if err := a.store.SaveMachine(m); err != nil {
 				a.warnf("recording %s's account: %v", n, err)
 			}
@@ -279,7 +288,11 @@ func (a *app) provisionOne(t provTarget, self string, o provisionOpts) bool {
 		fmt.Fprintf(a.out, "%s: failed, token stored in %s but the check failed: %s\n  fix: run `yonder doctor` on %s; if the token is bad: %s\n", n, kind, p.Detail, n, revokeFix)
 		return false
 	}
-	fmt.Fprintf(a.out, "%s: ok, service account %s reads %q, token in %s\n", n, t.account, o.vault, kind)
+	access := "reads"
+	if o.allowWrite {
+		access = "reads and writes"
+	}
+	fmt.Fprintf(a.out, "%s: ok, service account %s %s %q, token in %s\n", n, t.account, access, o.vault, kind)
 	if t.old != "" {
 		old := t.old
 		switch old {
@@ -293,16 +306,27 @@ func (a *app) provisionOne(t provTarget, self string, o provisionOpts) bool {
 }
 
 // keepDesktopHere: this machine has the app and a person, so unless it was
-// chosen it reads through the app (touch id) rather than a token.
-func (a *app) keepDesktopHere(self string, chosen []string) {
+// chosen it reads through the app (touch id) rather than a token. it records
+// the vault here too, so names resolve here as on the fleet.
+func (a *app) keepDesktopHere(self string, chosen []string, vault string) {
 	if slices.Contains(chosen, self) || !secrets.HasDesktopApp() {
 		return
 	}
 	cur, err := secrets.LoadSettings()
-	if err != nil || cur.Provider != "" {
+	if err != nil {
 		return
 	}
-	s := secrets.Settings{Provider: secrets.Provider1Password, Mode: secrets.ModeDesktop, TokenStore: cur.TokenStore}
+	if cur.Provider == secrets.Provider1Password && cur.Mode == secrets.ModeDesktop && cur.Vault == "" {
+		cur.Vault = vault
+		if err := secrets.SaveSettings(cur); err != nil {
+			a.warnf("secrets here: %v", err)
+		}
+		return
+	}
+	if cur.Provider != "" {
+		return
+	}
+	s := secrets.Settings{Provider: secrets.Provider1Password, Mode: secrets.ModeDesktop, TokenStore: cur.TokenStore, Vault: vault}
 	if err := secrets.SaveSettings(s); err != nil {
 		a.warnf("secrets here: %v", err)
 		return
@@ -384,10 +408,14 @@ func (a *app) remoteProbe(m registry.Machine, self string, verify bool) (secrets
 	return p, nil
 }
 
-func (a *app) remoteProvision(m registry.Machine, self, tok, account, vault string) (string, error) {
+func (a *app) remoteProvision(m registry.Machine, self, tok, account, vault string, write bool) (string, error) {
 	var out, errb bytes.Buffer
 	vals := map[string]string{secrets.ProvisionTokenEnv: tok}
-	code, err := a.execWith(m, self, yonderCmd(m, "_secret-provision", account, vault), vals, nil, &out, &errb)
+	args := []string{"_secret-provision", account, vault}
+	if write {
+		args = append(args, "--write") // only then, so an older peer still takes a read-only token
+	}
+	code, err := a.execWith(m, self, yonderCmd(m, args...), vals, nil, &out, &errb)
 	if err != nil {
 		return "", err
 	}
@@ -415,3 +443,12 @@ var askYesNo = func(question string, def bool) bool {
 }
 
 func (a *app) askYesNo(question string, def bool) bool { return askYesNo(question, def) }
+
+// askAllowWrite is the write question in interactive setup; tests swap it.
+var askAllowWrite = func() bool {
+	ok := false
+	err := huh.NewConfirm().Title("Let agents add secrets too?").
+		Description("Then they can run `yonder secret set`. They could also change or delete items in that vault.").
+		Value(&ok).Run()
+	return err == nil && ok
+}

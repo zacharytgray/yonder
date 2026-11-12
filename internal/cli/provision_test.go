@@ -42,7 +42,7 @@ _secret-probe)
   else printf '{"op":"/x/op","provider":"1password","mode":"service-account","has_token":true,"service_account":"%s"}\n' "$(cut -d' ' -f1 "$dir/args")"
   fi ;;
 _secret-provision)
-  printf %s "$YONDER_OP_TOKEN" > "$dir/token"; echo "$2 $3" > "$dir/args"
+  printf %s "$YONDER_OP_TOKEN" > "$dir/token"; echo "$2 $3 $4" > "$dir/args"
   echo "echoing $YONDER_OP_TOKEN" >&2
   echo "token stored in fake keychain" ;;
 *) exit 9 ;;
@@ -258,6 +258,56 @@ func TestProvisionThisMachine(t *testing.T) {
 		if err := f.a.provision(o); ExitCode(err) != ExitUsage {
 			t.Errorf("%+v: got %v", o, err)
 		}
+	}
+}
+
+func TestProvisionAllowWrite(t *testing.T) {
+	f := newProvFleet(t)
+	if err := f.a.provision(provisionOpts{machines: []string{"gpu-box", "laptop"}, allowWrite: true}); err != nil {
+		t.Fatalf("%v\n%s", err, f.out.String())
+	}
+	argv := f.argv(t)
+	for _, m := range []string{"gpu-box", "laptop"} {
+		if !strings.Contains(argv, "service-account create yonder-"+m+" --vault Yonder Agents:read_items,write_items --raw\n") {
+			t.Fatalf("op calls:\n%s", argv)
+		}
+	}
+	out := f.out.String()
+	for _, want := range []string{
+		"The agents on gpu-box, laptop can read, change and delete everything in it.",
+		`gpu-box: ok, service account yonder-gpu-box reads and writes "Yonder Agents"`,
+		"yonder secret set NAME",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	args, _ := os.ReadFile(filepath.Join(f.peers, "gpu-box", "args"))
+	if strings.TrimSpace(string(args)) != "yonder-gpu-box Yonder Agents --write" {
+		t.Fatalf("gpu-box got %q", args)
+	}
+	if m, _ := f.a.store.Machine("gpu-box"); !m.SecretsWrite {
+		t.Fatalf("record: %+v", m)
+	}
+	if m, _ := f.a.store.Machine("laptop"); !m.SecretsWrite || m.SecretsAccount != "yonder-laptop" {
+		t.Fatalf("self record: %+v", m)
+	}
+	if s, _ := secrets.LoadSettings(); !s.Write || s.Access() != "read and write" {
+		t.Fatalf("settings: %+v", s)
+	}
+	f.noTokenLeak(t)
+}
+
+func TestProvisionRecordsVaultForDesktop(t *testing.T) {
+	f := newProvFleet(t)
+	if err := f.a.provision(provisionOpts{machines: []string{"gpu-box"}, vault: "Agents"}); err != nil {
+		t.Fatalf("%v\n%s", err, f.out.String())
+	}
+	if s, _ := secrets.LoadSettings(); s.Mode != "desktop" || s.Vault != "Agents" {
+		t.Fatalf("this machine: %+v", s)
+	}
+	if m, _ := f.a.store.Machine("gpu-box"); m.SecretsWrite {
+		t.Fatalf("read-only by default: %+v", m)
 	}
 }
 

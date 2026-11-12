@@ -159,6 +159,8 @@ func Run(e Env) []Check {
 		}
 	}
 
+	out = append(out, identityChecks(e)...)
+
 	for _, s := range e.Secrets {
 		st := Pass
 		if !s.OK {
@@ -176,6 +178,38 @@ func Run(e Env) []Check {
 		return out
 	}
 	out = append(out, fleetChecks(e, ms, lost)...)
+	return out
+}
+
+// identityChecks makes sure every ssh key set with `yonder ssh-key` still exists here.
+func identityChecks(e Env) []Check {
+	cfg, err := e.Store.Config()
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(cfg.SSH))
+	for n, c := range cfg.SSH {
+		if c.Identity != "" {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	var out []Check
+	for _, n := range names {
+		id := cfg.SSH[n].Identity
+		name := "ssh key for " + n
+		st, err := os.Stat(registry.ExpandHome(id))
+		switch {
+		case err != nil:
+			out = append(out, Check{Group: groupLocal, Name: name, Status: Fail, Detail: id + " does not exist",
+				Fix: fmt.Sprintf("`yonder ssh-key %s <path>` points at the right key, or `yonder ssh-key %s --clear` drops it", n, n)})
+		case st.IsDir():
+			out = append(out, Check{Group: groupLocal, Name: name, Status: Fail, Detail: id + " is a directory, not a private key",
+				Fix: fmt.Sprintf("`yonder ssh-key %s <path>`", n)})
+		default:
+			out = append(out, Check{Group: groupLocal, Name: name, Status: Pass, Detail: id})
+		}
+	}
 	return out
 }
 
@@ -492,7 +526,7 @@ func sshFix(m registry.Machine, ue *transport.UnreachableError) string {
 		if port == 0 {
 			port = 22
 		}
-		return fmt.Sprintf("ssh-copy-id -p %d %s@%s", port, m.SSHUser, m.TailscaleIP)
+		return fmt.Sprintf("ssh-copy-id -p %d %s@%s, or if you reach %s with a specific key: yonder ssh-key %s <key>", port, m.SSHUser, m.TailscaleIP, m.Name, m.Name)
 	case strings.Contains(d, "Host key verification failed") || strings.Contains(d, "IDENTIFICATION"):
 		return "its ssh host key changed. If you reinstalled " + m.Name + ", `yonder add " + m.Name + "` pins the new key; if not, find out why first"
 	}

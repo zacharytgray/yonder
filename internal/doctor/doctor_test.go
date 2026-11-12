@@ -3,6 +3,8 @@ package doctor
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -123,7 +125,7 @@ func TestAggregation(t *testing.T) {
 		st          Status
 		fix         string
 	}{
-		{"desktop", "ssh", Fail, "ssh-copy-id -p 22 me@100.64.0.9"},
+		{"desktop", "ssh", Fail, "ssh-copy-id -p 22 me@100.64.0.9, or if you reach desktop with a specific key: yonder ssh-key desktop <key>"},
 		{"sleepy", "online", Warn, ""},
 		{"gpu-box", "version", Warn, ""},
 		{"gpu-box", "facts", Warn, "yonder refresh gpu-box"},
@@ -231,5 +233,30 @@ func TestRemoteSkillOnlyForFactsHarnesses(t *testing.T) {
 	}
 	if _, ok := find(cs, "gpu-box", "skill: hermes"); ok {
 		t.Error("hermes isn't in the machine's facts, so no check")
+	}
+}
+
+func TestMissingIdentityFile(t *testing.T) {
+	t.Setenv("YONDER_HOME", t.TempDir())
+	e := env(t, machine("gpu-box", now))
+	e.Status.Peers = []tailnet.Peer{peer("gpu-box", true)}
+	e.Remote = fakeRemote{version: map[string]string{"gpu-box": "1.0.0"}, names: map[string][]string{"gpu-box": {"gpu-box", "laptop"}}}
+	if err := e.Store.SetIdentity("gpu-box", "~/.ssh/id_example"); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := find(Run(e), "this machine", "ssh key for gpu-box")
+	if !ok || c.Status != Fail || !strings.Contains(c.Detail, "does not exist") || !strings.Contains(c.Fix, "yonder ssh-key gpu-box") {
+		t.Fatalf("missing key: %+v (found %v)", c, ok)
+	}
+	// ~ resolves under the (temp) home, so create it there
+	key := registry.ExpandHome("~/.ssh/id_example")
+	if err := os.MkdirAll(filepath.Dir(key), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(key, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := find(Run(e), "this machine", "ssh key for gpu-box"); c.Status != Pass {
+		t.Fatalf("existing key: %+v", c)
 	}
 }

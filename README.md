@@ -87,7 +87,7 @@ yonder init --yes --machines mini,gpu-box
 
 ## Secrets
 
-Secrets stay in your password manager. Yonder stores only references, like
+Secrets stay in your password manager. Yonder stores only names and references, like
 `op://Agents/huggingface/token`.
 
 ```sh
@@ -95,6 +95,23 @@ yonder secret setup                                  # pick a provider for this 
 yonder secret add HF_TOKEN op://Agents/huggingface/token
 yonder run gpu-box --secret HF_TOKEN -- 'huggingface-cli download ...'
 ```
+
+With 1Password you can skip the mapping. Yonder records one vault for agent secrets. An item
+in it titled `HF_TOKEN` is the secret `HF_TOKEN` on every machine that reads the vault. A name
+resolves from `secrets.toml` first, then from the vault. `yonder secret ls` lists both.
+
+**Store a secret without seeing it.** `yonder secret set` puts a new value in that vault. It
+reads the value from a pipe or a hidden prompt, so the value never lands on a command line, in
+the output or in the log. An agent can store a token it just made this way.
+
+```sh
+some-cli new-token | yonder secret set NEW_TOKEN     # what an agent runs
+yonder secret set HF_TOKEN                           # you type it, hidden
+yonder secret set HF_TOKEN --replace                 # change one that exists
+```
+
+In desktop mode you approve once. A service account can store secrets only if you let it at
+setup (`--allow-write`, below). Bitwarden can't: `bws` takes the value on its command line.
 
 The machine your agent runs on unlocks the value. The value travels over SSH stdin into the
 remote command's environment. It never appears in a command line, a log, or the output. If a
@@ -137,12 +154,22 @@ yonder secret setup --machines gpu-box --replace  # give it a new token
 ```
 
 Agents on those machines can read everything in that vault, so put only agent secrets in it.
+The accounts are read-only unless you allow writes. Then agents can store secrets with
+`yonder secret set`, but they could also change or delete anything in that vault. Setup asks;
+without prompts, add `--allow-write`. `yonder doctor` says whether a machine is read-only or
+read and write.
+
+```sh
+yonder secret setup --machines gpu-box --replace --allow-write
+```
+
 Yonder can't revoke a service account; `op` has no command for that. To cut a machine off, go to
 1Password.com, then Developer > Service accounts. `yonder remove <machine> --lost` names the
 account to revoke.
 
 If you'd rather do it by hand, or you use Bitwarden, run `yonder secret setup` on each machine,
-choose the provider, then `yonder secret token set`.
+choose the provider, then `yonder secret token set`. To name the agent vault by hand:
+`yonder secret setup --provider 1password --vault Agents`.
 
 **About phone approval.** 1Password cannot yet approve a command-line request from its phone app.
 Approval happens only in the desktop app on the machine asking. When 1Password adds phone
@@ -160,7 +187,7 @@ approval, Yonder will support it as another mode.
 | `yonder add <machine>` | Add one more machine |
 | `yonder refresh [machine]` | Rediscover facts and sync the registry everywhere |
 | `yonder doctor` | Check everything and print the fix for each problem |
-| `yonder secret add\|ls\|rm\|test\|setup\|token` | Manage secret references. `setup` makes hands-free 1Password for your machines |
+| `yonder secret set\|add\|ls\|rm\|test\|setup\|token` | Manage secrets. `set` stores one in the vault. `setup` makes hands-free 1Password for your machines |
 | `yonder agents install\|uninstall\|status` | Manage the skill in each agent harness. `--all-machines` does every machine |
 | `yonder remove <machine> [--lost]` | Take a machine out of the fleet |
 

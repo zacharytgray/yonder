@@ -371,3 +371,67 @@ func TestRemoveDropsFutureRecord(t *testing.T) {
 		t.Fatal("tombstone missing")
 	}
 }
+
+func TestIdentityRoundTrip(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	if err := s.SetSelf("laptop"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSecrets(map[string]any{"provider": "bws"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetIdentity("gpu-box", "~/.ssh/id_example"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetIdentity("desk", "/keys/desk"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Self != "laptop" || c.Secrets["provider"] != "bws" || c.SSH["gpu-box"].Identity != "~/.ssh/id_example" {
+		t.Fatalf("config %+v", c)
+	}
+	raw, _ := os.ReadFile(filepath.Join(s.Dir, "config.toml"))
+	if !strings.Contains(string(raw), "[ssh.gpu-box]") || !strings.Contains(string(raw), "~/.ssh/id_example") {
+		t.Fatalf("file:\n%s", raw)
+	}
+	// other writers keep it
+	if err := s.SetSelf("laptop"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSecrets(nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Identity("gpu-box"); got != "~/.ssh/id_example" {
+		t.Fatalf("lost after rewrite: %q", got)
+	}
+	// clearing one leaves the other, clearing both drops the table
+	if err := s.SetIdentity("gpu-box", ""); err != nil {
+		t.Fatal(err)
+	}
+	if s.Identity("gpu-box") != "" || s.Identity("desk") != "/keys/desk" {
+		t.Fatalf("after clear: %+v", s.Identity("desk"))
+	}
+	if err := s.SetIdentity("desk", ""); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(filepath.Join(s.Dir, "config.toml"))
+	if strings.Contains(string(raw), "ssh") {
+		t.Fatalf("empty table left behind:\n%s", raw)
+	}
+	if err := s.SetIdentity("Bad Name", "x"); err == nil {
+		t.Fatal("bad name should be refused")
+	}
+}
+
+func TestExpandHome(t *testing.T) {
+	t.Setenv("YONDER_HOME", t.TempDir())
+	if got := ExpandHome("~/.ssh/k"); got != filepath.Join(UserHome(), ".ssh", "k") {
+		t.Fatalf("got %q", got)
+	}
+	if ExpandHome("/abs/k") != "/abs/k" || ExpandHome("rel/k") != "rel/k" || ExpandHome("~other/k") != "~other/k" {
+		t.Fatal("only a leading ~/ expands")
+	}
+}

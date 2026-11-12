@@ -99,7 +99,7 @@ func runCommand(a *app, name string, cmdArgs, secretNames []string, detach bool,
 		a.logCaller(env, start, ExitTempErr, err)
 		return err
 	}
-	code, err := r.Yonder(a.ctx, target(m), []string{"_exec"}, transport.IO{
+	code, err := r.Yonder(a.ctx, a.target(m), []string{"_exec"}, transport.IO{
 		Stdin:  io.MultiReader(bytes.NewReader(line), a.in),
 		Stdout: a.out,
 		Stderr: a.errw,

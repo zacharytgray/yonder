@@ -13,7 +13,8 @@ import (
 )
 
 // provisioning: a person with a 1Password session here creates the vault and
-// one read-only service account per machine. tokens stay in memory.
+// one service account per machine, read-only unless they allow writes. tokens
+// stay in memory.
 
 const (
 	// DefaultVault is where agent secrets go unless --vault names another.
@@ -121,14 +122,19 @@ func EnsureVault(name string) (created bool, err error) {
 	return true, nil
 }
 
-// CreateServiceAccount makes a read-only service account for vault and
-// returns its token. the token is shown once; callers keep it in memory only.
-func CreateServiceAccount(name, vault, expiresIn string) (string, error) {
+// CreateServiceAccount makes a service account for vault, read-only unless
+// write, and returns its token. the token is shown once; callers keep it in
+// memory only.
+func CreateServiceAccount(name, vault, expiresIn string, write bool) (string, error) {
 	bin, err := lookPath("op")
 	if err != nil {
 		return "", errors.New("1password CLI `op` not found; " + opInstallFix)
 	}
-	args := []string{"service-account", "create", name, "--vault", vault + ":read_items", "--raw"}
+	perms := "read_items"
+	if write {
+		perms += ",write_items"
+	}
+	args := []string{"service-account", "create", name, "--vault", vault + ":" + perms, "--raw"}
 	if expiresIn != "" {
 		args = append(args, "--expires-in", expiresIn)
 	}
@@ -164,6 +170,7 @@ type ProbeResult struct {
 	HasToken       bool   `json:"has_token"`
 	ServiceAccount string `json:"service_account"`
 	Vault          string `json:"vault"`
+	Write          bool   `json:"write"`    // the service account may write the vault
 	Verified       bool   `json:"verified"` // --verify: op accepted the stored token as a service account
 	Detail         string `json:"detail"`   // why verify failed
 }
@@ -185,7 +192,7 @@ func Probe(verify bool) ProbeResult {
 		r.Detail = err.Error()
 		return r
 	}
-	r.Provider, r.Mode, r.ServiceAccount, r.Vault = s.Provider, s.Mode, s.ServiceAccount, s.Vault
+	r.Provider, r.Mode, r.ServiceAccount, r.Vault, r.Write = s.Provider, s.Mode, s.ServiceAccount, s.Vault, s.Write
 	var tok string
 	if s.HandsFree() {
 		envVar := opEnvToken
@@ -230,8 +237,9 @@ func verifyServiceAccount(r ProbeResult, s Settings, tok string) (bool, string) 
 }
 
 // InstallServiceAccount stores token in this machine's token store and sets
-// 1password service-account mode, recording the account and vault names.
-func InstallServiceAccount(token, account, vault string) (string, error) {
+// 1password service-account mode, recording the account, the vault and
+// whether the account may write it.
+func InstallServiceAccount(token, account, vault string, write bool) (string, error) {
 	if err := checkToken(token); err != nil {
 		return "", err
 	}
@@ -239,7 +247,7 @@ func InstallServiceAccount(token, account, vault string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	s := Settings{Provider: Provider1Password, Mode: ModeServiceAccount, TokenStore: cur.TokenStore, ServiceAccount: account, Vault: vault}
+	s := Settings{Provider: Provider1Password, Mode: ModeServiceAccount, TokenStore: cur.TokenStore, ServiceAccount: account, Vault: vault, Write: write}
 	if err := validateSettings(s); err != nil {
 		return "", err
 	}

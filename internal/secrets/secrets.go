@@ -46,9 +46,20 @@ type Settings struct {
 	Mode       string // 1password only: desktop | service-account
 	TokenStore string // optional override: keychain | secret-service | file
 	// service-account mode only, set by provisioning: which account the token
-	// belongs to and the vault it reads, so doctor and remove --lost can name it
+	// belongs to, so doctor and remove --lost can name it, and whether it may write
 	ServiceAccount string
-	Vault          string
+	Write          bool
+	// 1password: the agent vault. `secret set` writes here and names not in
+	// secrets.toml resolve from item titles here
+	Vault string
+}
+
+// Access says what this machine can do in the agent vault.
+func (s Settings) Access() string {
+	if s.Provider == Provider1Password && (s.Mode == ModeDesktop || s.Write) {
+		return "read and write"
+	}
+	return "read-only"
 }
 
 // HandsFree is true when the provider runs on a stored token, not a person.
@@ -76,8 +87,12 @@ func LoadSettings() (Settings, error) {
 	if s.Provider == Provider1Password && s.Mode == "" {
 		s.Mode = ModeDesktop
 	}
-	if s.Provider == Provider1Password && s.Mode == ModeServiceAccount {
-		s.ServiceAccount, s.Vault = str("service_account"), str("vault")
+	if s.Provider == Provider1Password {
+		s.Vault = str("vault")
+		if s.Mode == ModeServiceAccount {
+			s.ServiceAccount = str("service_account")
+			s.Write, _ = c.Secrets["write"].(bool)
+		}
 	}
 	return s, nil
 }
@@ -97,9 +112,12 @@ func SaveSettings(s Settings) error {
 		if s.ServiceAccount != "" {
 			t["service_account"] = s.ServiceAccount
 		}
-		if s.Vault != "" {
-			t["vault"] = s.Vault
+		if s.Write {
+			t["write"] = true
 		}
+	}
+	if s.Provider == Provider1Password && s.Vault != "" {
+		t["vault"] = s.Vault
 	}
 	return registry.Open().SetSecrets(t)
 }
@@ -243,7 +261,7 @@ func RemoveRef(name string) error {
 		return err
 	}
 	if _, ok := refs[name]; !ok {
-		return unknownErr([]string{name}, refs)
+		return unknownErr([]string{name}, refs, "", nil)
 	}
 	delete(refs, name)
 	return saveRefs(refs)
@@ -258,16 +276,35 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-func unknownErr(names []string, refs map[string]string) error {
-	known := "none yet"
-	if len(refs) > 0 {
-		known = strings.Join(sortedKeys(refs), ", ")
+func knownList(names []string) string {
+	if len(names) == 0 {
+		return "none yet"
 	}
+	return strings.Join(names, ", ")
+}
+
+// unknownErr names what is missing and everything that would resolve.
+func unknownErr(names []string, refs map[string]string, vault string, inVault []string) error {
+	seen := map[string]bool{}
+	var known []string
+	for _, n := range append(sortedKeys(refs), inVault...) {
+		if !seen[n] {
+			seen[n] = true
+			known = append(known, n)
+		}
+	}
+	sort.Strings(known)
 	word := "secret"
 	if len(names) > 1 {
 		word = "secrets"
 	}
-	return fmt.Errorf("unknown %s %s on this machine (known: %s); add one with `yonder secret add NAME <ref>`", word, strings.Join(names, ", "), known)
+	where := "on this machine"
+	fix := "add one with `yonder secret add NAME <ref>`"
+	if vault != "" {
+		where = fmt.Sprintf("in secrets.toml or the vault %q", vault)
+		fix = "store one with `yonder secret set NAME`, or map one with `yonder secret add NAME <ref>`"
+	}
+	return fmt.Errorf("unknown %s %s %s (known: %s); %s", word, strings.Join(names, ", "), where, knownList(known), fix)
 }
 
 // Resolve turns secret names into values with this machine's provider, in one provider call.
@@ -287,10 +324,12 @@ func Resolve(names []string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return resolveWith(p, names, refs)
+	return resolveWith(p, names, refs, s.Vault)
 }
 
-func resolveWith(p Provider, names []string, refs map[string]string) (map[string]string, error) {
+// resolveWith: secrets.toml first, then an item titled exactly NAME in the
+// agent vault (1password only). one op inject covers both.
+func resolveWith(p Provider, names []string, refs map[string]string, vault string) (map[string]string, error) {
 	pick := map[string]string{}
 	var unknown []string
 	for _, n := range names {
@@ -310,8 +349,30 @@ func resolveWith(p Provider, names []string, refs map[string]string) (map[string
 		}
 		pick[n] = ref
 	}
+	direct := map[string]string{}
+	op, isOp := p.(*onePassword)
+	if len(unknown) > 0 && isOp && vault != "" {
+		found, vals, inVault, err := op.vaultLookup(vault, unknown)
+		if err != nil {
+			return nil, err
+		}
+		var still []string
+		for _, n := range unknown {
+			if ref, ok := found[n]; ok {
+				pick[n] = ref
+			} else if v, ok := vals[n]; ok {
+				direct[n] = v
+			} else {
+				still = append(still, n)
+			}
+		}
+		if len(still) > 0 {
+			return nil, unknownErr(still, refs, vault, inVault)
+		}
+		unknown = nil
+	}
 	if len(unknown) > 0 {
-		return nil, unknownErr(unknown, refs)
+		return nil, unknownErr(unknown, refs, "", nil)
 	}
 	vals, err := p.Resolve(pick)
 	if err != nil {
@@ -321,6 +382,9 @@ func resolveWith(p Provider, names []string, refs map[string]string) (map[string
 		if _, ok := vals[n]; !ok {
 			return nil, fmt.Errorf("%s: provider returned no value", n)
 		}
+	}
+	for n, v := range direct {
+		vals[n] = v
 	}
 	return vals, nil
 }
@@ -344,8 +408,21 @@ func Health() []Check {
 	} else {
 		out = append(out, Check{Name: "secrets provider", OK: true, Detail: s.String()})
 		out = append(out, p.Health()...)
+		if s.Provider == Provider1Password {
+			out = append(out, vaultCheck(s))
+		}
 	}
 	return append(out, refChecks(s.Provider, refs, rerr)...)
+}
+
+func vaultCheck(s Settings) Check {
+	c := Check{Name: "1password vault", OK: true}
+	if s.Vault == "" {
+		c.Detail = "no agent vault recorded; names resolve from secrets.toml only. to store secrets with `yonder secret set`: yonder secret setup --provider 1password --vault NAME"
+		return c
+	}
+	c.Detail = fmt.Sprintf("%q, %s", s.Vault, s.Access())
+	return c
 }
 
 func refChecks(provider string, refs map[string]string, err error) []Check {

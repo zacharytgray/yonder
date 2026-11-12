@@ -228,7 +228,7 @@ func (a *app) execWith(m registry.Machine, self, command string, secretVals map[
 	if stdin != nil {
 		in = io.MultiReader(in, stdin)
 	}
-	code, err := r.Yonder(a.ctx, target(m), []string{"_exec"}, transport.IO{Stdin: in, Stdout: out, Stderr: errw})
+	code, err := r.Yonder(a.ctx, a.target(m), []string{"_exec"}, transport.IO{Stdin: in, Stdout: out, Stderr: errw})
 	if ue, ok := transport.IsUnreachable(err); ok {
 		a.logCaller(env, start, ExitTempErr, ue)
 		return ExitTempErr, unreachableError(m, ue)
