@@ -182,7 +182,7 @@ func TestEditAuthorizedKeysCreateAndSymlink(t *testing.T) {
 	}
 	_, _, err := EditAuthorizedKeys(link, true, add)
 	var se *SymlinkError
-	if !errors.As(err, &se) || !se.Add || !strings.Contains(err.Error(), "Add these 1 line(s) to") {
+	if !errors.As(err, &se) || !se.Add || !strings.Contains(err.Error(), "Make these 1 change(s) to") {
 		t.Fatalf("want an add refusal, got %v", err)
 	}
 }

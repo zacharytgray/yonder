@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zacharytgray/yonder/internal/discover"
+	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/tailnet"
 )
@@ -142,6 +143,8 @@ func (a *app) rediscover(m registry.Machine, self string) (registry.Machine, err
 		if m.SSHHostKey == "" {
 			m.SSHHostKey = localHostKey()
 		}
+		m.MeshKeys = mesh.Own(a.store)
+		m.SSHClientKeys = mesh.Union(m.SSHClientKeys, m.MeshKeys)
 		return m, nil
 	}
 	if stErr != nil {

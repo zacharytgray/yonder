@@ -6,6 +6,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -59,24 +60,26 @@ owns unless --allow-shared.`,
 }
 
 type meshStep struct {
-	m       registry.Machine
-	missing []mesh.Grant
+	m             registry.Machine
+	added, pruned []string
 }
 
-// mesh adds the missing fleet keys to each online machine's authorized_keys.
-// focus limits it to the keys to and from one machine. without yes it asks
-// first, defaulting to yes.
+// mesh brings each online machine's authorized_keys in line with the grant
+// set: it appends the fleet's missing mesh keys and prunes lines it tagged
+// earlier that are no longer granted. focus limits it to the keys to and from
+// one machine. without yes it asks first, defaulting to yes.
 func (a *app) mesh(self, focus string, yes, allowShared bool) error {
 	if _, err := a.status(); err != nil {
 		return withCode(ExitTempErr, "mesh needs tailscale status: %v", err)
 	}
+	a.syncOwnMeshKeys(self)
 	b, err := a.store.Bundle()
 	if err != nil {
 		return err
 	}
 	src, skips := mesh.Sources(self, b.Machines, b.Tombstones, a.st, allowShared)
 	for _, s := range skips {
-		if focus == "" || s.Name == focus {
+		if (focus == "" || s.Name == focus) && s.Why != "it was removed" {
 			a.warnf("mesh: not handing out %s's keys: %s", s.Name, s.Why)
 		}
 	}
@@ -97,23 +100,19 @@ func (a *app) mesh(self, focus string, yes, allowShared bool) error {
 	var steps []meshStep
 	var failed []string
 	for _, m := range targets {
-		gs := mesh.Grants(m.Name, focus, src)
-		if len(gs) == 0 {
-			continue
-		}
 		content, err := a.readKeys(m, self)
 		if err != nil {
 			a.warnf("mesh: %s: %v", m.Name, err)
 			failed = append(failed, m.Name)
 			continue
 		}
-		if miss := mesh.Missing(content, gs); len(miss) > 0 {
-			steps = append(steps, meshStep{m, miss})
+		if _, added, pruned := mesh.Plan(content, m.Name, focus, src, skips); len(added)+len(pruned) > 0 {
+			steps = append(steps, meshStep{m, added, pruned})
 		}
 	}
 	var later []string
 	for _, m := range offline {
-		if len(mesh.Grants(m.Name, focus, src)) > 0 {
+		if focus == "" || m.Name == focus || len(mesh.Grants(m.Name, focus, src)) > 0 {
 			later = append(later, m.Name)
 		}
 	}
@@ -125,14 +124,21 @@ func (a *app) mesh(self, focus string, yes, allowShared bool) error {
 
 	if len(steps) == 0 {
 		if len(failed) == 0 {
-			fmt.Fprintln(a.out, "mesh: every online machine already trusts the others' keys")
+			fmt.Fprintln(a.out, "mesh: every online machine already trusts exactly the fleet's mesh keys")
 			return nil
 		}
 		return fmt.Errorf("mesh: could not check %s", strings.Join(failed, ", "))
 	}
-	fmt.Fprintln(a.out, "This will append to ~/.ssh/authorized_keys (backup first, nothing removed):")
+	fmt.Fprintln(a.out, "This will change ~/.ssh/authorized_keys (backup first; only lines tagged yonder:<machine> are removed):")
 	for _, s := range steps {
-		fmt.Fprintf(a.out, "  - on %s: keys of %s\n", s.m.Name, grantSummary(s.missing))
+		var parts []string
+		if len(s.added) > 0 {
+			parts = append(parts, "add keys of "+linesSummary(s.added))
+		}
+		if len(s.pruned) > 0 {
+			parts = append(parts, "remove keys no longer granted of "+linesSummary(s.pruned))
+		}
+		fmt.Fprintf(a.out, "  - on %s: %s\n", s.m.Name, strings.Join(parts, "; "))
 	}
 	if !yes && !a.confirm("Let these machines ssh into each other?") {
 		fmt.Fprintf(a.out, "skipped; `yonder mesh%s` does it later\n", focusArg(focus))
@@ -140,21 +146,48 @@ func (a *app) mesh(self, focus string, yes, allowShared bool) error {
 	}
 
 	for _, s := range steps {
-		lines, backup, err := a.appendKeys(s.m, self, s.missing)
+		added, pruned, backup, err := a.applyMesh(s.m, self, focus, src, skips)
 		switch {
 		case err != nil:
 			a.warnf("mesh: %s: %v", s.m.Name, err)
 			failed = append(failed, s.m.Name)
-		case len(lines) == 0:
-			fmt.Fprintf(a.out, "%s: already had every key\n", s.m.Name)
+		case len(added)+len(pruned) == 0:
+			fmt.Fprintf(a.out, "%s: nothing to change\n", s.m.Name)
 		default:
-			fmt.Fprintf(a.out, "%s: added %d key(s) of %s (backup: %s)\n", s.m.Name, len(lines), linesSummary(lines), agents.Tilde(backup, homeFor(s.m, self)))
+			var parts []string
+			if len(added) > 0 {
+				parts = append(parts, fmt.Sprintf("added %d key(s) of %s", len(added), linesSummary(added)))
+			}
+			if len(pruned) > 0 {
+				parts = append(parts, fmt.Sprintf("removed %d line(s) no longer granted, of %s", len(pruned), linesSummary(pruned)))
+			}
+			fmt.Fprintf(a.out, "%s: %s (backup: %s)\n", s.m.Name, strings.Join(parts, "; "), agents.Tilde(backup, homeFor(s.m, self)))
 		}
 	}
 	if len(failed) > 0 {
 		return fmt.Errorf("mesh: could not update %s; fix the errors above, then `yonder mesh%s`", strings.Join(failed, ", "), focusArg(focus))
 	}
 	return nil
+}
+
+// syncOwnMeshKeys keeps this machine's own record in step with its keys, and
+// reports whether they changed.
+func (a *app) syncOwnMeshKeys(self string) bool {
+	m, err := a.store.Machine(self)
+	if err != nil {
+		return false
+	}
+	keys := mesh.Own(a.store)
+	if slices.Equal(keys, m.MeshKeys) {
+		return false
+	}
+	m.MeshKeys, m.SSHClientKeys = keys, mesh.Union(m.SSHClientKeys, keys)
+	m.UpdatedAt = time.Now().UTC()
+	if err := a.store.SaveMachine(m); err != nil {
+		a.warnf("%v", err)
+		return false
+	}
+	return true
 }
 
 func focusArg(focus string) string {
@@ -169,23 +202,6 @@ func homeFor(m registry.Machine, self string) string {
 		return registry.UserHome()
 	}
 	return "" // a peer's backup path is printed as is
-}
-
-// grantSummary is "laptop (1), gpu-box (2)".
-func grantSummary(gs []mesh.Grant) string {
-	var names []string
-	count := map[string]int{}
-	for _, g := range gs {
-		if count[g.Machine] == 0 {
-			names = append(names, g.Machine)
-		}
-		count[g.Machine]++
-	}
-	parts := make([]string, len(names))
-	for i, n := range names {
-		parts[i] = fmt.Sprintf("%s (%d)", n, count[n])
-	}
-	return strings.Join(parts, ", ")
 }
 
 func linesSummary(lines []string) string {
@@ -214,16 +230,30 @@ func (a *app) readKeys(m registry.Machine, self string) (string, error) {
 	return f.Content, err
 }
 
-// appendKeys adds gs to m's authorized_keys, skipping keys already there.
-func (a *app) appendKeys(m registry.Machine, self string, gs []mesh.Grant) ([]string, string, error) {
-	edit := func(c string) (string, []string) { return mesh.Append(c, gs) }
+// applyMesh plans and writes m's authorized_keys against what is there now.
+// a symlinked file isn't written: the error lists each line to add (+) or delete (-).
+func (a *app) applyMesh(m registry.Machine, self, focus string, src []mesh.Source, skips []mesh.Skip) (added, pruned []string, backup string, err error) {
+	edit := func(c string) (string, []string) {
+		var out string
+		out, added, pruned = mesh.Plan(c, m.Name, focus, src, skips)
+		var lines []string
+		for _, l := range added {
+			lines = append(lines, "+ "+l)
+		}
+		for _, l := range pruned {
+			lines = append(lines, "- "+l)
+		}
+		return out, lines
+	}
 	if m.Name == self {
-		return transport.EditAuthorizedKeys(transport.AuthorizedKeysPath(registry.UserHome()), true, edit)
+		_, backup, err = transport.EditAuthorizedKeys(transport.AuthorizedKeysPath(registry.UserHome()), true, edit)
+	} else if _, err = a.pinned(m); err == nil {
+		_, backup, err = mesh.Edit(a.ctx, a.ssh, a.target(m), "", true, edit)
 	}
-	if _, err := a.pinned(m); err != nil {
-		return nil, "", err
+	if err != nil {
+		return nil, nil, "", err
 	}
-	return mesh.Edit(a.ctx, a.ssh, a.target(m), "", true, edit)
+	return added, pruned, backup, nil
 }
 
 // stripMesh drops the lines mesh added for name on m, keeping keys in keep.

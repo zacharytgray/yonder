@@ -152,9 +152,12 @@ func TestFleetOverSSH(t *testing.T) {
 
 	a := startNode(t, "node-a", string(pub), linuxBin)
 	b := startNode(t, "node-b", string(pub), linuxBin)
-	// a client key on node-a, so add's mesh step has something to hand node-b
+	// node-a's default key, which add's mesh step hands node-b, and a .pub it
+	// only holds (a deploy key, say), which mesh must not hand out
 	docker(t, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAInodea me@node-a\n", "exec", "-i", a.container, "sh", "-c",
-		"cat > /home/me/.ssh/id_ed25519.pub && chown me:me /home/me/.ssh/id_ed25519.pub")
+		"cat > /home/me/.ssh/id_ed25519.pub && echo private > /home/me/.ssh/id_ed25519"+
+			" && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIdeploy deploy' > /home/me/.ssh/deploy.pub"+
+			" && chown me:me /home/me/.ssh/id_ed25519.pub /home/me/.ssh/id_ed25519 /home/me/.ssh/deploy.pub && chmod 600 /home/me/.ssh/id_ed25519")
 
 	f := newFleet(t, writeFixture(t, "node-a", "node-b", "node-c"))
 	f.env = append(f.env, "YONDER_SSH_IDENTITY="+key)
@@ -180,7 +183,7 @@ func TestFleetOverSSH(t *testing.T) {
 
 	// add meshed node-a's key onto node-b, appended and backed up, with the host's key kept
 	r := f.must("run", "node-b", "--", "cat ~/.ssh/authorized_keys; ls ~/.ssh")
-	if !strings.Contains(r.stdout, strings.TrimSpace(string(pub))) || !strings.Contains(r.stdout, "AAAAInodea yonder:node-a") || !strings.Contains(r.stdout, "authorized_keys.yonder-bak.") {
+	if !strings.Contains(r.stdout, strings.TrimSpace(string(pub))) || !strings.Contains(r.stdout, "AAAAInodea yonder:node-a") || !strings.Contains(r.stdout, "authorized_keys.yonder-bak.") || strings.Contains(r.stdout, "AAAAIdeploy") {
 		t.Fatalf("mesh on node-b: %s", r.stdout)
 	}
 	if r := f.must("mesh", "--yes"); !strings.Contains(r.stdout, "already trusts") {

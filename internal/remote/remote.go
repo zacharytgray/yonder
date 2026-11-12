@@ -176,14 +176,20 @@ func FactsCmd(_ context.Context, _ []string, _ io.Reader, out, _ io.Writer) int 
 	return 0
 }
 
-// InitSelf is `yonder _init-self <name>`: tells a machine its fleet name.
-func InitSelf(_ context.Context, args []string, _ io.Reader, _, errw io.Writer) int {
+// InitSelf is `yonder _init-self <name>`: tells a machine its fleet name, and
+// prints {"mesh_keys":[...]}, the keys it offers when it sshes to the fleet.
+// an older yonder prints nothing.
+func InitSelf(_ context.Context, args []string, _ io.Reader, out, errw io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(errw, "usage: yonder _init-self <name>")
 		return 2
 	}
-	if err := registry.Open().SetSelf(args[0]); err != nil {
+	s := registry.Open()
+	if err := s.SetSelf(args[0]); err != nil {
 		fmt.Fprintf(errw, "yonder _init-self: %v\n", err)
+		return 1
+	}
+	if err := json.NewEncoder(out).Encode(map[string][]string{"mesh_keys": mesh.Own(s)}); err != nil {
 		return 1
 	}
 	return 0

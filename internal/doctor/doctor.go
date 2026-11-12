@@ -155,10 +155,15 @@ func Run(e Env) []Check {
 
 	lost := lostKeys(tombs, ms)
 	var src []mesh.Source
+	var skips []mesh.Skip
 	if e.Status != nil {
-		src, _ = mesh.Sources(e.Self, ms, tombs, e.Status, false)
+		src, skips = mesh.Sources(e.Self, ms, tombs, e.Status, false)
+	} else {
+		for _, m := range ms { // nothing known: prune nothing
+			skips = append(skips, mesh.Skip{Name: m.Name, Keep: true})
+		}
 	}
-	fl := fleet{lost: lost, src: src, tombs: tombs, live: ms}
+	fl := fleet{lost: lost, src: src, skips: skips, tombs: tombs, live: ms}
 	data, keysErr := os.ReadFile(transport.AuthorizedKeysPath(e.Home))
 	if keysErr != nil && !errors.Is(keysErr, os.ErrNotExist) {
 		add(groupLocal, "authorized_keys", Warn, "can't read ~/.ssh/authorized_keys: "+keysErr.Error(), "")
@@ -205,12 +210,14 @@ func Run(e Env) []Check {
 type fleet struct {
 	lost  []lostMachine
 	src   []mesh.Source
+	skips []mesh.Skip
 	tombs []registry.Tombstone
 	live  []registry.Machine
 }
 
-// meshChecks: every fleet machine's key is in target's authorized_keys, and no
-// line yonder added for a removed machine is left.
+// meshChecks: every fleet machine's mesh key is in target's authorized_keys,
+// no line yonder added for a removed machine is left, and no line yonder
+// tagged is outside the grant set.
 func meshChecks(group, target, content string, fl fleet) []Check {
 	var out []Check
 	if un := mesh.Unreached(content, target, fl.src); len(un) > 0 {
@@ -228,6 +235,29 @@ func meshChecks(group, target, content string, fl fleet) []Check {
 		out = append(out, Check{Group: group, Name: "mesh", Status: Warn,
 			Detail: fmt.Sprintf("%d line(s) yonder added for removed machine %s are still in ~/.ssh/authorized_keys", left[n], n),
 			Fix:    "yonder remove " + n + " --yes  (removes them on every online machine)"})
+	}
+	_, _, pruned := mesh.Plan(content, target, "", fl.src, fl.skips)
+	extra := map[string]int{}
+	var who []string
+	for _, l := range pruned {
+		n := mesh.TagOf(l)
+		if _, removed := left[n]; removed {
+			continue // reported above
+		}
+		if extra[n] == 0 {
+			who = append(who, n)
+		}
+		extra[n]++
+	}
+	if len(who) > 0 {
+		slices.Sort(who)
+		parts := make([]string, len(who))
+		for i, n := range who {
+			parts[i] = fmt.Sprintf("%s (%d)", n, extra[n])
+		}
+		out = append(out, Check{Group: group, Name: "mesh", Status: Warn,
+			Detail: "trusts keys yonder added that mesh no longer grants, of " + strings.Join(parts, ", "),
+			Fix:    "yonder mesh"})
 	}
 	if len(out) == 0 && len(fl.src) > 1 {
 		out = append(out, Check{Group: group, Name: "mesh", Status: Pass, Detail: "every fleet machine's key is authorized here"})

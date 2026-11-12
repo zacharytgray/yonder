@@ -70,21 +70,25 @@ func TestSources(t *testing.T) {
 			{DNSName: "moved.example.ts.net", TailscaleIPs: []string{"100.64.0.99"}, UserID: 7},
 			{DNSName: "friend.example.ts.net", TailscaleIPs: []string{"100.64.0.5"}, UserID: 8},
 			{DNSName: "gone.example.ts.net", TailscaleIPs: []string{"100.64.0.6"}, UserID: 7},
+			{DNSName: "old-peer.example.ts.net", TailscaleIPs: []string{"100.64.0.7"}, UserID: 7},
 		},
 	}
 	rec := func(name, ip string, keys ...string) registry.Machine {
-		return registry.Machine{Name: name, DNSName: name + ".example.ts.net", TailscaleIP: ip, SSHHostKey: "ssh-ed25519 AAAAhost", SSHClientKeys: keys}
+		return registry.Machine{Name: name, DNSName: name + ".example.ts.net", TailscaleIP: ip, SSHHostKey: "ssh-ed25519 AAAAhost", SSHClientKeys: keys, MeshKeys: keys}
 	}
+	sandbox := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIsandbox me@sandbox"
 	lostKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIlost me@old"
 	ms := []registry.Machine{
 		rec("laptop", "100.64.0.1", laptopKey),
 		rec("gpu-box", "100.64.0.2", gpuKey, lostKey, "ssh-ed25519 AAAA\ninjected", `command="sh" ssh-ed25519 AAAAopts`),
 		rec("desk", "100.64.0.3"),
+		{Name: "old-peer", DNSName: "old-peer.example.ts.net", TailscaleIP: "100.64.0.7", SSHHostKey: "ssh-ed25519 AAAAhost", SSHClientKeys: []string{deskKey}},
 		rec("moved", "100.64.0.4", deskKey),
 		rec("friend", "100.64.0.5", deskKey),
 		rec("gone", "100.64.0.6", deskKey),
 		{Name: "pend", DNSName: "pend.example.ts.net", Pending: true, SSHClientKeys: []string{deskKey}},
 	}
+	ms[1].SSHClientKeys = append(ms[1].SSHClientKeys, sandbox) // a .pub it holds but doesn't use
 	ts := []registry.Tombstone{{Name: "gone"}, {Name: "old", Lost: true, SSHClientKeys: []string{lostKey}}}
 	src, skip := Sources("laptop", ms, ts, st, false)
 	var names []string
@@ -98,13 +102,19 @@ func TestSources(t *testing.T) {
 	if got := src[1].Keys; !slices.Equal(got, []string{id(gpuKey), "ssh-ed25519 AAAAopts"}) {
 		t.Fatalf("gpu-box keys %q", got)
 	}
-	why := map[string]string{}
+	why, keep := map[string]string{}, map[string]bool{}
 	for _, s := range skip {
-		why[s.Name] = s.Why
+		why[s.Name], keep[s.Name] = s.Why, s.Keep
 	}
-	for name, part := range map[string]string{"desk": "no ssh client keys", "moved": "address changed", "friend": "doesn't own", "gone": "removed", "pend": "unfinished"} {
+	for name, part := range map[string]string{"desk": "no mesh keys", "old-peer": "predates mesh", "moved": "address changed", "friend": "doesn't own", "gone": "removed", "pend": "unfinished"} {
 		if !strings.Contains(why[name], part) {
 			t.Errorf("%s: why %q, want %q", name, why[name], part)
+		}
+	}
+	// only a removed or moved machine loses the lines mesh added for it before
+	for name, want := range map[string]bool{"old-peer": true, "friend": true, "pend": true, "moved": false, "gone": false} {
+		if keep[name] != want {
+			t.Errorf("%s: keep %v, want %v", name, keep[name], want)
 		}
 	}
 	if src, _ := Sources("laptop", ms, ts, st, true); len(src) != 3 {
@@ -168,5 +178,60 @@ func TestStripRemovedOnSync(t *testing.T) {
 	}
 	if bs2, _ := filepath.Glob(ak + ".yonder-bak.*"); len(bs2) != 1 {
 		t.Fatal("a no-op strip made a backup")
+	}
+}
+
+func TestPlanPrunesOnlyItsOwnUngrantedLines(t *testing.T) {
+	sandbox := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIsandbox me@sandbox"
+	src := []Source{{"laptop", []string{id(laptopKey)}}, {"gpu-box", []string{id(gpuKey)}}}
+	skips := []Skip{{Name: "old-peer", Keep: true}, {Name: "gone"}}
+	content := sandbox + "\n" + // by hand: never touched, even though no one grants it
+		id(sandbox) + " yonder:gpu-box\n" + // granted by the old rule, not a mesh key
+		id(gpuKey) + " yonder:gpu-box\n" +
+		id(deskKey) + " yonder:old-peer\n" + // older peer: kept until it reports its keys
+		id(deskKey) + " yonder:gone\n" +
+		id(laptopKey) + " yonder:desk\n" + // desk's own key on desk: not granted
+		"# " + id(laptopKey) + " yonder:laptop\n" // commented out: no key, never touched
+	out, added, pruned := Plan(content, "desk", "", src, skips)
+	want := sandbox + "\n" + id(gpuKey) + " yonder:gpu-box\n" + id(deskKey) + " yonder:old-peer\n" + "# " + id(laptopKey) + " yonder:laptop\n"
+	if out != want || len(pruned) != 3 || added != nil {
+		t.Fatalf("out:\n%s\nadded %q pruned %q", out, added, pruned)
+	}
+	if out2, a2, p2 := Plan(out, "desk", "", src, skips); out2 != out || a2 != nil || p2 != nil {
+		t.Fatalf("second plan changed it: %q %q", a2, p2)
+	}
+	// with a focus, other machines' lines on other targets stay
+	if _, _, p := Plan(content, "desk", "gpu-box", src, skips); len(p) != 1 || p[0] != id(sandbox)+" yonder:gpu-box" {
+		t.Fatalf("focused prune %q", p)
+	}
+}
+
+func TestLocalKeys(t *testing.T) {
+	home := t.TempDir()
+	write := func(name, data string) {
+		p := filepath.Join(home, ".ssh", name)
+		_ = os.MkdirAll(filepath.Dir(p), 0o700)
+		if err := os.WriteFile(p, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("id_ed25519", "private")
+	write("id_ed25519.pub", laptopKey+"\n")
+	write("id_rsa.pub", "ssh-rsa AAAAB3orphan me@x\n") // no private key: not offered
+	write("id_ed25519_github", "private")
+	write("id_ed25519_github.pub", gpuKey+"\n") // not a default and not set: not offered
+	write("id_ed25519_box", "private")
+	write("id_ed25519_box.pub", deskKey+"\n")
+	got := LocalKeys(home, []string{filepath.Join(home, ".ssh", "id_ed25519_box"), filepath.Join(home, ".ssh", "id_ed25519")})
+	if !slices.Equal(got, []string{laptopKey, deskKey}) {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestClean(t *testing.T) {
+	got := Clean([]string{gpuKey, "restrict " + deskKey, "ssh-ed25519 AAAA\x1b[31m bad", gpuKey, "ssh-ed25519 AAAAok comment\twith tab"})
+	want := []string{gpuKey, deskKey, "ssh-ed25519 AAAAok comment with tab"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %q", got)
 	}
 }

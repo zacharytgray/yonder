@@ -137,12 +137,18 @@ type Source struct {
 	Keys []string // "type base64"
 }
 
-// Skip is a machine left out as a source, and why.
-type Skip struct{ Name, Why string }
+// Skip is a machine left out as a source, and why. Keep means mesh can't
+// tell what it should grant right now (setup unfinished, not in tailscale
+// status, not owned without --allow-shared, no mesh keys on record), so lines
+// it added for that machine earlier stay. without Keep they are pruned.
+type Skip struct {
+	Name, Why string
+	Keep      bool
+}
 
-// Sources picks the records whose keys mesh may authorize elsewhere: set up
-// (so sync can no longer change their keys), not removed, still the tailnet
-// node they were added as, and owned by this tailscale account unless
+// Sources picks the records whose mesh keys mesh may authorize elsewhere: set
+// up (so sync can no longer change their keys), not removed, still the
+// tailnet node they were added as, and owned by this tailscale account unless
 // allowShared. a key any lost tombstone lists is never handed out.
 func Sources(self string, ms []registry.Machine, ts []registry.Tombstone, st *tailnet.Status, allowShared bool) ([]Source, []Skip) {
 	gone := map[string]bool{}
@@ -160,10 +166,10 @@ func Sources(self string, ms []registry.Machine, ts []registry.Tombstone, st *ta
 	var src []Source
 	var skip []Skip
 	for _, m := range ms {
-		why := ""
+		why, keep := "", true
 		switch {
 		case gone[m.Name]:
-			why = "it was removed"
+			why, keep = "it was removed", false
 		case m.Pending || m.SSHHostKey == "":
 			why = "its setup is unfinished; run `yonder add " + m.Name + "`"
 		case m.Name != self && st == nil:
@@ -174,30 +180,69 @@ func Sources(self string, ms []registry.Machine, ts []registry.Tombstone, st *ta
 			case !ok:
 				why = "it is not in tailscale status"
 			case p.IP() != m.TailscaleIP:
-				why = fmt.Sprintf("its tailnet address changed (record %s, tailnet %s); run `yonder doctor`", m.TailscaleIP, p.IP())
+				why, keep = fmt.Sprintf("its tailnet address changed (record %s, tailnet %s); run `yonder doctor`", m.TailscaleIP, p.IP()), false
 			case !st.Owned(p) && !allowShared:
 				why = "your tailscale account doesn't own it (" + st.NotOwnedWhy(p) + "); --allow-shared includes it"
 			}
 		}
+		if why == "" && len(m.MeshKeys) == 0 {
+			why = "no mesh keys on record, so yonder doesn't know which key it uses. Either its yonder predates mesh " +
+				"(upgrade it there) or ssh there has no default key (make ~/.ssh/id_ed25519, or set `yonder ssh-key` there); then run `yonder add " + m.Name + "` here"
+		}
 		if why != "" {
-			skip = append(skip, Skip{m.Name, why})
+			skip = append(skip, Skip{m.Name, why, keep})
 			continue
 		}
 		s := Source{Name: m.Name}
 		seen := map[string]bool{}
-		for _, k := range m.SSHClientKeys {
+		for _, k := range m.MeshKeys {
 			if id, ok := cleanKey(k); ok && !lost[id] && !seen[id] {
 				seen[id] = true
 				s.Keys = append(s.Keys, id)
 			}
 		}
 		if len(s.Keys) == 0 {
-			skip = append(skip, Skip{m.Name, "no ssh client keys on record"})
+			skip = append(skip, Skip{m.Name, "none of its mesh keys can be granted (lost or malformed)", false})
 			continue
 		}
 		src = append(src, s)
 	}
 	return src, skip
+}
+
+// Plan is target's new authorized_keys: lines mesh tagged earlier that are no
+// longer granted are pruned, then the missing grants appended. a line without
+// a yonder tag is never touched, and neither is one tagged for a machine
+// skipped with Keep. focus, when set, limits it to the pairs that involve
+// that machine.
+func Plan(content, target, focus string, src []Source, skips []Skip) (out string, added, pruned []string) {
+	keys := map[string]map[string]bool{}
+	for _, s := range src {
+		keys[s.Name] = map[string]bool{}
+		for _, k := range s.Keys {
+			keys[s.Name][k] = true
+		}
+	}
+	hold := map[string]bool{}
+	for _, s := range skips {
+		hold[s.Name] = s.Keep
+	}
+	var b strings.Builder
+	for _, line := range strings.SplitAfter(content, "\n") {
+		n := TagOf(line)
+		id, _ := transport.KeyID(line)
+		switch {
+		case n == "",
+			focus != "" && target != focus && n != focus,
+			hold[n],
+			n != target && keys[n][id]:
+			b.WriteString(line)
+		default:
+			pruned = append(pruned, strings.TrimRight(line, "\r\n"))
+		}
+	}
+	out, added = Append(b.String(), Grants(target, focus, src))
+	return out, added, pruned
 }
 
 // Grants is what target should trust: every other source's keys. focus, when

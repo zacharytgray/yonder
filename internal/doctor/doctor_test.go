@@ -302,10 +302,10 @@ func TestMeshUnreachedAndLeftover(t *testing.T) {
 		gpuKey    = "ssh-ed25519 AAAAgpu me@gpu-box"
 	)
 	gpu := machine("gpu-box", now)
-	gpu.DNSName, gpu.SSHClientKeys = "gpu-box.example.ts.net", []string{gpuKey}
+	gpu.DNSName, gpu.SSHClientKeys, gpu.MeshKeys = "gpu-box.example.ts.net", []string{gpuKey, "ssh-ed25519 AAAAsandbox x"}, []string{gpuKey}
 	e := env(t, gpu)
 	self, _ := e.Store.Machine("laptop")
-	self.SSHClientKeys = []string{laptopKey}
+	self.SSHClientKeys, self.MeshKeys = []string{laptopKey}, []string{laptopKey}
 	if err := e.Store.SaveMachine(self); err != nil {
 		t.Fatal(err)
 	}
@@ -317,12 +317,12 @@ func TestMeshUnreachedAndLeftover(t *testing.T) {
 		keys: map[string]string{"gpu-box": "ssh-ed25519 AAAAold yonder:old-box\n"}}
 	ak := transport.AuthorizedKeysPath(e.Home)
 	_ = os.MkdirAll(filepath.Dir(ak), 0o700)
-	if err := os.WriteFile(ak, []byte(gpuKey+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(ak, []byte(gpuKey+"\n"+"ssh-ed25519 AAAAsandbox yonder:gpu-box\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cs := Run(e)
-	if c, ok := find(cs, groupLocal, "mesh"); !ok || c.Status != Pass {
-		t.Fatalf("this machine trusts gpu-box: %+v", c)
+	if c, ok := find(cs, groupLocal, "mesh"); !ok || c.Status != Warn || !strings.Contains(c.Detail, "no longer grants, of gpu-box (1)") || c.Fix != "yonder mesh" {
+		t.Fatalf("this machine trusts a key gpu-box doesn't use: %+v", c)
 	}
 	var warns []Check
 	for _, c := range cs {

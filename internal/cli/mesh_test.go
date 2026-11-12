@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,7 +27,8 @@ func (m *meshSSH) Shell(ctx context.Context, t transport.Target, script string, 
 	cmd.Env = append(os.Environ(), "HOME="+m.homes[t.Name])
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdio.Stdin, stdio.Stdout, stdio.Stderr
 	if err := cmd.Run(); err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
 			return ee.ExitCode(), nil
 		}
 		return 1, err
@@ -39,6 +41,8 @@ const (
 	deskKey   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIdesk me@desk"
 	gpuKey    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIgpu me@gpu-box"
 	pcKey     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIpc me@pc"
+	// a .pub gpu-box holds but doesn't use to reach the fleet
+	sandboxKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIsandbox me@sandbox"
 )
 
 func keyOnly(k string) string { f := strings.Fields(k); return f[0] + " " + f[1] }
@@ -67,14 +71,20 @@ func meshFleet(t *testing.T) (*app, *meshSSH, map[string]string) {
 	for _, m := range []registry.Machine{
 		{Name: "laptop", TailscaleIP: "100.64.0.1", SSHClientKeys: []string{laptopKey}},
 		{Name: "desk", TailscaleIP: "100.64.0.2", SSHClientKeys: []string{deskKey}},
-		{Name: "gpu-box", TailscaleIP: "100.64.0.3", SSHClientKeys: []string{gpuKey}},
+		{Name: "gpu-box", TailscaleIP: "100.64.0.3", SSHClientKeys: []string{gpuKey, sandboxKey}},
 		{Name: "pc", TailscaleIP: "100.64.0.4", SSHClientKeys: []string{pcKey}},
 	} {
 		m.DNSName, m.SSHHostKey, m.UpdatedAt, m.AddedAt = m.Name+".example.ts.net", "ssh-ed25519 AAAAhost", now, now
+		m.MeshKeys = m.SSHClientKeys[:1]
 		if err := a.store.SaveMachine(m); err != nil {
 			t.Fatal(err)
 		}
 	}
+	// this machine's own mesh key is read from its ~/.ssh
+	ownKey := filepath.Join(registry.UserHome(), ".ssh", "id_ed25519")
+	_ = os.MkdirAll(filepath.Dir(ownKey), 0o700)
+	_ = os.WriteFile(ownKey, []byte("private"), 0o600)
+	_ = os.WriteFile(ownKey+".pub", []byte(laptopKey+"\n"), 0o600)
 	files := map[string]string{
 		"laptop":  transport.AuthorizedKeysPath(registry.UserHome()),
 		"desk":    filepath.Join(ssh.homes["desk"], ".ssh", "authorized_keys"),
@@ -98,7 +108,8 @@ func TestMeshAndRemove(t *testing.T) {
 	// desk already trusts the laptop by hand, gpu-box's key too, with options
 	_ = os.MkdirAll(filepath.Dir(files["desk"]), 0o700)
 	hand := laptopKey + "\nrestrict " + gpuKey + "\n"
-	if err := os.WriteFile(files["desk"], []byte(hand), 0o600); err != nil {
+	// and an earlier, broader mesh granted gpu-box's sandbox key
+	if err := os.WriteFile(files["desk"], []byte(hand+keyOnly(sandboxKey)+" yonder:gpu-box\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -118,8 +129,16 @@ func TestMeshAndRemove(t *testing.T) {
 			}
 		}
 	}
-	if got := read(t, files["desk"]); !strings.HasPrefix(got, hand) {
-		t.Fatalf("desk's own lines changed:\n%s", got)
+	if got := read(t, files["desk"]); !strings.HasPrefix(got, hand) || strings.Contains(got, "AAAAIsandbox") {
+		t.Fatalf("desk should keep its own lines and lose the sandbox grant:\n%s", got)
+	}
+	for m, p := range files {
+		if strings.Contains(read(t, p), "AAAAIsandbox") {
+			t.Fatalf("%s trusts a key gpu-box doesn't use", m)
+		}
+	}
+	if !strings.Contains(out.String(), "desk: added 1 key(s) of pc; removed 1 line(s) no longer granted, of gpu-box") {
+		t.Fatalf("desk summary:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "offline, so not changed: pc") {
 		t.Fatalf("pc is offline and should be named:\n%s", out.String())
@@ -138,7 +157,7 @@ func TestMeshAndRemove(t *testing.T) {
 			t.Fatalf("second mesh changed %s", m)
 		}
 	}
-	if !strings.Contains(out.String(), "already trusts") {
+	if !strings.Contains(out.String(), "already trusts exactly") {
 		t.Fatalf("second run should say there's nothing to do:\n%s", out.String())
 	}
 
@@ -200,7 +219,7 @@ func TestMeshFocusAndSymlink(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "gpu-box") {
 		t.Fatalf("want gpu-box to fail: %v", err)
 	}
-	if !strings.Contains(out.String(), "Add these 1 line(s)") || read(t, real) != "" {
+	if !strings.Contains(out.String(), "Make these 1 change(s)") || !strings.Contains(out.String(), "+ "+keyOnly(deskKey)+" yonder:desk") || read(t, real) != "" {
 		t.Fatalf("symlink should be refused with the line to add:\n%s", out.String())
 	}
 	// focus on desk: laptop learns desk's key only; desk learns everyone's
@@ -209,5 +228,52 @@ func TestMeshFocusAndSymlink(t *testing.T) {
 	}
 	if got := read(t, files["desk"]); !strings.Contains(got, "yonder:laptop") || !strings.Contains(got, "yonder:pc") {
 		t.Fatalf("desk:\n%s", got)
+	}
+}
+
+// a record from before mesh keys gets nothing granted, and its old lines stay
+func TestMeshOlderPeerGetsNothing(t *testing.T) {
+	a, _, files := meshFleet(t)
+	out := a.out.(interface{ String() string })
+	m, _ := a.store.Machine("desk")
+	m.MeshKeys = nil
+	if err := a.store.SaveMachine(m); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.MkdirAll(filepath.Dir(files["gpu-box"]), 0o700)
+	old := keyOnly(deskKey) + " yonder:desk\n"
+	if err := os.WriteFile(files["gpu-box"], []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.mesh("laptop", "", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(read(t, files["laptop"]), "yonder:desk") || !strings.HasPrefix(read(t, files["gpu-box"]), old) {
+		t.Fatalf("laptop:\n%s\ngpu-box:\n%s", read(t, files["laptop"]), read(t, files["gpu-box"]))
+	}
+	if !strings.Contains(out.String(), "not handing out desk's keys: no mesh keys on record") || !strings.Contains(out.String(), "`yonder add desk`") {
+		t.Fatalf("want a message naming the fix:\n%s", out.String())
+	}
+}
+
+// add takes the mesh keys the peer reports from _init-self, and keeps them for stripping too
+func TestAddRecordsMeshKeys(t *testing.T) {
+	a, p := newPinApp(t, false)
+	p.yonder = func(_ transport.Target, args []string, stdio transport.IO) (int, error) {
+		switch args[0] {
+		case "_facts":
+			fmt.Fprint(stdio.Stdout, `{"hostname":"gpu-box"}`)
+		case "_init-self":
+			fmt.Fprintf(stdio.Stdout, `{"mesh_keys":[%q,"ssh-ed25519 AAAA\n bad"]}`, gpuKey)
+		}
+		return 0, nil
+	}
+	m, err := a.addPeer(peer("gpu-box", true), addOpts{user: "me", port: 22})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := a.store.Machine("gpu-box")
+	if len(got.MeshKeys) != 1 || got.MeshKeys[0] != gpuKey || len(got.SSHClientKeys) != 1 || m.MeshKeys == nil {
+		t.Fatalf("record %+v", got)
 	}
 }

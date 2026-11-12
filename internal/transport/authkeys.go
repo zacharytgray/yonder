@@ -90,7 +90,8 @@ func AuthorizedKeysPath(home string) string {
 }
 
 // SymlinkError is an edit refused because authorized_keys (or ~/.ssh) is a
-// symlink. Lines are the exact lines to delete (or, with Add, to add) by hand in Real.
+// symlink. Lines are the exact lines to delete by hand in Real; with Add, each
+// is "+ line" to add or "- line" to delete.
 type SymlinkError struct {
 	Path, Real string
 	Lines      []string
@@ -99,11 +100,11 @@ type SymlinkError struct {
 
 func (e *SymlinkError) Error() string {
 	var b strings.Builder
-	verb, prep := "Delete", "from"
 	if e.Add {
-		verb, prep = "Add", "to"
+		fmt.Fprintf(&b, "%s is a symlink to %s, so yonder won't rewrite it. Make these %d change(s) to %s by hand (+ add the line, - delete it):", e.Path, e.Real, len(e.Lines), e.Real)
+	} else {
+		fmt.Fprintf(&b, "%s is a symlink to %s, so yonder won't rewrite it. Delete these %d line(s) from %s by hand:", e.Path, e.Real, len(e.Lines), e.Real)
 	}
-	fmt.Fprintf(&b, "%s is a symlink to %s, so yonder won't rewrite it. %s these %d line(s) %s %s by hand:", e.Path, e.Real, verb, len(e.Lines), prep, e.Real)
 	for _, l := range e.Lines {
 		b.WriteString("\n    " + l)
 	}

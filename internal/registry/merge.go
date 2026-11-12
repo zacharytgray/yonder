@@ -92,7 +92,7 @@ func FromPeer(local, in Bundle, self string, now time.Time) Bundle {
 			if !l.Pending && m.Pending {
 				continue
 			}
-			m.TailscaleIP, m.SSHHostKey, m.SSHClientKeys, m.AddedAt = l.TailscaleIP, l.SSHHostKey, l.SSHClientKeys, l.AddedAt
+			m.TailscaleIP, m.SSHHostKey, m.SSHClientKeys, m.MeshKeys, m.AddedAt = l.TailscaleIP, l.SSHHostKey, l.SSHClientKeys, l.MeshKeys, l.AddedAt
 		} else if ok && !m.Pending && m.SSHHostKey != "" && !m.UpdatedAt.After(l.UpdatedAt) {
 			// a full record finishes a pending one here even when older, so its pin is used
 			m.UpdatedAt = l.UpdatedAt.Add(time.Second)

@@ -239,8 +239,17 @@ func TestFactsAndInitSelf(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &f); err != nil || f.OS == "" || f.CPUCores == 0 {
 		t.Fatalf("facts %v %+v", err, f)
 	}
-	if code := InitSelf(context.Background(), []string{"desk"}, nil, io.Discard, io.Discard); code != 0 {
+	// it reports the key ssh offers by default, for mesh to grant
+	key := filepath.Join(registry.UserHome(), ".ssh", "id_ed25519")
+	_ = os.MkdirAll(filepath.Dir(key), 0o700)
+	_ = os.WriteFile(key, []byte("private"), 0o600)
+	_ = os.WriteFile(key+".pub", []byte("ssh-ed25519 AAAAdesk me@desk\n"), 0o600)
+	out.Reset()
+	if code := InitSelf(context.Background(), []string{"desk"}, nil, &out, io.Discard); code != 0 {
 		t.Fatal("init-self")
+	}
+	if got := strings.TrimSpace(out.String()); got != `{"mesh_keys":["ssh-ed25519 AAAAdesk me@desk"]}` {
+		t.Fatalf("init-self printed %s", got)
 	}
 	if c, _ := registry.Open().Config(); c.Self != "desk" {
 		t.Fatalf("self %q", c.Self)

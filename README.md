@@ -131,10 +131,14 @@ let every machine SSH into every other one, so an agent on the laptop can reach 
 though you only copied your key from the machine you ran `init` on. Last, it puts the skill into
 every agent harness it finds.
 
-`yonder add` makes the same offer for the machine it just added. It only appends to each
-machine's `~/.ssh/authorized_keys`, after a backup, and marks each line it adds with
-`yonder:<machine>`. `yonder mesh` does it again for the whole fleet, for example after a machine
-that was asleep comes back. `--no-mesh` skips it.
+`yonder add` makes the same offer for the machine it just added. Each machine is trusted only
+with the key it actually uses to connect: its default SSH key (`~/.ssh/id_ed25519` and the other
+names SSH tries on its own), plus any key you set for it with `yonder ssh-key`. Other keys in its
+`~/.ssh`, such as a GitHub deploy key, are never handed out. Yonder backs up each
+`~/.ssh/authorized_keys` first and marks every line it adds with `yonder:<machine>`. It only ever
+removes lines with that mark, and never touches lines you added yourself. `yonder mesh` does the
+whole fleet again, for example after a machine that was asleep comes back, and removes marked
+lines that are no longer needed. `--no-mesh` skips it.
 
 Every prompt has a flag, so an agent can run setup too:
 

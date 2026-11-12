@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zacharytgray/yonder/internal/discover"
+	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/tailnet"
 	"github.com/zacharytgray/yonder/internal/transport"
@@ -383,8 +384,21 @@ func (a *app) addPeer(p tailnet.Peer, o addOpts) (registry.Machine, error) {
 	if _, err := a.store.MergeIn(registry.Bundle{Machines: []registry.Machine{m}}); err != nil {
 		return m, err
 	}
-	if err := a.yonderJSON(a.ssh, m, []string{"_init-self", name}, nil, &bytes.Buffer{}); err != nil {
+	var self bytes.Buffer
+	if err := a.yonderJSON(a.ssh, m, []string{"_init-self", name}, nil, &self); err != nil {
 		return m, fmt.Errorf("setting %s's own name: %w", name, err)
+	}
+	// the keys it offers when it sshes out; an older yonder reports none
+	var rep struct {
+		MeshKeys []string `json:"mesh_keys"`
+	}
+	if json.Unmarshal(self.Bytes(), &rep) == nil && len(rep.MeshKeys) > 0 {
+		m.MeshKeys = mesh.Clean(rep.MeshKeys)
+		m.SSHClientKeys = mesh.Union(m.SSHClientKeys, m.MeshKeys) // strip what mesh may grant
+		m.UpdatedAt = time.Now().UTC()
+		if _, err := a.store.MergeIn(registry.Bundle{Machines: []registry.Machine{m}}); err != nil {
+			return m, err
+		}
 	}
 	return m, nil
 }

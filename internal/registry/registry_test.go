@@ -263,13 +263,13 @@ func TestValidName(t *testing.T) {
 func TestFromPeerSelfSkewAndIdentity(t *testing.T) {
 	now := t0.Add(24 * time.Hour)
 	held := Machine{Name: "gpu-box", TailscaleIP: "100.64.0.2", SSHHostKey: "ssh-ed25519 AAAAhost",
-		SSHClientKeys: []string{"ssh-ed25519 AAAAkey"}, AddedAt: t0, UpdatedAt: t0, Notes: "old"}
+		SSHClientKeys: []string{"ssh-ed25519 AAAAkey"}, MeshKeys: []string{"ssh-ed25519 AAAAkey"}, AddedAt: t0, UpdatedAt: t0, Notes: "old"}
 	self := Machine{Name: "laptop", AddedAt: t0, UpdatedAt: t0, Notes: "mine"}
 	local := Bundle{Machines: []Machine{held, self}}
 	in := Bundle{
 		Machines: []Machine{
 			{Name: "gpu-box", TailscaleIP: "100.64.0.66", SSHHostKey: "ssh-ed25519 AAAAevil",
-				SSHClientKeys: []string{"ssh-ed25519 AAAAevil"}, AddedAt: now, UpdatedAt: now, Notes: "new", Role: "gpu"},
+				SSHClientKeys: []string{"ssh-ed25519 AAAAevil"}, MeshKeys: []string{"ssh-ed25519 AAAAevil"}, AddedAt: now, UpdatedAt: now, Notes: "new", Role: "gpu"},
 			{Name: "laptop", AddedAt: now, UpdatedAt: now, Notes: "hijacked"},
 			{Name: "future-a", UpdatedAt: now.Add(MaxSkew + time.Second)},
 			{Name: "future-b", UpdatedAt: now, AddedAt: now.Add(time.Hour)},
@@ -286,7 +286,7 @@ func TestFromPeerSelfSkewAndIdentity(t *testing.T) {
 		byName[m.Name] = m
 	}
 	g := byName["gpu-box"]
-	if g.TailscaleIP != held.TailscaleIP || g.SSHHostKey != held.SSHHostKey || g.SSHClientKeys[0] != held.SSHClientKeys[0] || !g.AddedAt.Equal(t0) {
+	if g.TailscaleIP != held.TailscaleIP || g.SSHHostKey != held.SSHHostKey || g.SSHClientKeys[0] != held.SSHClientKeys[0] || g.MeshKeys[0] != held.MeshKeys[0] || !g.AddedAt.Equal(t0) {
 		t.Fatalf("identity changed through sync: %+v", g)
 	}
 	if g.Notes != "new" || g.Role != "gpu" || !g.UpdatedAt.Equal(now) {

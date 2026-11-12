@@ -100,7 +100,7 @@ func TestEditRefusesSymlinks(t *testing.T) {
 			}
 			_, _, err := Edit(ctx, r, transport.Target{}, home, true, appendEdit(Grant{"gpu-box", id(gpuKey)}))
 			var se *transport.SymlinkError
-			if !errors.As(err, &se) || !se.Add || len(se.Lines) != 1 || !strings.Contains(err.Error(), "Add these 1 line(s)") {
+			if !errors.As(err, &se) || !se.Add || len(se.Lines) != 1 || !strings.Contains(err.Error(), "Make these 1 change(s)") {
 				t.Fatalf("want a symlink refusal, got %v", err)
 			}
 			if got, _ := os.ReadFile(filepath.Join(real, "authorized_keys")); string(got) != laptopKey+"\n" {

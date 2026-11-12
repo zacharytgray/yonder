@@ -16,6 +16,7 @@ import (
 
 	"github.com/zacharytgray/yonder/internal/agents"
 	"github.com/zacharytgray/yonder/internal/discover"
+	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/secrets"
 	"github.com/zacharytgray/yonder/internal/tailnet"
@@ -223,9 +224,10 @@ func (a *app) selfRecord(p tailnet.Peer) registry.Machine {
 		Name: p.Name(), OS: runtime.GOOS, Arch: runtime.GOARCH,
 		TailscaleIP: p.IP(), DNSName: p.DNSName,
 		SSHUser: localUser(), SSHPort: 22, YonderPath: exe,
-		SSHHostKey: localHostKey(), SSHClientKeys: localClientKeys(),
+		SSHHostKey: localHostKey(), MeshKeys: mesh.Own(a.store),
 		UpdatedAt: now, DiscoveredAt: now, AddedAt: now, Facts: discover.Local(),
 	}
+	m.SSHClientKeys = mesh.Union(localClientKeys(), m.MeshKeys)
 	if old, err := a.store.Machine(m.Name); err == nil {
 		m.Role, m.Notes, m.AddedAt, m.SecretsAccount, m.SecretsWrite = old.Role, old.Notes, old.AddedAt, old.SecretsAccount, old.SecretsWrite
 		if old.SSHPort != 0 {
