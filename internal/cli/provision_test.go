@@ -21,8 +21,8 @@ echo "$*" >> "$OP_STATE/argv"
 case "$1 $2" in
 "--version "*) echo 2.34.0 ;;
 "account list") echo '[{"url":"example.1password.com"}]' ;;
-"vault list") if [ -f "$OP_STATE/vault" ]; then printf '[{"id":"v1","name":"%s"}]\n' "$(cat "$OP_STATE/vault")"; else echo '[]'; fi ;;
-"vault create") printf %s "$3" > "$OP_STATE/vault" ;;
+"vault list") printf '['; sep=; [ -f "$OP_STATE/vaults" ] && while IFS= read -r v; do printf '%s{"id":"v","name":"%s"}' "$sep" "$v"; sep=,; done < "$OP_STATE/vaults"; echo ']' ;;
+"vault create") printf '%s\n' "$3" >> "$OP_STATE/vaults" ;;
 "service-account create")
   n=$(cat "$OP_STATE/n" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$OP_STATE/n"
   echo "ops_DUMMYtoken$n" ;;
@@ -42,7 +42,7 @@ _secret-probe)
   else printf '{"op":"/x/op","provider":"1password","mode":"service-account","has_token":true,"service_account":"%s"}\n' "$(cut -d' ' -f1 "$dir/args")"
   fi ;;
 _secret-provision)
-  printf %s "$YONDER_OP_TOKEN" > "$dir/token"; echo "$2 $3 $4" > "$dir/args"
+  printf %s "$YONDER_OP_TOKEN" > "$dir/token"; shift; echo "$*" > "$dir/args"
   echo "echoing $YONDER_OP_TOKEN" >&2
   echo "token stored in fake keychain" ;;
 *) exit 9 ;;
@@ -326,5 +326,69 @@ func TestRemoveLostNamesServiceAccount(t *testing.T) {
 	}
 	if tomb, _ := f.a.store.Tombstone("off-box"); tomb.SecretsAccount != "yonder-off-box" {
 		t.Fatalf("tombstone: %+v", tomb)
+	}
+}
+
+func TestProvisionExtraVault(t *testing.T) {
+	f := newProvFleet(t)
+	probe := filepath.Join(f.peers, "gpu-box", "probe.json")
+	if err := os.WriteFile(probe, []byte(`{"os":"linux","op":"/usr/bin/op","can_extra_vaults":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := provisionOpts{machines: []string{"gpu-box", "laptop"}, vault: "Agents", extraVaults: []string{"Ops", "Agents", "Ops", "Build Keys"}}
+	if err := f.a.provision(o); err != nil {
+		t.Fatalf("%v\n%s", err, f.out.String())
+	}
+	argv := f.argv(t)
+	for _, want := range []string{
+		"vault create Agents --description",
+		"vault create Ops --description Secrets that only",
+		"vault create Build Keys --description",
+		"service-account create yonder-gpu-box --vault Agents:read_items --vault Ops:read_items --vault Build Keys:read_items --raw\n",
+		"service-account create yonder-laptop --vault Agents:read_items --vault Ops:read_items --vault Build Keys:read_items --raw\n",
+	} {
+		if !strings.Contains(argv, want) {
+			t.Errorf("op calls lack %q:\n%s", want, argv)
+		}
+	}
+	args, _ := os.ReadFile(filepath.Join(f.peers, "gpu-box", "args"))
+	if strings.TrimSpace(string(args)) != "yonder-gpu-box Agents --extra-vault Ops --extra-vault Build Keys" {
+		t.Fatalf("gpu-box got %q", args)
+	}
+	if s, _ := secrets.LoadSettings(); s.Vault != "Agents" || strings.Join(s.ExtraVaults, ",") != "Ops,Build Keys" || s.Write {
+		t.Fatalf("settings here: %+v", s)
+	}
+	out := f.out.String()
+	for _, want := range []string{
+		`They can also read everything in "Ops", "Build Keys", and change nothing there.`,
+		`gpu-box: ok, service account yonder-gpu-box reads "Agents" and reads "Ops", "Build Keys"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	f.noTokenLeak(t)
+}
+
+// a peer whose yonder predates --extra-vault is refused before any account exists.
+func TestProvisionExtraVaultOldPeer(t *testing.T) {
+	f := newProvFleet(t)
+	err := f.a.provision(provisionOpts{machines: []string{"gpu-box"}, vault: "Agents", extraVaults: []string{"Ops"}})
+	if ExitCode(err) != ExitError {
+		t.Fatalf("err %v\n%s", err, f.out.String())
+	}
+	if strings.Contains(f.argv(t), "service-account create") {
+		t.Fatalf("an account was made:\n%s", f.argv(t))
+	}
+	if !strings.Contains(f.out.String(), "gpu-box: failed, yonder on gpu-box is too old for --extra-vault") {
+		t.Fatalf("output:\n%s", f.out.String())
+	}
+}
+
+func TestProvisionExtraVaultRefusesReserved(t *testing.T) {
+	f := newProvFleet(t)
+	err := f.a.provision(provisionOpts{machines: []string{"gpu-box"}, extraVaults: []string{"Private"}})
+	if ExitCode(err) != ExitUsage || f.argv(t) != "" {
+		t.Fatalf("err %v, op ran:\n%s", err, f.argv(t))
 	}
 }

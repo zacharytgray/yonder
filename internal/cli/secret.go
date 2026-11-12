@@ -150,17 +150,18 @@ type secretJSON struct {
 	Name   string `json:"name"`
 	Ref    string `json:"ref"`    // empty for vault items
 	Source string `json:"source"` // "secrets.toml" or "vault"
+	Vault  string `json:"vault"`  // the vault a vault item resolves from; empty for secrets.toml
 }
 
 func newSecretLsCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "ls",
-		Short: "List secret names: secrets.toml references and agent vault titles (never values)",
+		Short: "List secret names: secrets.toml references and vault titles (never values)",
 		Long: `List the secret names this machine can resolve: references in secrets.toml, then
-item titles in the agent vault that are valid names. A name in both resolves from
-secrets.toml. Listing the vault reads titles only, never values; in desktop mode it
-asks for approval like any read.`,
+item titles that are valid names in the agent vault and then each extra vault. A name
+resolves from the first of those that has it. Listing a vault reads titles only, never
+values; in desktop mode it asks for approval like any read.`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a := newApp(cmd)
@@ -176,32 +177,52 @@ asks for approval like any read.`,
 			for _, n := range sortedNames(refs) {
 				list = append(list, secretJSON{Name: n, Ref: refs[n], Source: "secrets.toml"})
 			}
-			vault, titles, skipped, verr := secrets.VaultNames()
-			for _, n := range titles {
-				if _, mapped := refs[n]; !mapped {
-					list = append(list, secretJSON{Name: n, Source: "vault"})
+			lists, err := secrets.VaultNames()
+			if err != nil {
+				return err
+			}
+			vault, vaultErr, skipped := "", "", 0
+			extras := []map[string]string{}
+			seen := map[string]bool{}
+			for i, l := range lists {
+				e := ""
+				if l.Err != nil {
+					e = l.Err.Error()
+				}
+				if i == 0 {
+					vault, vaultErr = l.Vault, e
+				} else {
+					extras = append(extras, map[string]string{"vault": l.Vault, "error": e})
+				}
+				skipped += l.Skipped
+				for _, n := range l.Names {
+					if _, mapped := refs[n]; !mapped && !seen[n] {
+						seen[n] = true
+						list = append(list, secretJSON{Name: n, Source: "vault", Vault: l.Vault})
+					}
 				}
 			}
 			sort.SliceStable(list, func(i, j int) bool { return list[i].Name < list[j].Name })
-			vaultErr := ""
-			if verr != nil {
-				vaultErr = verr.Error()
-			}
 			if asJSON {
 				enc := json.NewEncoder(a.out)
 				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"provider": s.Provider, "mode": s.Mode, "vault": vault, "vault_error": vaultErr, "secrets": list})
+				return enc.Encode(map[string]any{"provider": s.Provider, "mode": s.Mode, "vault": vault, "vault_error": vaultErr,
+					"extra_vaults": extras, "secrets": list})
 			}
 			prov := "none (run `yonder secret setup`)"
 			if s.Provider != "" {
 				prov = s.String()
 			}
 			fmt.Fprintf(a.out, "provider: %s\n", prov)
-			if vault != "" {
-				fmt.Fprintf(a.out, "vault: %s (%s)\n", vault, s.Access())
-			}
-			if verr != nil {
-				a.warnf("could not list the vault %q: %v", vault, verr)
+			for i, l := range lists {
+				if i == 0 {
+					fmt.Fprintf(a.out, "vault: %s (%s)\n", l.Vault, s.Access())
+				} else {
+					fmt.Fprintf(a.out, "extra vault: %s (read-only)\n", l.Vault)
+				}
+				if l.Err != nil {
+					a.warnf("could not list the vault %q: %v", l.Vault, l.Err)
+				}
 			}
 			if len(list) == 0 {
 				fmt.Fprintln(a.out, "no secrets yet; store one with `yonder secret set NAME` or map one with `yonder secret add NAME <ref>`")
@@ -215,6 +236,9 @@ asks for approval like any read.`,
 				where := e.Ref
 				if e.Source == "vault" {
 					where = "vault item"
+					if len(lists) > 1 {
+						where = "item in " + e.Vault
+					}
 				}
 				fmt.Fprintf(a.out, "%-*s  %s\n", w, e.Name, where)
 			}
@@ -279,7 +303,7 @@ func newSecretSetupCmd() *cobra.Command {
 		po             provisionOpts
 	)
 	cmd := &cobra.Command{
-		Use:   "setup [--machines a,b | --all-machines] [--vault NAME] [--allow-write] [--replace] [--yes]",
+		Use:   "setup [--machines a,b | --all-machines] [--vault NAME] [--extra-vault NAME]... [--allow-write] [--replace] [--yes]",
 		Short: "Set up secrets: hands-free 1Password for your machines, or this machine's provider",
 		Long: `Set up secrets. With no flags it asks.
 
@@ -298,6 +322,12 @@ By default it sets up every other online machine, and this one only if it has no
   yonder secret setup --machines gpu-box       just these (offline ones: run this later)
   yonder secret setup --all-machines --vault Agents --expires-in 90d
   yonder secret setup --machines gpu-box --replace --allow-write
+  yonder secret setup --machines server --vault Agents --extra-vault Ops --replace
+
+--extra-vault (repeatable) also lets each new account read that vault, never write it.
+Names resolve from the agent vault first, then each extra vault in order;
+` + "`yonder secret set`" + ` writes only to the agent vault. Use it for secrets only some
+machines should read.
 
 Or choose this machine's provider by hand:
   1password desktop: the 1Password app approves reads with Touch ID or system auth.
@@ -307,7 +337,7 @@ Or choose this machine's provider by hand:
 
 Hand-chosen hands-free modes need ` + "`yonder secret token set`" + ` afterwards. With
 --provider 1password, --vault NAME records the agent vault for ` + "`secret set`" + ` and
-name lookups.`,
+name lookups, and --extra-vault NAME (repeatable) more vaults to look names up in.`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if mode != "" && provider == "" {
@@ -334,6 +364,7 @@ name lookups.`,
 				Provider:    provider,
 				Mode:        mode,
 				Vault:       po.vault,
+				ExtraVaults: extrasOrNil(cmd, po.extraVaults),
 			})
 		},
 	}
@@ -345,9 +376,19 @@ name lookups.`,
 	f.StringVar(&po.vault, "vault", "", "1Password vault for agent secrets (default \""+secrets.DefaultVault+"\"; created if missing)")
 	f.BoolVar(&po.replace, "replace", false, "replace a token a machine already has")
 	f.StringVar(&po.expiresIn, "expires-in", "", "service accounts expire after this long, e.g. 90d (default: never)")
+	f.StringArrayVar(&po.extraVaults, "extra-vault", nil, "also let the accounts read this vault, read-only (repeatable; created if missing)")
 	f.BoolVar(&po.allowWrite, "allow-write", false, "let the service accounts write the vault too, so agents can `yonder secret set`")
 	f.BoolVar(&yes, "yes", false, "never prompt; set up the default machines")
 	return cmd
+}
+
+// extrasOrNil: nil when --extra-vault wasn't given, so a hand setup keeps
+// the extra vaults it already has.
+func extrasOrNil(cmd *cobra.Command, v []string) []string {
+	if !cmd.Flags().Changed("extra-vault") {
+		return nil
+	}
+	return v
 }
 
 // secretsChoice is the interactive start of setup: hands-free for the fleet

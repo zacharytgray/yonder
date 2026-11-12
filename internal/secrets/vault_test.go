@@ -275,7 +275,7 @@ func TestWriteAccessRecorded(t *testing.T) {
 	setupHome(t, Settings{}, nil)
 	f := &fakeExec{handler: func(c call) (string, string, error) { return dummyToken + "\n", "", nil }}
 	installFake(t, f)
-	if _, err := CreateServiceAccount("yonder-gpu-box", "Agents", "", true); err != nil {
+	if _, err := CreateServiceAccount("yonder-gpu-box", "Agents", nil, "", true); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Join(f.calls[0].args, " "); got != "service-account create yonder-gpu-box --vault Agents:read_items,write_items --raw" {
@@ -284,7 +284,7 @@ func TestWriteAccessRecorded(t *testing.T) {
 
 	ft := &fakeTokens{tokens: map[string]string{}}
 	installTokens(t, ft)
-	if _, err := InstallServiceAccount(dummyToken, "yonder-gpu-box", "Agents", true); err != nil {
+	if _, err := InstallServiceAccount(dummyToken, "yonder-gpu-box", "Agents", nil, true); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := LoadSettings()
@@ -295,7 +295,7 @@ func TestWriteAccessRecorded(t *testing.T) {
 	if c := findCheck(t, Health(), "1password vault"); c.Detail != `"Agents", read and write` {
 		t.Fatalf("%+v", c)
 	}
-	if _, err := InstallServiceAccount(dummyToken, "yonder-gpu-box", "Agents", false); err != nil {
+	if _, err := InstallServiceAccount(dummyToken, "yonder-gpu-box", "Agents", nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if c := findCheck(t, Health(), "1password vault"); c.Detail != `"Agents", read-only` {
@@ -358,14 +358,141 @@ func TestOpStderrScrubsEveryInheritedCredential(t *testing.T) {
 		}
 		return "", "[ERROR] 2026/11/11 20:00:00 " + strings.Join(leak, " ") + "\n", errors.New("exit status 1")
 	}})
-	_, _, _, err := VaultNames()
+	lists, _ := VaultNames()
+	var err error
+	if len(lists) == 1 {
+		err = lists[0].Err
+	}
 	if err == nil || strings.Contains(err.Error(), "CANARY") || !strings.Contains(err.Error(), "op item list") {
 		t.Fatalf("vault list: %v", err)
 	}
 	if _, err := EnsureVault(DefaultVault); err == nil || strings.Contains(err.Error(), "CANARY") {
 		t.Fatalf("ensure vault: %v", err)
 	}
-	if _, err := CreateServiceAccount("yonder-gpu-box", DefaultVault, "", false); err == nil || strings.Contains(err.Error(), "CANARY") {
+	if _, err := CreateServiceAccount("yonder-gpu-box", DefaultVault, nil, "", false); err == nil || strings.Contains(err.Error(), "CANARY") {
 		t.Fatalf("create service account: %v", err)
+	}
+}
+
+const opsItems = `[
+ {"id":"o-api","title":"API_KEY","category":"API_CREDENTIAL","vault":{"id":"v2","name":"Ops"}},
+ {"id":"o-backup","title":"BACKUP_PASS","category":"PASSWORD","vault":{"id":"v2","name":"Ops"}}
+]`
+
+// fakeVaults plays op for the agent vault "Agents" and an extra vault "Ops".
+func fakeVaults() func(c call) (string, string, error) {
+	agents := fakeVault("")
+	inject := fakeInject(map[string]string{
+		"op://v1/i-api/credential":  "api-value",
+		"op://v2/o-backup/password": "backup-value",
+		"op://v2/o-api/credential":  "ops-api-value",
+	})
+	return func(c call) (string, string, error) {
+		a := strings.Join(c.args, " ")
+		switch {
+		case a == "item list --vault Ops --format json":
+			return opsItems, "", nil
+		case a == "vault get Ops --format json":
+			return `{"id":"v2","name":"Ops"}`, "", nil
+		case strings.HasPrefix(a, "vault get"):
+			return "", "[ERROR] 2026/11/11 20:00:00 vault isn't in this account's scope\n", errors.New("exit status 1")
+		case len(c.args) < 2:
+			return inject(c)
+		}
+		return agents(c)
+	}
+}
+
+func TestResolveExtraVaults(t *testing.T) {
+	setupHome(t, Settings{Provider: Provider1Password, Mode: ModeDesktop, Vault: "Agents", ExtraVaults: []string{"Ops"}}, nil)
+	f := &fakeExec{handler: fakeVaults()}
+	installFake(t, f)
+	got, err := Resolve([]string{"API_KEY", "BACKUP_PASS"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// API_KEY is in both: the agent vault wins
+	if got["API_KEY"] != "api-value" || got["BACKUP_PASS"] != "backup-value" {
+		t.Fatalf("got %v", got)
+	}
+	var ops []string
+	for _, c := range f.calls {
+		ops = append(ops, strings.Join(c.args[:min(3, len(c.args))], " "))
+	}
+	if strings.Join(ops, "|") != "item list --vault|item list --vault|inject" {
+		t.Fatalf("op calls: %v", ops)
+	}
+
+	// found in the agent vault: the extra vault isn't listed
+	f.calls = nil
+	if _, err := Resolve([]string{"API_KEY"}); err != nil || len(f.calls) != 2 {
+		t.Fatalf("%v %d calls", err, len(f.calls))
+	}
+
+	_, err = Resolve([]string{"NOPE"})
+	if err == nil || !strings.Contains(err.Error(), `in secrets.toml or the vault "Agents" and then "Ops"`) || !strings.Contains(err.Error(), "BACKUP_PASS") {
+		t.Fatalf("unknown: %v", err)
+	}
+
+	// secret set still writes only to the agent vault
+	f.calls = nil
+	if v, err := Store("NEW_KEY", "new-value", false); err != nil || v != "Agents" {
+		t.Fatalf("store: %q %v", v, err)
+	}
+	for _, c := range f.calls {
+		if strings.Contains(strings.Join(c.args, " "), "Ops") {
+			t.Fatalf("store touched Ops: %v", c.args)
+		}
+	}
+
+	lists, err := VaultNames()
+	if err != nil || len(lists) != 2 || lists[1].Vault != "Ops" || strings.Join(lists[1].Names, ",") != "API_KEY,BACKUP_PASS" {
+		t.Fatalf("lists %+v %v", lists, err)
+	}
+}
+
+func TestExtraVaultSettingsAndHealth(t *testing.T) {
+	setupHome(t, Settings{}, nil)
+	ft := &fakeTokens{tokens: map[string]string{}}
+	installTokens(t, ft)
+	if _, err := InstallServiceAccount(dummyToken, "yonder-gpu-box", "Agents", []string{"Ops", "Agents", "Gone", "Ops"}, false); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := LoadSettings()
+	if strings.Join(s.ExtraVaults, ",") != "Ops,Gone" || strings.Join(s.Vaults(), ",") != "Agents,Ops,Gone" {
+		t.Fatalf("%+v", s)
+	}
+	installFake(t, &fakeExec{handler: func(c call) (string, string, error) {
+		if c.args[0] == "vault" {
+			return fakeVaults()(c)
+		}
+		return "2.34.0\n", "", nil
+	}})
+	checks := Health()
+	if c := findCheck(t, checks, "1password vault"); c.Detail != `"Agents", read-only; also reads "Ops", "Gone" (read-only)` {
+		t.Fatalf("%+v", c)
+	}
+	if c := findCheck(t, checks, "1password vault Ops"); !c.OK {
+		t.Fatalf("%+v", c)
+	}
+	c := findCheck(t, checks, "1password vault Gone")
+	if c.OK || !strings.Contains(c.Fix, "--vault Agents --extra-vault Ops --extra-vault Gone --replace") {
+		t.Fatalf("%+v", c)
+	}
+
+	f := &fakeExec{handler: func(c call) (string, string, error) { return dummyToken + "\n", "", nil }}
+	installFake(t, f)
+	if _, err := CreateServiceAccount("yonder-gpu-box", "Agents", []string{"Ops"}, "", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(f.calls[0].args, " "); got != "service-account create yonder-gpu-box --vault Agents:read_items,write_items --vault Ops:read_items --raw" {
+		t.Fatalf("argv: %s", got)
+	}
+
+	if _, err := CheckExtraVaults("Agents", []string{"Shared"}); err == nil {
+		t.Fatal("reserved vault accepted")
+	}
+	if got, _ := CheckExtraVaults("Agents", []string{" Ops ", "Agents"}); strings.Join(got, ",") != "Ops" {
+		t.Fatalf("got %v", got)
 	}
 }

@@ -28,13 +28,14 @@ type provisionOpts struct {
 	all         bool
 	replace     bool
 	expiresIn   string
-	allowWrite  bool // grant write_items too, so agents can `secret set`
+	allowWrite  bool     // grant write_items too, so agents can `secret set`
+	extraVaults []string // read-only vaults each new account also gets
 	interactive bool
 }
 
 // wantsProvision: any provisioning flag means the fleet flow, not the provider prompts.
 func (o provisionOpts) set(yes bool) bool {
-	return yes || len(o.machines) > 0 || o.all || o.replace || o.vault != "" || o.expiresIn != "" || o.allowWrite
+	return yes || len(o.machines) > 0 || o.all || o.replace || o.vault != "" || o.expiresIn != "" || o.allowWrite || len(o.extraVaults) > 0
 }
 
 type provTarget struct {
@@ -61,6 +62,15 @@ func (a *app) provision(o provisionOpts) error {
 	}
 	if o.expiresIn != "" {
 		if err := secrets.CheckExpiresIn(o.expiresIn); err != nil {
+			return &usageError{err}
+		}
+	}
+	if len(o.extraVaults) > 0 {
+		v := o.vault
+		if v == "" {
+			v = secrets.DefaultVault
+		}
+		if o.extraVaults, err = secrets.CheckExtraVaults(v, o.extraVaults); err != nil {
 			return &usageError{err}
 		}
 	}
@@ -175,6 +185,10 @@ func (a *app) provision(o provisionOpts) error {
 			}
 			continue
 		}
+		if len(o.extraVaults) > 0 && !t.probe.CanExtraVaults {
+			fail(n, fmt.Sprintf("yonder on %s is too old for --extra-vault", n), "upgrade yonder on "+n+", then: "+rerunLine(n))
+			continue
+		}
 		if t.probe.Op == "" {
 			fmt.Fprintf(a.out, "%s: skipped, the 1Password CLI `op` is not installed there. Install it (%s), then: %s\n",
 				n, secrets.OpInstallHint(osOf(m, t.probe)), rerunLine(n))
@@ -218,6 +232,9 @@ func (a *app) provision(o provisionOpts) error {
 		can = "read, change and delete"
 	}
 	fmt.Fprintf(a.out, "Agent secrets go in the 1Password vault %q. The agents on %s can %s everything in it.\n", o.vault, strings.Join(names, ", "), can)
+	if len(o.extraVaults) > 0 {
+		fmt.Fprintf(a.out, "They can also read everything in %s, and change nothing there.\n", quotedList(o.extraVaults))
+	}
 	fmt.Fprintln(a.out, "1Password asks you to approve once (Touch ID or your system password).")
 	created, err := secrets.EnsureVault(o.vault)
 	if err != nil {
@@ -227,6 +244,17 @@ func (a *app) provision(o provisionOpts) error {
 		fmt.Fprintf(a.out, "created the vault %q\n", o.vault)
 	} else {
 		fmt.Fprintf(a.out, "using the vault %q\n", o.vault)
+	}
+	for _, v := range o.extraVaults {
+		created, err := secrets.EnsureExtraVault(v)
+		if err != nil {
+			return err
+		}
+		if created {
+			fmt.Fprintf(a.out, "created the vault %q\n", v)
+		} else {
+			fmt.Fprintf(a.out, "using the vault %q (read-only)\n", v)
+		}
 	}
 
 	changed := false
@@ -253,7 +281,7 @@ func (a *app) provision(o provisionOpts) error {
 // the token lives only in this function's memory and the envelope.
 func (a *app) provisionOne(t provTarget, self string, o provisionOpts) bool {
 	n := t.m.Name
-	tok, err := secrets.CreateServiceAccount(t.account, o.vault, o.expiresIn, o.allowWrite)
+	tok, err := secrets.CreateServiceAccount(t.account, o.vault, o.extraVaults, o.expiresIn, o.allowWrite)
 	if err != nil {
 		fmt.Fprintf(a.out, "%s: failed, %v\n  fix: check the 1Password app is unlocked, then: %s\n", n, err, rerunLine(n))
 		return false
@@ -261,9 +289,9 @@ func (a *app) provisionOne(t provTarget, self string, o provisionOpts) bool {
 	revokeFix := fmt.Sprintf("revoke %s at %s, then: %s", t.account, secrets.RevokeWhere, rerunLine(n))
 	var kind string
 	if t.self {
-		kind, err = remote.ProvisionHere(tok, t.account, o.vault, o.allowWrite)
+		kind, err = remote.ProvisionHere(tok, t.account, o.vault, o.extraVaults, o.allowWrite)
 	} else {
-		kind, err = a.remoteProvision(t.m, self, tok, t.account, o.vault, o.allowWrite)
+		kind, err = a.remoteProvision(t.m, self, tok, t.account, o.vault, o.extraVaults, o.allowWrite)
 	}
 	if err != nil {
 		msg := secrets.ScrubText(err.Error(), map[string]string{"TOKEN": tok})
@@ -292,7 +320,11 @@ func (a *app) provisionOne(t provTarget, self string, o provisionOpts) bool {
 	if o.allowWrite {
 		access = "reads and writes"
 	}
-	fmt.Fprintf(a.out, "%s: ok, service account %s %s %q, token in %s\n", n, t.account, access, o.vault, kind)
+	also := ""
+	if len(o.extraVaults) > 0 {
+		also = " and reads " + quotedList(o.extraVaults)
+	}
+	fmt.Fprintf(a.out, "%s: ok, service account %s %s %q%s, token in %s\n", n, t.account, access, o.vault, also, kind)
 	if t.old != "" {
 		old := t.old
 		switch old {
@@ -408,19 +440,23 @@ func (a *app) remoteProbe(m registry.Machine, self string, verify bool) (secrets
 	return p, nil
 }
 
-func (a *app) remoteProvision(m registry.Machine, self, tok, account, vault string, write bool) (string, error) {
+func (a *app) remoteProvision(m registry.Machine, self, tok, account, vault string, extras []string, write bool) (string, error) {
 	var out, errb bytes.Buffer
 	vals := map[string]string{secrets.ProvisionTokenEnv: tok}
 	args := []string{"_secret-provision", account, vault}
 	if write {
 		args = append(args, "--write") // only then, so an older peer still takes a read-only token
 	}
+	for _, v := range extras {
+		args = append(args, "--extra-vault", v)
+	}
 	code, err := a.execWith(m, self, yonderCmd(m, args...), vals, nil, &out, &errb)
 	if err != nil {
 		return "", err
 	}
 	errText := secrets.ScrubText(errb.String(), vals)
-	if tooOld(code, errText) {
+	if tooOld(code, errText) || (code == ExitUsage && len(extras) > 0) {
+		// a peer older than --extra-vault refuses the extra arguments
 		return "", upgradeErr(m)
 	}
 	if code != 0 {
@@ -451,4 +487,13 @@ var askAllowWrite = func() bool {
 		Description("Then they can run `yonder secret set`. They could also change or delete items in that vault.").
 		Value(&ok).Run()
 	return err == nil && ok
+}
+
+// quotedList is "A", "B".
+func quotedList(vs []string) string {
+	q := make([]string, len(vs))
+	for i, v := range vs {
+		q[i] = fmt.Sprintf("%q", v)
+	}
+	return strings.Join(q, ", ")
 }

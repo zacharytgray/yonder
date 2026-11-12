@@ -19,7 +19,8 @@ type SetupOptions struct {
 	Force       bool // ask again even if a provider is set
 	Provider    string
 	Mode        string
-	Vault       string // 1password: the agent vault, for setups made by hand
+	Vault       string   // 1password: the agent vault, for setups made by hand
+	ExtraVaults []string // 1password: vaults read after it; nil keeps the current ones
 }
 
 // SetupInteractive runs Setup for init. it leaves an existing setup alone.
@@ -100,7 +101,7 @@ func Setup(o SetupOptions) error {
 			s.ServiceAccount, s.Write = cur.ServiceAccount, cur.Write
 		}
 		if s.Provider == cur.Provider {
-			s.Vault = cur.Vault
+			s.Vault, s.ExtraVaults = cur.Vault, cur.ExtraVaults
 		}
 		if s.Provider != Provider1Password && s.Mode != "" {
 			return fmt.Errorf("--mode only applies to 1password")
@@ -113,6 +114,19 @@ func Setup(o SetupOptions) error {
 				return err
 			}
 			s.Vault = o.Vault
+		}
+		if o.ExtraVaults != nil {
+			if s.Provider != Provider1Password {
+				return fmt.Errorf("--extra-vault only applies to 1password")
+			}
+			if s.Vault == "" {
+				return fmt.Errorf("--extra-vault needs an agent vault; add --vault NAME")
+			}
+			extras, err := CheckExtraVaults(s.Vault, o.ExtraVaults)
+			if err != nil {
+				return err
+			}
+			s.ExtraVaults = extras
 		}
 		return saveAndExplain(o.Out, s)
 	}
@@ -235,6 +249,9 @@ func explainNext(w io.Writer, s Settings) error {
 	}
 	if s.Vault != "" {
 		fmt.Fprintf(w, "secrets: agent vault %q (%s); `yonder secret set NAME` stores a secret there\n", s.Vault, s.Access())
+	}
+	if len(s.ExtraVaults) > 0 {
+		fmt.Fprintf(w, "secrets: names also resolve from %s, read-only, after the agent vault\n", strings.Join(quoted(s.ExtraVaults), ", "))
 	}
 	fmt.Fprintf(w, "next: add references, e.g. `yonder secret add API_KEY %s`, then `yonder secret test API_KEY`\n", exampleRef(s.Provider))
 	return nil

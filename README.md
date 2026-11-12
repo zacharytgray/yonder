@@ -250,6 +250,19 @@ read and write.
 yonder secret setup --machines gpu-box --replace --allow-write
 ```
 
+**Secrets only some machines should read.** Give those machines read access to one more vault
+with `--extra-vault`. Their new accounts read the agent vault as before, and that vault too,
+read-only. A name resolves from the agent vault first, then from each extra vault in order.
+`yonder secret set` still writes only to the agent vault, so you fill an extra vault in
+1Password itself. `yonder secret ls` and `yonder doctor` show the extra vaults.
+
+```sh
+yonder secret setup --machines server --vault Agents --extra-vault Ops --replace
+```
+
+A vault that no service account can read stays behind Touch ID. Reach it from the machine you
+sit at with a reference in `secrets.toml`: `yonder secret add NAME op://Gated/item/field`.
+
 Yonder can't revoke a service account; `op` has no command for that. To cut a machine off, go to
 1Password.com, then Developer > Service accounts. `yonder remove <machine> --lost` names the
 account to revoke.
