@@ -108,10 +108,10 @@ func (s *Store) SetIdentity(target, path string) error {
 	return writeFile(s.configPath(), data)
 }
 
-// Forget clears this machine's copy of the registry and its name, keeping
+// Forget clears this machine's copy of the registry, its layers and its name, keeping
 // the rest of config.toml. a removed machine runs it to leave the fleet.
 func (s *Store) Forget() error {
-	for _, d := range []string{s.machinesDir(), s.removedDir()} {
+	for _, d := range []string{s.machinesDir(), s.removedDir(), s.layersPath()} {
 		if err := os.RemoveAll(d); err != nil {
 			return err
 		}

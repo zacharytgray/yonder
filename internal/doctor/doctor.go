@@ -119,6 +119,7 @@ type Env struct {
 	Home         string // ~ for skill folders and authorized_keys
 	StateDir     string
 	Secrets      []secrets.Check
+	Layers       map[string]bool // fleet-wide layers, on or off here
 	Remote       Remote
 	Now          time.Time
 }
@@ -186,6 +187,10 @@ func Run(e Env) []Check {
 
 	out = append(out, identityChecks(e)...)
 
+	if e.Layers != nil {
+		add(groupLocal, "layers", Pass, layersDetail(e.Layers), "")
+	}
+
 	for _, s := range e.Secrets {
 		st := Pass
 		if !s.OK {
@@ -204,6 +209,24 @@ func Run(e Env) []Check {
 	}
 	out = append(out, fleetChecks(e, ms, fl)...)
 	return out
+}
+
+func layersDetail(on map[string]bool) string {
+	var yes, no []string
+	for _, l := range registry.Layers {
+		switch {
+		case !l.Available:
+		case on[l.Name]:
+			yes = append(yes, l.Name)
+		default:
+			no = append(no, l.Name)
+		}
+	}
+	d := "on: " + orDefault(strings.Join(yes, ", "), "none")
+	if len(no) > 0 {
+		d += "; off: " + strings.Join(no, ", ")
+	}
+	return d
 }
 
 // fleet is what the per-machine authorized_keys checks compare against.

@@ -11,6 +11,8 @@ type Bundle struct {
 	Tombstones []Tombstone `json:"tombstones"`
 	// names whose lost tombstone the receiver should drop: a local `yonder add` re-added them
 	ClearLost []string `json:"clear_lost,omitempty"`
+	// fleet-wide layer settings; an older yonder leaves this out
+	Layers LayerSettings `json:"layers,omitempty"`
 }
 
 // MaxSkew is how far ahead of this clock an incoming timestamp may be.
@@ -23,7 +25,9 @@ const MaxSkew = 5 * time.Minute
 func Merge(bundles ...Bundle) Bundle {
 	recs := map[string]Machine{}
 	tombs := map[string]Tombstone{}
+	var layers []LayerSettings
 	for _, b := range bundles {
+		layers = append(layers, b.Layers)
 		for _, m := range b.Machines {
 			cur, ok := recs[m.Name]
 			if !ok {
@@ -57,7 +61,7 @@ func Merge(bundles ...Bundle) Bundle {
 			delete(tombs, name) // re-added after removal
 		}
 	}
-	out := Bundle{Machines: []Machine{}, Tombstones: []Tombstone{}}
+	out := Bundle{Machines: []Machine{}, Tombstones: []Tombstone{}, Layers: mergeLayers(layers...)}
 	for _, m := range recs {
 		out.Machines = append(out.Machines, m)
 	}
@@ -105,6 +109,15 @@ func FromPeer(local, in Bundle, self string, now time.Time) Bundle {
 		}
 		out.Tombstones = append(out.Tombstones, t)
 	}
+	for name, st := range in.Layers {
+		if st.UpdatedAt.After(limit) {
+			continue
+		}
+		if out.Layers == nil {
+			out.Layers = LayerSettings{}
+		}
+		out.Layers[name] = st
+	}
 	return out
 }
 
@@ -122,7 +135,7 @@ func (b Bundle) Digest() string {
 		}
 		s += ";"
 	}
-	return s
+	return s + layersDigest(m.Layers)
 }
 
 func laterOf(a, b time.Time) time.Time {

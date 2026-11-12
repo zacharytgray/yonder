@@ -60,6 +60,10 @@ func colorOK(a *app) bool {
 func (a *app) doctor() doctor.Report {
 	cfg, cfgErr := a.store.Config()
 	st, stErr := a.status()
+	sec := []secrets.Check{{Name: "layer", OK: true, Detail: "off; `yonder enable secrets` turns it on"}}
+	if a.store.LayerOn(registry.LayerSecrets) {
+		sec = secrets.Health()
+	}
 	e := doctor.Env{
 		Self:         cfg.Self,
 		Store:        a.store,
@@ -70,7 +74,8 @@ func (a *app) doctor() doctor.Report {
 		Version:      version.Version,
 		Home:         doctor.LocalHome(),
 		StateDir:     registry.StateDir(),
-		Secrets:      secrets.Health(),
+		Secrets:      sec,
+		Layers:       a.store.LayersOn(),
 		Remote:       doctorRemote{a},
 		Now:          time.Now(),
 	}

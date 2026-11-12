@@ -121,6 +121,9 @@ func newRoot() *cobra.Command {
 		newRemoveCmd(),
 		newSecretCmd(),
 		newAgentsCmd(),
+		newLayersCmd(),
+		newEnableCmd(),
+		newDisableCmd(),
 	)
 	root.AddCommand(hiddenCmds()...)
 	return root

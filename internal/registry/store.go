@@ -84,7 +84,11 @@ func (s *Store) Bundle() (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
-	return Merge(Bundle{Machines: ms, Tombstones: ts}), nil
+	ls, err := s.LayerSettings()
+	if err != nil {
+		return Bundle{}, err
+	}
+	return Merge(Bundle{Machines: ms, Tombstones: ts, Layers: ls}), nil
 }
 
 func (s *Store) SaveMachine(m Machine) error {
@@ -120,7 +124,10 @@ func (s *Store) Apply(b Bundle) error {
 	if err := prune(s.machinesDir(), keepM); err != nil {
 		return err
 	}
-	return prune(s.removedDir(), keepT)
+	if err := prune(s.removedDir(), keepT); err != nil {
+		return err
+	}
+	return s.saveLayers(b.Layers)
 }
 
 // MergeIn merges incoming into the local registry and returns the result.
@@ -158,7 +165,7 @@ func (s *Store) Remove(t Tombstone) error {
 	if err != nil {
 		return err
 	}
-	base := Bundle{Machines: slices.DeleteFunc(slices.Clone(local.Machines), func(m Machine) bool { return m.Name == t.Name }), Tombstones: local.Tombstones}
+	base := Bundle{Machines: slices.DeleteFunc(slices.Clone(local.Machines), func(m Machine) bool { return m.Name == t.Name }), Tombstones: local.Tombstones, Layers: local.Layers}
 	_, err = s.save(local, Merge(base, Bundle{Tombstones: []Tombstone{t}}))
 	return err
 }

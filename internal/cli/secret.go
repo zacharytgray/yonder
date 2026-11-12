@@ -101,6 +101,9 @@ Desktop mode asks for one approval. A service account needs write access:
 				return &usageError{err}
 			}
 			a := newApp(cmd)
+			if !a.store.LayerOn(registry.LayerSecrets) {
+				return layerOff(registry.LayerSecrets, "secret set")
+			}
 			val, err := readSecretValue(a.in, name)
 			if err != nil {
 				return err
@@ -291,11 +294,15 @@ func newSecretTestCmd() *cobra.Command {
 			if err := secrets.ValidName(name); err != nil {
 				return &usageError{err}
 			}
+			a := newApp(cmd)
+			if !a.store.LayerOn(registry.LayerSecrets) {
+				return layerOff(registry.LayerSecrets, "secret test")
+			}
 			vals, err := secrets.Resolve([]string{name})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(newApp(cmd).out, "%s: ok, %d chars\n", name, utf8.RuneCountInString(vals[name]))
+			fmt.Fprintf(a.out, "%s: ok, %d chars\n", name, utf8.RuneCountInString(vals[name]))
 			return nil
 		},
 	}
@@ -322,6 +329,9 @@ out of their output. The read is logged here by name, never the value.`,
 				return &usageError{err}
 			}
 			a := newApp(cmd)
+			if !a.store.LayerOn(registry.LayerSecrets) {
+				return layerOff(registry.LayerSecrets, "secret read")
+			}
 			start := time.Now()
 			vals, err := secrets.Resolve([]string{name})
 			if err == nil {
