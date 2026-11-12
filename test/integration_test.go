@@ -224,6 +224,36 @@ func TestFleetOverSSH(t *testing.T) {
 		t.Fatalf("log: %s", r.stdout)
 	}
 
+	// cp: a package folder to node-a, relayed from node-a to node-b, then back here
+	pkg := filepath.Join(t.TempDir(), "Talk.key")
+	if err := os.MkdirAll(filepath.Join(pkg, "Data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "Data", "img.bin"), []byte(strings.Repeat("x", 70000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("Data/img.bin", filepath.Join(pkg, "preview")); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.must("cp", pkg, "node-a:~/Desktop/"); !strings.HasPrefix(r.stdout, "copied Talk.key (folder, 1 file, 68.4 KB) to node-a:/home/me/Desktop/Talk.key") {
+		t.Fatalf("cp to node-a: %+v", r)
+	}
+	if r := f.run("", "cp", pkg, "node-a:~/Desktop/"); r.code != 1 || !strings.Contains(r.stderr, "already exists; add --force") {
+		t.Fatalf("no-overwrite: %+v", r)
+	}
+	f.must("cp", "node-a:Desktop/Talk.key", "node-b:/tmp/")
+	back := t.TempDir()
+	f.must("cp", "node-b:/tmp/Talk.key", back)
+	if b, _ := os.ReadFile(filepath.Join(back, "Talk.key", "Data", "img.bin")); len(b) != 70000 {
+		t.Fatalf("round trip lost data: %d bytes", len(b))
+	}
+	if l, _ := os.Readlink(filepath.Join(back, "Talk.key", "preview")); l != "Data/img.bin" {
+		t.Fatalf("link: %q", l)
+	}
+	if r := f.must("log", "--json", "--machine", "node-b", "--limit", "0"); !strings.Contains(r.stdout, `"copy": true`) || !strings.Contains(r.stdout, `"bytes": 70000`) {
+		t.Fatalf("node-b should log the copy it received: %s", r.stdout)
+	}
+
 	if r := f.must("refresh"); !strings.Contains(r.stdout, "refreshed node-a") || !strings.Contains(r.stdout, "refreshed node-b") {
 		t.Fatalf("refresh: %+v", r)
 	}

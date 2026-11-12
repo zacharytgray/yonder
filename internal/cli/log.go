@@ -83,6 +83,15 @@ func newLogCmd() *cobra.Command {
 					to += " (unreached)"
 				}
 				cmdText := truncate(e.Command, 60)
+				if e.Copy {
+					cmdText = truncate(e.Command, 90)
+					switch {
+					case e.Error != "":
+						cmdText += "  (failed: " + truncate(e.Error, 60) + ")"
+					case e.Status != runlog.StatusStarted:
+						cmdText += fmt.Sprintf("  (%s, %s)", plural(e.Files, "file"), humanBytes(e.Bytes))
+					}
+				}
 				if len(e.Secrets) > 0 {
 					cmdText += fmt.Sprintf("  [secrets: %v]", e.Secrets)
 				}

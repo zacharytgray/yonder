@@ -111,6 +111,7 @@ func newRoot() *cobra.Command {
 		newLsCmd(),
 		newShowCmd(),
 		newRunCmd(),
+		newCpCmd(),
 		newJobsCmd(),
 		newLogCmd(),
 		newRefreshCmd(),

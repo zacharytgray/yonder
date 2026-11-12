@@ -30,6 +30,10 @@ type Entry struct {
 	Side     string    `json:"side"`
 	Detached bool      `json:"detached,omitempty"`
 	Error    string    `json:"error,omitempty"`
+	// set on a cp entry, which the receiving machine writes
+	Copy  bool  `json:"copy,omitempty"`
+	Files int   `json:"files,omitempty"`
+	Bytes int64 `json:"bytes,omitempty"`
 	// "started" on the entry _exec writes before running; the completion entry has none
 	Status string `json:"status,omitempty"`
 }

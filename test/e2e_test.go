@@ -176,3 +176,35 @@ func TestInitNoSkillLeavesHarnessesAlone(t *testing.T) {
 		t.Fatal("--no-skill still installed the skill")
 	}
 }
+
+// TestCopyEndToEnd copies through this machine's own in-process path, and
+// refuses an offline peer with 75.
+func TestCopyEndToEnd(t *testing.T) {
+	f := newFleet(t, "testdata/fleet.json")
+	f.must("init", "--yes", "--no-skill")
+	src := filepath.Join(f.home, "Talk.key")
+	if err := os.MkdirAll(filepath.Join(src, "Data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "Data", "a.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// ~ on the receiving side expands there; under YONDER_HOME that is $YONDER_HOME/home
+	r := f.must("cp", src, "laptop:~/inbox/")
+	if !strings.HasPrefix(r.stdout, "copied Talk.key (folder, 1 file, 5 B) to laptop:") {
+		t.Fatalf("cp: %+v", r)
+	}
+	if b, err := os.ReadFile(filepath.Join(f.home, "yonder", "home", "inbox", "Talk.key", "Data", "a.txt")); err != nil || string(b) != "hello" {
+		t.Fatalf("copied file: %q %v", b, err)
+	}
+	if r := f.run("", "cp", src, "laptop:~/inbox/"); r.code != 1 || !strings.Contains(r.stderr, "already exists; add --force") {
+		t.Fatalf("no-overwrite: %+v", r)
+	}
+	if r := f.must("log"); !strings.Contains(r.stdout, "(1 file, 5 B)") {
+		t.Fatalf("log: %s", r.stdout)
+	}
+	f.run("", "add", "gpu-box", "--yes")
+	if r := f.run("", "cp", src, "gpu-box:~/"); r.code != 75 || !strings.Contains(r.stderr, "gpu-box is offline") {
+		t.Fatalf("offline cp: %+v", r)
+	}
+}

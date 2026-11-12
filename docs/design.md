@@ -24,7 +24,7 @@ internal/cli/          one file per command (cobra)
 internal/registry/     machine records, tombstones, local config, merge
 internal/tailnet/      tailscale status --json
 internal/transport/    ssh runner (system ssh binary)
-internal/remote/       the hidden _exec / _facts / _sync / _log commands run on the target
+internal/remote/       the hidden _exec / _send / _recv / _facts / _sync / _log commands run on the target
 internal/runlog/       JSONL command log
 internal/discover/     hardware, models, harnesses
 internal/secrets/      providers (1password, bws) and output scrubbing
@@ -36,7 +36,7 @@ test/                  end-to-end tests against the built binary (+ docker integ
 ```
 
 The hidden commands a caller runs on a target are `_exec`, `_job` (the detached supervisor),
-`_jobs`, `_sync`, `_log`, `_facts`, `_init-self <name>`, and `_secret-probe [--verify]` and
+`_jobs`, `_send` and `_recv` (see Copying files), `_sync`, `_log`, `_facts`, `_init-self <name>`, and `_secret-probe [--verify]` and
 `_secret-provision <account> <vault> [--write] [--extra-vault V]...` (both run through `_exec`;
 see Secrets).
 
@@ -232,7 +232,8 @@ Log lines (`log.jsonl`, one JSON object each):
  "command":"...","secrets":["API_KEY"],"exit":0,"ms":42,"side":"target"}
 ```
 
-`side` is `target` on the machine that ran the command. When the caller cannot reach the
+A copy adds `"copy":true`, and its completion entry adds `files` and `bytes` (see Copying
+files). `side` is `target` on the machine that ran the command. When the caller cannot reach the
 target (offline, unreachable) it logs the attempt locally with `"side":"caller"` and
 `"exit":75`. Detached launches add `"detached":true` with `"exit":null`. Failures add `error`.
 Secret values never appear in the log. `yonder log` merges every online machine's `_log` with
@@ -240,6 +241,63 @@ the local file, pairs each start entry with the completion of the same id and ta
 per run), dedupes and sorts by time. A start with no completion stays as one row with exit `?`
 and the note "no completion logged: still running, or cut off"; in `--json` it keeps
 `"status":"started"` and `"exit":null`.
+
+## Copying files
+
+`yonder cp [--force] [-r] <src>... <dest>` copies files and folders like scp. Each side is a local
+path or `<machine>:<path>`; a side is remote when the text before its first `:` has no `/` and
+looks like a machine name, so `./a:b` is a local file. The named machine must be in the registry.
+All sources are on one machine. At least one side names a machine (it may be this one). An empty
+remote destination path means `~/`; an empty source path is a usage error.
+
+Folders copy whole, with or without `-r` (accepted for scp habit). A Keynote file, an app bundle or
+a project folder needs no flag, and agents can't forget one. A source that is itself a symlink is
+followed; links inside a folder are copied as links. Only files, folders and links travel:
+sockets, devices and pipes are skipped with a warning. Permission bits (without setuid, always
+owner-writable) and file mtimes are kept; owners, extended attributes and ACLs are not.
+
+Placement follows cp. If `<dest>` ends in `/` or is an existing folder, each source goes inside it
+under its own name; a missing folder ending in `/` is created. Otherwise the single source is
+copied to that name, and its parent folder must exist. An existing file or folder at the final
+path is refused unless `--force`, which replaces it whole (a folder is not merged).
+
+Paths: `~` expands on the machine that reads the path (under `YONDER_HOME`, to
+`$YONDER_HOME/home`). A relative remote path is under that machine's home, as with scp. Local
+paths are made absolute here before they are sent, so the log shows full paths.
+
+Transport: the caller pipes `yonder _send` on the source machine into `yonder _recv` on the
+destination, each run through the usual runner: in process for this machine, ssh with the pinned
+host key for a peer. Both machines go through `Reach` first (offline: exit 75; address changed:
+refused). Between two other machines the data is relayed through the caller, since peers don't
+hold ssh keys for each other. Both commands take the `_exec` envelope line first, with a `copy`
+object (`sources`, `dest`, `force`) and the text `cp <m>:<src>... -> <m>:<dest>` as `command`;
+`_exec` refuses an envelope with `copy` set. A tar stream over the existing ssh channel was picked
+over scp or sftp: it reuses the pinned transport and the envelope as is, behaves the same whatever
+the peer's sftp subsystem or scp version, lets the receiver check every entry before it touches
+disk, and lets the receiver write the log.
+
+`_send` checks every source before sending a byte, then writes a PAX tar with no owner names or
+ids. Its last entry is `.yonder-cp-done`, holding `{"files":N,"bytes":B}`.
+
+`_recv` unpacks into a hidden `.yonder-cp-*` folder in the folder that will hold the result,
+opened as an `os.Root`, so no entry can land outside it. It refuses the whole copy for an entry
+name that is absolute or has an empty, `.` or `..` part, for an entry whose parent is not a folder
+from the same archive (so nothing is written through a link), and for entries after the end
+marker. It skips, with a warning, a link that is absolute, has a `..` after a normal part (that
+part could itself be a link, which a lexical check can't follow), resolves outside its own
+top-level item, or is a top-level item itself. It checks each top-level item's final path for a
+conflict when the item's first entry arrives, before reading its contents. Without the end marker,
+or with counts that differ from it, it keeps nothing and exits 74 (the caller then reports the
+sending side's error, or 75 if the sender was unreachable). Then it renames each item into place;
+with `--force` the old one is moved aside first and put back if the rename fails. It prints one
+JSON line, `{"files","bytes","items":[{"path","dir"}],"skipped":[...]}`, and the caller prints
+`copied Talk.key (folder, 23 files, 4.2 MB) to laptop:/Users/me/Desktop/Talk.key`. A copy killed
+midway can leave a `.yonder-cp-*` folder behind; nothing else.
+
+The receiver logs the copy like `_exec`: a start entry, then a completion with `files`, `bytes`,
+`exit` and `ms`, `from` the source machine and `to` itself. The sender logs nothing. A machine
+that can't be reached is logged on the caller with `"side":"caller"`, `to` that machine and exit
+75. An older yonder without `_send` or `_recv` gets "too old for cp; upgrade it there".
 
 ## Adding machines
 
@@ -390,6 +448,7 @@ record (including `yonder_path`, `ssh_host_key`, `ssh_client_keys`).
 
 - the remote command's own code, passed through
 - 75: target offline or unreachable (EX_TEMPFAIL); agents should tell the user, not retry
+- 74: only from `_recv`, when the stream ended early; `yonder cp` itself exits 1 or 75 then
 - 2: usage error
 - 1: any other yonder error
 

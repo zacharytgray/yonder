@@ -29,6 +29,10 @@ func Exec(ctx context.Context, _ []string, in io.Reader, out, errw io.Writer) in
 		fmt.Fprintf(errw, "yonder _exec: %v\n", err)
 		return 1
 	}
+	if env.Copy != nil {
+		fmt.Fprintln(errw, "yonder _exec: this envelope is for cp, not a command")
+		return 1
+	}
 	fillDefaults(&env)
 	if env.Detach {
 		return startDetached(env, out, errw)

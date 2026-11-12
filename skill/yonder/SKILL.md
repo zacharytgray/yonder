@@ -35,6 +35,19 @@ yonder run <machine> -- <command>
   Read the output later with `yonder jobs <machine> <id>`.
 - Run on the machine named `self` in `ls` without Yonder. Just run the command.
 
+## Send a file to another machine
+
+When the user wants a file or folder on another machine, use `yonder cp`, not scp:
+
+```
+yonder cp ~/Documents/Talk.key laptop:~/Desktop/
+yonder cp gpu-box:~/runs/out.csv .
+```
+
+- Each side is a local path or `<machine>:<path>`. Folders copy whole; `-r` is not needed.
+- It never replaces an existing file. If it says one exists, ask the user before adding `--force`.
+- It prints what it copied and where. Tell the user that line.
+
 ## When a machine is offline
 
 Exit code 75 means the machine is offline or unreachable. The message shows when it was last seen and

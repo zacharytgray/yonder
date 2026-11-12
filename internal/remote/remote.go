@@ -30,6 +30,8 @@ var Commands = map[string]transport.Handler{
 	"_log":       Log,
 	"_facts":     FactsCmd,
 	"_init-self": InitSelf,
+	"_send":      Send,
+	"_recv":      Recv,
 
 	"_secret-probe":     SecretProbe,
 	"_secret-provision": SecretProvision,

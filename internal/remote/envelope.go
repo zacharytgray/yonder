@@ -26,6 +26,7 @@ type Envelope struct {
 	Harness string            `json:"harness"`
 	Secrets map[string]string `json:"secrets,omitempty"` // name -> value
 	Detach  bool              `json:"detach,omitempty"`
+	Copy    *CopySpec         `json:"copy,omitempty"` // only for _send and _recv
 }
 
 const maxEnvelope = 1 << 20

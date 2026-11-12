@@ -137,6 +137,17 @@ Every prompt has a flag, so an agent can run setup too:
 yonder init --yes --machines mini,gpu-box
 ```
 
+## Send files
+
+```sh
+yonder cp ~/Documents/Talk.key laptop:~/Desktop/
+```
+
+Each side is a local path or `<machine>:<path>`, like scp. Folders copy whole, so a Keynote file
+or an app bundle just works. `~` is the home on the receiving machine. An existing file or folder
+is never replaced without `--force`. A copy between two other machines passes through the one you
+run it on. The receiving machine logs each copy, and `yonder log` shows it with its size.
+
 ## Secrets
 
 Secrets stay in your password manager. Yonder stores only names and references, like
@@ -282,6 +293,7 @@ approval, Yonder will support it as another mode.
 | `yonder init` | Set up the fleet from the machine you work from |
 | `yonder ls` / `yonder show <machine>` | Machines, roles, state, hardware, models, agents. `--json` for scripts |
 | `yonder run <machine> [--secret NAME] [--detach] -- <cmd>` | Run a command there |
+| `yonder cp [--force] <src>... <dest>` | Send files and folders between machines, like scp. Each side is a path or `<machine>:<path>` |
 | `yonder jobs <machine> [id]` | List detached jobs, or print one job's output |
 | `yonder log` | What ran where, across every machine |
 | `yonder add <machine>` | Add one more machine |
