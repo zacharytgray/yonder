@@ -212,3 +212,17 @@ func TestTaggedNodeNotOwned(t *testing.T) {
 		t.Fatalf("why: %q", why)
 	}
 }
+
+// a tagged node keeps its creator's user id; matching ids still don't make it yours
+func TestTaggedNodeWithSameUserIDNotOwned(t *testing.T) {
+	data := []byte(`{"BackendState":"Running",
+ "Self":{"HostName":"laptop","DNSName":"laptop.example.ts.net.","TailscaleIPs":["100.64.0.1"],"UserID":1001},
+ "Peer":{"a":{"HostName":"gpu-box","DNSName":"gpu-box.example.ts.net.","TailscaleIPs":["100.64.0.2"],"UserID":1001,"Tags":["tag:server"]}}}`)
+	st, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Owned(st.Peers[0]) {
+		t.Fatal("a tagged node with the same user id must not count as owned")
+	}
+}

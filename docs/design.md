@@ -248,8 +248,8 @@ the full one; the record still takes the short name. A peer with a record here w
 differs is refused (`yonder remove <m>` first). A peer the logged-in tailscale account doesn't own
 (its `UserID` differs from `Self`'s, or it is a `ShareeNode`) is refused unless `--allow-shared`
 is given. The check fails closed: if `Self` or the peer has no `UserID` (missing or 0), the peer
-is not owned. A tagged node (`Tags` set) carries the tag owner's `UserID`, so it reads as not
-owned too; the refusal names its tags, says tagged devices count as not yours, and gives
+is not owned. A tagged node (`Tags` set) is never owned, even when its `UserID` matches `Self`'s:
+Tailscale keeps the creator's `UserID` on a tagged node, but its identity is the tag; the refusal names its tags, says tagged devices count as not yours, and gives
 `yonder add <dns> --allow-shared`. With `--allow-shared` it is confirmed first when a terminal is attached, since adding it trusts it with ssh and can hand it a
 secrets token. It probes over ssh with
 BatchMode. If key auth fails and a terminal is attached, it offers `ssh-copy-id`; otherwise it

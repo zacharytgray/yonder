@@ -147,10 +147,11 @@ func (s *Status) Reach(name, dnsName, ip string) (Peer, Reachability) {
 }
 
 // Owned reports whether p belongs to the account this machine is logged in as.
-// it fails closed: a node shared in from another account, a tagged node (its
-// user id is the tag owner's), or a missing user id on either side is not owned.
+// it fails closed: a node shared in from another account, any tagged node (a
+// tag, not a user, is its identity, even when its user id matches), or a
+// missing user id on either side is not owned.
 func (s *Status) Owned(p Peer) bool {
-	if p.ShareeNode || s.Self.UserID == 0 || p.UserID == 0 {
+	if p.ShareeNode || len(p.Tags) > 0 || s.Self.UserID == 0 || p.UserID == 0 {
 		return false
 	}
 	return p.UserID == s.Self.UserID
