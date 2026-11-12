@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -193,10 +194,58 @@ func TestStoreReadOnlyServiceAccount(t *testing.T) {
 		}
 	}
 
-	// any other failure is op's message, minus the value
+	// any other failure is a fixed text; op is never quoted
 	installFake(t, &fakeExec{handler: fakeVault("bad template near sk-secret-xyz")})
-	if _, err := Store("NEW_KEY", "sk-secret-xyz", false); err == nil || strings.Contains(err.Error(), "sk-secret-xyz") || !strings.Contains(err.Error(), "[NEW_KEY]") {
+	if _, err := Store("NEW_KEY", "sk-secret-xyz", false); err == nil || strings.Contains(err.Error(), "sk-secret-xyz") || !strings.Contains(err.Error(), "1Password could not create the item") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// B2: op echoing what it was sent never reaches the error.
+func TestWriteErrorsNeverQuoteOp(t *testing.T) {
+	setupHome(t, Settings{Provider: Provider1Password, Mode: ModeServiceAccount, Vault: "Agents"}, nil)
+	installTokens(t, &fakeTokens{tokens: map[string]string{"1password": "ops_PROVIDER_TOKEN_CANARY"}})
+	echo := func(c call) (string, string, error) {
+		switch strings.Join(c.args[:min(2, len(c.args))], " ") {
+		case "item list":
+			return vaultItems, "", nil
+		case "item get":
+			return `{"id":"i-api","fields":[{"id":"credential","type":"CONCEALED","label":"credential","value":"old-value"},{"id":"x","type":"CONCEALED","label":"other","value":"EXTRA_SECRET_CANARY"}]}`, "", nil
+		}
+		// item create / edit: op complains and quotes its input
+		return "", "[ERROR] bad input:\n" + c.stdin + "\n", errors.New("exit status 1")
+	}
+	installFake(t, &fakeExec{handler: echo})
+	// a two-line value whose second line would be the last stderr line
+	if _, err := Store("NEW_KEY", "FIRST_SECRET_LINE\nSECOND_SECRET_LINE", false); err == nil ||
+		strings.Contains(err.Error(), "SECRET_LINE") || !strings.Contains(err.Error(), "could not create the item") {
+		t.Fatalf("create: %v", err)
+	}
+	// an edit sends the whole item, other concealed fields too
+	_, err := Store("API_KEY", "new-value", true)
+	if err == nil || strings.Contains(err.Error(), "EXTRA_SECRET_CANARY") || strings.Contains(err.Error(), "new-value") || !strings.Contains(err.Error(), "could not update the item") {
+		t.Fatalf("edit: %v", err)
+	}
+}
+
+// B2: op inject printing its service account token on stderr.
+func TestInjectErrorNeverQuotesToken(t *testing.T) {
+	setupHome(t, Settings{Provider: Provider1Password, Mode: ModeServiceAccount}, map[string]string{"API_KEY": "op://v/i/f"})
+	installTokens(t, &fakeTokens{tokens: map[string]string{"1password": "ops_PROVIDER_TOKEN_CANARY"}})
+	installFake(t, &fakeExec{handler: func(c call) (string, string, error) {
+		return "", "[ERROR] token ops_PROVIDER_TOKEN_CANARY rejected\n", errors.New("exit status 1")
+	}})
+	_, err := Resolve([]string{"API_KEY"})
+	if err == nil || strings.Contains(err.Error(), "CANARY") || !strings.Contains(err.Error(), "op inject exit") {
+		t.Fatalf("got %v", err)
+	}
+	// list and get show op's line, with the token scrubbed from all of stderr
+	installFake(t, &fakeExec{handler: func(c call) (string, string, error) {
+		return "", "token\nops_PROVIDER_TOKEN_CANARY\n", errors.New("exit status 1")
+	}})
+	p := &onePassword{mode: ModeServiceAccount, tokens: &fakeTokens{tokens: map[string]string{"1password": "ops_PROVIDER_TOKEN_CANARY"}}}
+	if _, err := p.listItems(context.Background(), "Agents"); err == nil || strings.Contains(err.Error(), "CANARY") || !strings.Contains(err.Error(), "[TOKEN]") {
+		t.Fatalf("list: %v", err)
 	}
 }
 

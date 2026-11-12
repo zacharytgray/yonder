@@ -99,7 +99,7 @@ func (keychain) Set(account, token string) error {
 	defer cancel()
 	_, stderr, err := run(ctx, securityBin, []string{"-i"}, os.Environ(), []byte(line))
 	if err != nil {
-		msg := ScrubText(lastLine(stderr), map[string]string{"TOKEN": token})
+		msg := scrubbedLine(stderr, err, map[string]string{"TOKEN": token})
 		return fmt.Errorf("keychain write failed: %s", msg)
 	}
 	return nil
@@ -131,7 +131,7 @@ func (secretService) Set(account, token string) error {
 	defer cancel()
 	_, stderr, err := run(ctx, "secret-tool", []string{"store", "--label=yonder " + account, "service", keychainService, "account", account}, os.Environ(), []byte(token))
 	if err != nil {
-		return fmt.Errorf("secret-tool store failed: %s", ScrubText(lastLine(stderr), map[string]string{"TOKEN": token}))
+		return fmt.Errorf("secret-tool store failed: %s", scrubbedLine(stderr, err, map[string]string{"TOKEN": token}))
 	}
 	return nil
 }

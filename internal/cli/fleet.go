@@ -11,14 +11,14 @@ import (
 	"github.com/zacharytgray/yonder/internal/transport"
 )
 
-// onlinePeers returns the registered machines, other than self, that are set up and online.
+// onlinePeers returns the registered machines, other than self, that are set
+// up, online and still at their pinned address.
 func (a *app) onlinePeers(self string) ([]registry.Machine, error) {
 	ms, err := a.store.Machines()
 	if err != nil {
 		return nil, err
 	}
-	st, err := a.status()
-	if err != nil {
+	if _, err := a.status(); err != nil {
 		return nil, err
 	}
 	var out []registry.Machine
@@ -26,8 +26,12 @@ func (a *app) onlinePeers(self string) ([]registry.Machine, error) {
 		if m.Name == self || m.Pending || m.SSHHostKey == "" {
 			continue
 		}
-		if p, ok := st.Lookup(m.Name); ok && p.Online {
+		_, err := a.pinned(m)
+		switch {
+		case err == nil:
 			out = append(out, m)
+		case ExitCode(err) == ExitError: // moved, not just offline
+			a.warnf("skipped %v", err)
 		}
 	}
 	return out, nil

@@ -148,7 +148,7 @@ func CreateServiceAccount(name, vault, expiresIn string, write bool) (string, er
 	out, stderr, err := run(ctx, bin, args, childEnv(), nil)
 	tok := strings.TrimSpace(string(out))
 	if err != nil {
-		msg := ScrubText(errLine(stderr, err), map[string]string{"TOKEN": tok})
+		msg := scrubbedLine(stderr, err, map[string]string{"TOKEN": tok})
 		return "", fmt.Errorf("op service-account create failed: %s", msg)
 	}
 	if checkToken(tok) != nil {
@@ -162,6 +162,12 @@ func errLine(stderr []byte, err error) string {
 		return l
 	}
 	return err.Error()
+}
+
+// scrubbedLine is errLine after scrubbing all of stderr, so a value split
+// over lines can't survive the cut.
+func scrubbedLine(stderr []byte, err error, vals map[string]string) string {
+	return errLine([]byte(ScrubText(string(stderr), vals)), err)
 }
 
 // ProbeResult is what `yonder _secret-probe` reports about a machine. no values.
@@ -233,7 +239,7 @@ func verifyServiceAccount(r ProbeResult, s Settings, tok string) (bool, string) 
 	defer cancel()
 	out, stderr, err := run(ctx, r.Op, []string{"user", "get", "--me", "--format", "json"}, childEnv(opEnvToken+"="+tok), nil)
 	if err != nil {
-		return false, "op rejected the token: " + ScrubText(errLine(stderr, err), map[string]string{"TOKEN": tok})
+		return false, "op rejected the token: " + scrubbedLine(stderr, err, map[string]string{"TOKEN": tok})
 	}
 	if !strings.Contains(strings.ToUpper(string(out)), "SERVICE_ACCOUNT") {
 		return false, "op accepted the token but it is not a service account"

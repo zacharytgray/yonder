@@ -34,6 +34,12 @@ func Exec(ctx context.Context, _ []string, in io.Reader, out, errw io.Writer) in
 		return startDetached(env, out, errw)
 	}
 	start := time.Now()
+	// a start entry first, so a run killed midway still shows up
+	s := entry(env, start)
+	s.Status = runlog.StatusStarted
+	if err := runlog.Append(registry.LogPath(), s); err != nil {
+		fmt.Fprintf(errw, "yonder: could not write log: %v\n", err)
+	}
 	code, runErr := RunCommand(ctx, env, br, out, errw)
 	e := entry(env, start)
 	e.Exit = runlog.Exit(code)
@@ -77,7 +83,8 @@ func entry(env Envelope, start time.Time) runlog.Entry {
 // RunCommand runs env.Command with secrets in its environment and scrubbed output.
 func RunCommand(ctx context.Context, env Envelope, stdin io.Reader, out, errw io.Writer) (int, error) {
 	cmd := shellCommand(ctx, env.Command)
-	cmd.Env = os.Environ()
+	// provider tokens stay out unless asked for by name with --secret
+	cmd.Env = secrets.WithoutProviderVars(os.Environ())
 	for _, name := range env.SecretNames() {
 		cmd.Env = append(cmd.Env, name+"="+env.Secrets[name])
 	}

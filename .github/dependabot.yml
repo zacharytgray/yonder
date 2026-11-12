@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # bumps the sha-pinned actions in .github/workflows and their tag comments
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

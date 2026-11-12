@@ -61,17 +61,14 @@ func (o *onePassword) Resolve(refs map[string]string) (map[string]string, error)
 	tmpl, boundary := injectTemplate(refs)
 	ctx, cancel := context.WithTimeout(context.Background(), resolveTimeout)
 	defer cancel()
-	out, stderr, err := run(ctx, bin, []string{"inject"}, env, tmpl)
+	out, _, err := run(ctx, bin, []string{"inject"}, env, tmpl)
 	if err != nil {
-		msg := lastLine(stderr)
-		if msg == "" {
-			msg = err.Error()
-		}
-		hint := ""
+		// op's own message is never shown: it can quote the token or a value
+		hint := "check that each reference names an item and field that exist and that this machine can read their vault"
 		if o.mode == ModeDesktop {
-			hint = " (desktop mode: is the 1Password app running, unlocked, with CLI integration on?)"
+			hint = "is the 1Password app running, unlocked, with CLI integration on? " + hint
 		}
-		return nil, fmt.Errorf("op inject failed: %s%s", msg, hint)
+		return nil, fmt.Errorf("1Password could not resolve the secrets (op inject exit %d); %s", exitCode(err), hint)
 	}
 	return parseInject(out, boundary, refs)
 }
@@ -168,7 +165,7 @@ func (o *onePassword) serviceAccountHealth(ctx context.Context, bin string) []Ch
 	_, stderr, err := run(ctx, bin, []string{"whoami"}, childEnv(opEnvToken+"="+tok), nil)
 	c := Check{Name: "1password service account"}
 	if err != nil {
-		c.Detail = "op rejected the token: " + ScrubText(lastLine(stderr), map[string]string{"TOKEN": tok})
+		c.Detail = "op rejected the token: " + scrubbedLine(stderr, err, map[string]string{"TOKEN": tok})
 		c.Fix = "create a new service account token in 1Password, then `yonder secret token set`"
 		if o.account != "" {
 			c.Fix = fmt.Sprintf("revoke %s at %s, then from a machine with the 1Password app: yonder secret setup --machines %s --replace", o.account, RevokeWhere, selfOrPlaceholder())

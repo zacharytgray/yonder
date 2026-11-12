@@ -196,7 +196,7 @@ func TestLostKeyStillTrusted(t *testing.T) {
 	if _, err := e.Store.MergeIn(registry.Bundle{Tombstones: []registry.Tombstone{{Name: "old-box", RemovedAt: now, Lost: true, SSHClientKeys: []string{key}}}}); err != nil {
 		t.Fatal(err)
 	}
-	cs := keyChecks(groupLocal, "restrict "+key+"\n", lostKeys([]registry.Tombstone{{Name: "old-box", Lost: true, SSHClientKeys: []string{key}}}))
+	cs := keyChecks(groupLocal, "restrict "+key+"\n", lostKeys([]registry.Tombstone{{Name: "old-box", Lost: true, SSHClientKeys: []string{key}}}, nil))
 	if len(cs) != 1 || cs[0].Status != Fail || cs[0].Fix != "yonder remove old-box --lost --yes" {
 		t.Fatalf("%+v", cs)
 	}
@@ -258,5 +258,28 @@ func TestMissingIdentityFile(t *testing.T) {
 	}
 	if c, _ := find(Run(e), "this machine", "ssh key for gpu-box"); c.Status != Pass {
 		t.Fatalf("existing key: %+v", c)
+	}
+}
+
+// remove --lost won't rewrite a symlinked authorized_keys, so doctor keeps failing until the lines go
+func TestLostKeyThroughSymlinkStillFails(t *testing.T) {
+	e := env(t)
+	key := "ssh-ed25519 AAAAlost me@old-box"
+	if err := e.Store.SaveTombstone(registry.Tombstone{Name: "old-box", RemovedAt: now, Lost: true, SSHClientKeys: []string{key}}); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(t.TempDir(), "dotfiles-authorized_keys")
+	if err := os.WriteFile(real, []byte("restrict "+key+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(e.Home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(e.Home, ".ssh", "authorized_keys")); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := find(Run(e), groupLocal, "authorized_keys")
+	if !ok || c.Status != Fail || !strings.Contains(c.Fix, "by hand") || !strings.Contains(c.Detail, "symlink") {
+		t.Fatalf("want a FAIL naming the symlink: %+v", c)
 	}
 }

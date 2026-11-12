@@ -40,7 +40,7 @@ agent  $ yonder ls
 |---|---|
 | **Sees every machine** | Hardware, GPUs, free disk, local models (Ollama, LM Studio, llama.cpp, vLLM, MLX) and installed agents. Discovered, not typed. |
 | **Runs anywhere** | `yonder run gpu-box -- <cmd>` over plain SSH on your tailnet. Output streams back. The exit code is the command's own. |
-| **Keeps secrets out of the model** | Secrets come from 1Password or Bitwarden. The agent only ever handles a name like `HF_TOKEN`. The value never reaches it. |
+| **Keeps secrets off the command line** | Secrets come from 1Password or Bitwarden. The agent asks for a name like `HF_TOKEN`. The value stays out of command lines, logs and accidental output. [What that does and doesn't cover](#what-secrets-protect). |
 | **Says when a machine is asleep** | An offline machine fails fast with exit code 75, when it was last seen, and your notes about it. No hanging, no retry loops. |
 | **Logs what crossed machines** | Every remote command is recorded on the machine that ran it. `yonder log` merges them all. |
 | **Works in every agent** | One skill, installed into Claude Code, Codex, Pi and Hermes. Each agent knows the drill without being told. |
@@ -66,6 +66,9 @@ Or, on any Mac or Linux machine without Homebrew:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zacharytgray/yonder/main/install.sh | sh
 ```
+
+Each release archive has a signed build provenance. To check one you downloaded:
+`gh attestation verify yonder_<version>_<os>_<arch>.tar.gz --repo zacharytgray/yonder`.
 
 Then, on the machine you work from:
 
@@ -114,10 +117,41 @@ In desktop mode you approve once. A service account can store secrets only if yo
 setup (`--allow-write`, below). Bitwarden can't: `bws` takes the value on its command line.
 
 The machine your agent runs on unlocks the value. The value travels over SSH stdin into the
-remote command's environment. It never appears in a command line, a log, or the output. If a
-command prints it, the agent sees `[HF_TOKEN]` in its place. While the command runs, other
-programs running as your user on that machine can read its environment, as with any environment
-variable.
+remote command's environment. It is never put in a command line or a log. If a command prints
+it, the agent sees `[HF_TOKEN]` in its place. While the command runs, other programs running as
+your user on that machine can read its environment, as with any environment variable.
+
+### What secrets protect
+
+Yonder keeps values out of the places they leak by accident. It does not keep them from an agent
+that sets out to get one.
+
+Protected:
+
+- Command lines, shell history and `ps`. Values travel on stdin and in the environment.
+- Yonder's log and job files. They hold secret names, never values.
+- Output that happens to include a value. Yonder replaces the exact value with `[NAME]`. It also
+  catches the value trimmed, each line of a multi-line value, and the value JSON-escaped.
+- Provider tokens. A command run through Yonder never inherits `OP_SERVICE_ACCOUNT_TOKEN`,
+  `BWS_ACCESS_TOKEN` or the like from Yonder's own environment, unless you ask for that name with
+  `--secret`.
+
+Not protected:
+
+- An agent that deliberately reads, changes or prints a value. `echo $HF_TOKEN | rev` prints it
+  reversed, and the scrubber can't know.
+- Anything the agent can read as you. Agents run as your user, so they can read your keychain
+  entry or token file for the service account, and the environment of your other programs.
+
+What one approval reaches depends on the mode:
+
+- **Desktop mode** reaches any vault your signed-in 1Password session can read. `yonder secret
+  add` takes any `op://` reference, so an agent on that machine could name an item in your
+  Private vault.
+- **Service-account mode** reaches only the agent vault the account was granted.
+
+If that matters, use service accounts on machines where agents run unattended, and keep only
+agent secrets in the agent vault.
 
 You choose how secrets unlock on each machine:
 
@@ -228,6 +262,10 @@ laptop's SSH keys from every other machine's `authorized_keys`, keeping a backup
 what's left, such as revoking the laptop's secrets token if it had one. Machines that were offline
 clean themselves up the next time they sync, for example on `yonder refresh`.
 
+If another machine uses the same SSH key as the laptop, Yonder leaves that key in place and tells
+you which machines share it. Add `--include-shared` to remove it anyway, then give those machines
+a new key.
+
 All your machines trust each other fully. Yonder doesn't try to defend one machine in your fleet
 against another. See the [trust model](docs/design.md#trust-model).
 
@@ -235,8 +273,7 @@ against another. See the [trust model](docs/design.md#trust-model).
 
 `yonder ls` refreshes any online machine whose facts are more than a day old. `yonder doctor`
 flags machines that are unreachable or offline, facts more than a week old, Yonder versions that
-don't match, skills that are out of date,
-machines that still trust a removed machine's key, and secrets that won't unlock. Each problem
+don't match, skills that are out of date, machines that still trust a removed machine's key, and secrets that won't unlock. Each problem
 comes with the command that fixes it.
 
 ## Limits
@@ -245,6 +282,9 @@ comes with the command that fixes it.
 - Tailscale is required. Yonder uses it to find your machines and to know which ones are online.
 - No wake-on-LAN. Tailscale cannot wake a sleeping machine.
 - Yonder is for your own one to five machines. It is not a team tool or a job scheduler.
+- Yonder assumes a single-owner tailnet: your machines only. It refuses nodes shared in from
+  another tailnet, and names that match more than one machine, unless you pass `--allow-shared`
+  or the full name.
 
 ## Contributing
 

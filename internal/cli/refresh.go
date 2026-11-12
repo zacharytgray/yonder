@@ -9,6 +9,7 @@ import (
 
 	"github.com/zacharytgray/yonder/internal/discover"
 	"github.com/zacharytgray/yonder/internal/registry"
+	"github.com/zacharytgray/yonder/internal/tailnet"
 )
 
 const lazyAfter = 24 * time.Hour
@@ -63,16 +64,21 @@ func (a *app) refreshOne(m registry.Machine, self string) error {
 		if stErr != nil {
 			return withCode(ExitTempErr, "%s: %v", m.Name, stErr)
 		}
-		p, ok := st.Lookup(m.Name)
-		if !ok {
-			return withCode(ExitTempErr, "%s is not in tailscale status", m.Name)
-		}
-		if !p.Online {
+		p, r := st.Reach(m.Name, m.DNSName, m.TailscaleIP)
+		switch r {
+		case tailnet.Offline:
 			fmt.Fprintf(a.out, "skipped %s: offline (last seen %s)%s\n", m.Name, ago(p.LastSeen), notesSuffix(m))
 			return &exitError{code: ExitTempErr}
+		case tailnet.NotInTailnet, tailnet.AddressChanged:
+			return reachError(m, p, r)
 		}
 		if m.Pending {
-			o := addOpts{user: m.SSHUser, port: m.SSHPort, role: m.Role, notes: m.Notes}
+			// refresh is not an add: no trusting another account's node here
+			if !st.Owned(p) {
+				return fmt.Errorf("%s (%s) is not owned by your tailscale account; finish it with `yonder add %s --allow-shared` if you mean it", m.Name, p.DNSName, p.DNSName)
+			}
+			// a pin held from before is checked strictly, never replaced
+			o := addOpts{user: m.SSHUser, port: m.SSHPort, role: m.Role, notes: m.Notes, pin: m.SSHHostKey}
 			o = a.withDefaults(m.Name, o)
 			done, err := a.addPeer(p, o)
 			if err != nil {
@@ -120,11 +126,8 @@ func (a *app) rediscover(m registry.Machine, self string) (registry.Machine, err
 	if stErr != nil {
 		return m, stErr
 	}
-	p, ok := st.Lookup(m.Name)
-	if !ok || !p.Online {
-		return m, fmt.Errorf("%s is not online", m.Name)
-	}
-	if err := addressChanged(m, p); err != nil {
+	p, err := a.pinned(m)
+	if err != nil {
 		return m, err
 	}
 	f, err := a.remoteFacts(a.ssh, m)
@@ -159,7 +162,7 @@ func (a *app) lazyRefresh(self string, ms []registry.Machine) bool {
 		if stErr != nil || m.SSHHostKey == "" {
 			continue
 		}
-		if p, ok := st.Lookup(m.Name); ok && p.Online {
+		if _, r := st.Reach(m.Name, m.DNSName, m.TailscaleIP); r == tailnet.Reachable {
 			todo = append(todo, m)
 		}
 	}

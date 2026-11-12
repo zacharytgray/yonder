@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/zacharytgray/yonder/internal/agents"
 	"github.com/zacharytgray/yonder/internal/registry"
+	"github.com/zacharytgray/yonder/internal/remote"
 	"github.com/zacharytgray/yonder/internal/secrets"
 	"github.com/zacharytgray/yonder/internal/tailnet"
 	"github.com/zacharytgray/yonder/internal/transport"
@@ -149,13 +152,23 @@ func Run(e Env) []Check {
 
 	out = append(out, skillChecks(groupLocal, agents.Status(e.Home), e.Home, "yonder agents install")...)
 
-	lost := lostKeys(tombs)
+	lost := lostKeys(tombs, ms)
 	if len(lost) > 0 {
 		data, err := os.ReadFile(transport.AuthorizedKeysPath(e.Home))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			add(groupLocal, "authorized_keys", Warn, "can't read ~/.ssh/authorized_keys: "+err.Error(), "")
 		} else {
-			out = append(out, keyChecks(groupLocal, string(data), lost)...)
+			cs := keyChecks(groupLocal, string(data), lost)
+			// remove --lost won't write through a symlink; the lines go by hand
+			if real, ok := symlinkedKeys(e.Home); ok {
+				for i := range cs {
+					if cs[i].Status == Fail {
+						cs[i].Detail += " (authorized_keys is a symlink to " + real + ")"
+						cs[i].Fix = "delete those lines from " + real + " by hand; `" + cs[i].Fix + "` prints them"
+					}
+				}
+			}
+			out = append(out, cs...)
 		}
 	}
 
@@ -362,27 +375,62 @@ func skillChecks(group string, r agents.Report, home, fix string) []Check {
 }
 
 type lostMachine struct {
-	name string
-	keys []string
+	name   string
+	keys   []string
+	shared []string // keys a live record also lists
+	users  []string // the machines that list them
 }
 
-func lostKeys(ts []registry.Tombstone) []lostMachine {
+func lostKeys(ts []registry.Tombstone, live []registry.Machine) []lostMachine {
 	var out []lostMachine
 	for _, t := range ts {
 		if t.Lost && len(t.SSHClientKeys) > 0 {
-			out = append(out, lostMachine{t.Name, t.SSHClientKeys})
+			_, shared, users := remote.SplitShared(t.SSHClientKeys, live)
+			var names []string
+			for _, ns := range users {
+				for _, n := range ns {
+					if !slices.Contains(names, n) {
+						names = append(names, n)
+					}
+				}
+			}
+			slices.Sort(names)
+			out = append(out, lostMachine{t.Name, t.SSHClientKeys, shared, names})
 		}
 	}
 	return out
 }
 
+// symlinkedKeys reports whether ~/.ssh/authorized_keys or ~/.ssh is a symlink, and the real file.
+func symlinkedKeys(home string) (string, bool) {
+	path := transport.AuthorizedKeysPath(home)
+	for _, p := range []string{path, filepath.Dir(path)} {
+		if st, err := os.Lstat(p); err == nil && st.Mode()&os.ModeSymlink != 0 {
+			real, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				real = path
+			}
+			return real, true
+		}
+	}
+	return "", false
+}
+
 func keyChecks(group, content string, lost []lostMachine) []Check {
 	var out []Check
 	for _, l := range lost {
-		if n := len(transport.MatchingKeys(content, l.keys)); n > 0 {
+		matched := transport.MatchingKeys(content, l.keys)
+		shared := len(transport.MatchingKeys(strings.Join(matched, "\n"), l.shared))
+		if n := len(matched) - shared; n > 0 {
 			out = append(out, Check{Group: group, Name: "authorized_keys", Status: Fail,
 				Detail: fmt.Sprintf("still trusts %d key(s) of lost machine %s", n, l.name),
 				Fix:    "yonder remove " + l.name + " --lost --yes"})
+		}
+		if shared > 0 {
+			who := strings.Join(l.users, ", ")
+			out = append(out, Check{Group: group, Name: "authorized_keys", Status: Fail,
+				Detail: fmt.Sprintf("still trusts %d key(s) lost machine %s shares with %s", shared, l.name, who),
+				Fix:    "make new keys on " + who + ", then `yonder remove " + l.name + " --lost --include-shared --yes`"})
 		}
 	}
 	if len(out) == 0 {
@@ -434,13 +482,13 @@ func peerChecks(e Env, m registry.Machine, lost []lostMachine) peerResult {
 	add := func(name string, st Status, detail, fix string) {
 		res.checks = append(res.checks, Check{Group: m.Name, Name: name, Status: st, Detail: detail, Fix: fix})
 	}
-	p, ok := e.Status.Lookup(m.Name)
-	if !ok {
+	p, reach := e.Status.Reach(m.Name, m.DNSName, m.TailscaleIP)
+	if reach == tailnet.NotInTailnet {
 		add("tailnet", Fail, m.Name+" is not in tailscale status (renamed, or removed from the tailnet?)",
 			"`yonder remove "+m.Name+"` if it's gone; `tailscale status` lists the tailnet")
 		return res
 	}
-	if !p.Online {
+	if reach == tailnet.Offline {
 		d := "offline, last seen " + lastSeen(p.LastSeen, e.Now)
 		if m.Notes != "" {
 			d += " — notes: " + m.Notes
@@ -460,7 +508,7 @@ func peerChecks(e Env, m registry.Machine, lost []lostMachine) peerResult {
 		add("setup", Fail, "no pinned ssh host key", "yonder add "+m.Name)
 		return res
 	}
-	if m.TailscaleIP != p.IP() {
+	if reach == tailnet.AddressChanged {
 		add("address", Fail, fmt.Sprintf("address changed: record has %s, tailnet has %s", m.TailscaleIP, p.IP()),
 			"yonder remove "+m.Name+" && yonder add "+m.Name)
 		return res

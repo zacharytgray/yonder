@@ -318,7 +318,7 @@ func TestRemoveLostNamesServiceAccount(t *testing.T) {
 	if err := f.a.store.SaveMachine(m); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.a.removeCommand("off-box", true, true); err != nil {
+	if err := f.a.removeCommand("off-box", true, true, false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(f.out.String(), "Revoke its 1Password service account yonder-off-box") {

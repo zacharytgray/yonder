@@ -364,7 +364,7 @@ func (a *app) secretsChoice(po provisionOpts, force bool) error {
 	choice := "fleet"
 	err := huh.NewSelect[string]().
 		Title("Set up secrets").
-		Description("Agents ask for secrets by name. Yonder resolves them on the machine the agent runs on\nand passes them to the target's environment. The model never sees a value.").
+		Description("Agents ask for secrets by name. Yonder resolves them on the machine the agent runs on\nand passes them to the target's environment. Values stay out of command lines, logs\nand accidental output; an agent that sets out to read one still can.").
 		Options(
 			huh.NewOption("hands-free 1Password for my machines: one vault, one service account each (one approval)", "fleet"),
 			huh.NewOption("choose a provider for this machine only", "here"),

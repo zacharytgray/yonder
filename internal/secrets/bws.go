@@ -47,9 +47,10 @@ func (b *bws) Resolve(refs map[string]string) (map[string]string, error) {
 	vals := map[string]string{}
 	for _, n := range sortedKeys(refs) {
 		id := strings.TrimPrefix(refs[n], "bws://")
-		out, stderr, err := run(ctx, bin, []string{"secret", "get", id, "--output", "json"}, env, nil)
+		out, _, err := run(ctx, bin, []string{"secret", "get", id, "--output", "json"}, env, nil)
 		if err != nil {
-			return nil, fmt.Errorf("%s: bws secret get failed: %s", n, ScrubText(lastLine(stderr), map[string]string{"TOKEN": tok}))
+			// bws's own message is never shown: it can quote the token or the value
+			return nil, fmt.Errorf("%s: Bitwarden could not read the secret (bws exit %d); check the bws:// id and that the access token can read its project", n, exitCode(err))
 		}
 		v, err := parseBWS(out)
 		if err != nil {

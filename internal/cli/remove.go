@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,7 +23,8 @@ import (
 )
 
 func newRemoveCmd() *cobra.Command {
-	var lost, yes, forgetLocal, stripKeys bool
+	var lost, yes, forgetLocal, stripKeys, includeShared bool
+	var stripFor string
 	cmd := &cobra.Command{
 		Use:   "remove <machine> [--lost] [--yes]",
 		Short: "Remove a machine from the fleet",
@@ -36,6 +38,8 @@ copy of the registry. The yonder binary stays; the output says how to delete it.
 It removes the machine's ssh keys from ~/.ssh/authorized_keys on every reachable
 machine (backup: authorized_keys.yonder-bak.<time>) and prints what else to revoke.
 Run it again later to clean machines that were offline.
+A key another fleet machine's record also lists is kept, and listed, unless
+--include-shared is given: stripping it cuts that machine off too.
 
 --forget-local clears this machine's own copy of the registry, for a machine that
 was removed while it was offline.`,
@@ -55,11 +59,14 @@ was removed while it was offline.`,
 			a := newApp(cmd)
 			switch {
 			case stripKeys:
-				return a.stripKeysCommand()
+				return a.stripKeysCommand(stripFor, includeShared)
 			case forgetLocal:
 				return a.forgetLocal(yes)
 			}
-			return a.removeCommand(args[0], lost, yes)
+			if includeShared && !lost {
+				return &usageError{errors.New("--include-shared goes with --lost")}
+			}
+			return a.removeCommand(args[0], lost, yes, includeShared)
 		},
 	}
 	f := cmd.Flags()
@@ -67,7 +74,10 @@ was removed while it was offline.`,
 	f.BoolVar(&yes, "yes", false, "don't ask for confirmation")
 	f.BoolVar(&forgetLocal, "forget-local", false, "clear this machine's own registry copy and fleet name")
 	f.BoolVar(&stripKeys, "strip-keys", false, "remove the public keys on stdin from ~/.ssh/authorized_keys")
+	f.BoolVar(&includeShared, "include-shared", false, "with --lost: also strip keys other fleet machines use")
+	f.StringVar(&stripFor, "for", "", "with --strip-keys: the lost machine, so keys other records list are kept")
 	_ = f.MarkHidden("strip-keys")
+	_ = f.MarkHidden("for")
 	return cmd
 }
 
@@ -98,7 +108,7 @@ func promptable() bool {
 	return err1 == nil && (err2 != nil || !os.SameFile(in, null))
 }
 
-func (a *app) removeCommand(name string, lost, yes bool) error {
+func (a *app) removeCommand(name string, lost, yes, includeShared bool) error {
 	self, err := a.selfName()
 	if err != nil {
 		return err
@@ -134,27 +144,46 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 	if err != nil {
 		return err
 	}
-	var others []registry.Machine
+	var others, live []registry.Machine
 	for _, p := range all {
-		if p.Name != self && p.Name != name {
-			others = append(others, p)
+		if p.Name != name {
+			live = append(live, p)
+			if p.Name != self {
+				others = append(others, p)
+			}
 		}
 	}
 	targetOnline := !rerun && a.isOnline(m)
+	// a key a live record also lists is shared: stripping it cuts that machine off too
+	only, shared, users := remote.SplitShared(keys, live)
+	strip := only
+	if includeShared {
+		strip = append(slices.Clone(only), shared...)
+	}
 
 	var plan []string
 	switch {
 	case rerun:
-		plan = append(plan, "strip "+name+"'s ssh keys from authorized_keys here and on every online machine")
+		plan = append(plan, fmt.Sprintf("strip the %d ssh key(s) only %s uses from authorized_keys here and on every online machine", len(only), name))
 	case lost:
 		plan = append(plan,
 			"remove "+name+" from the registry here and on every online machine",
-			fmt.Sprintf("strip its %d ssh key(s) from authorized_keys here and on every online machine (it is not contacted)", len(keys)))
+			fmt.Sprintf("strip the %d ssh key(s) only %s uses from authorized_keys here and on every online machine (it is not contacted)", len(only), name))
 	default:
 		if targetOnline {
 			plan = append(plan, "remove the yonder skill on "+name+" and clear its copy of the registry")
 		}
 		plan = append(plan, "remove "+name+" from the registry here and on every online machine")
+	}
+	if lost && len(shared) > 0 {
+		who := sharedWith(users)
+		if includeShared {
+			plan = append(plan, fmt.Sprintf("also strip the %d key(s) %s shares with %s (--include-shared); %s can't use them to reach the fleet afterwards:\n%s",
+				len(shared), name, who, who, sharedList(shared, users)))
+		} else {
+			plan = append(plan, fmt.Sprintf("keep the %d key(s) %s shares with %s, since they use them too; --include-shared strips them as well:\n%s",
+				len(shared), name, who, sharedList(shared, users)))
+		}
 	}
 	fmt.Fprintf(a.out, "This will:\n")
 	for _, p := range plan {
@@ -207,7 +236,7 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 	var stillTrust []string
 	if lost {
 		path := transport.AuthorizedKeysPath(registry.UserHome())
-		n, backup, err := transport.StripAuthorizedKeys(path, keys)
+		n, backup, err := transport.StripAuthorizedKeys(path, strip)
 		if err != nil {
 			a.warnf("authorized_keys here: %v", err)
 			stillTrust = append(stillTrust, self)
@@ -219,15 +248,22 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 				stillTrust = append(stillTrust, p.Name)
 				continue
 			}
+			args := []string{"remove", "--strip-keys", "--for", name}
+			if includeShared {
+				args = append(args, "--include-shared")
+			}
 			var out bytes.Buffer
-			code, err := a.execOn(p, self, yonderCmd(p, "remove", "--strip-keys"), strings.NewReader(strings.Join(keys, "\n")+"\n"), &out, &out)
+			code, err := a.execOn(p, self, yonderCmd(p, args...), strings.NewReader(strings.Join(strip, "\n")+"\n"), &out, &out)
 			msg := strings.TrimSpace(out.String())
 			switch {
 			case err != nil:
 				a.warnf("%s: %v", p.Name, err)
 				stillTrust = append(stillTrust, p.Name)
+			case code != 0 && msg != "":
+				a.warnf("%s: exit %d: %s", p.Name, code, msg)
+				stillTrust = append(stillTrust, p.Name)
 			case code != 0:
-				a.warnf("%s: exit %d (an older yonder there?): %s", p.Name, code, msg)
+				a.warnf("%s: exit %d (an older yonder there?)", p.Name, code)
 				stillTrust = append(stillTrust, p.Name)
 			default:
 				fmt.Fprintf(a.out, "%s: %s\n", p.Name, msg)
@@ -251,7 +287,11 @@ func (a *app) removeCommand(name string, lost, yes bool) error {
 			name, strings.Join(offline, ", "))
 	}
 	if lost {
-		a.lostChecklist(name, account, keys, stillTrust)
+		kept := shared
+		if includeShared {
+			kept = nil
+		}
+		a.lostChecklist(name, account, keys, stillTrust, kept, users)
 		return nil
 	}
 	if m.Pending && !rerun {
@@ -280,7 +320,32 @@ func uninstallLine(path string) string {
 	return "rm " + transport.Quote(path)
 }
 
-func (a *app) lostChecklist(name, account string, keys, stillTrust []string) {
+// sharedWith names every machine that also lists one of the shared keys.
+func sharedWith(users map[string][]string) string {
+	var names []string
+	for _, ns := range users {
+		for _, n := range ns {
+			if !slices.Contains(names, n) {
+				names = append(names, n)
+			}
+		}
+	}
+	slices.Sort(names)
+	return strings.Join(names, ", ")
+}
+
+// sharedList is keyList with who else uses each key.
+func sharedList(keys []string, users map[string][]string) string {
+	lines := strings.Split(keyList(keys), "\n")
+	for i, k := range keys {
+		if id, ok := transport.KeyID(k); ok && i < len(lines) {
+			lines[i] += "  (also " + strings.Join(users[id], ", ") + ")"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (a *app) lostChecklist(name, account string, keys, stillTrust, kept []string, users map[string][]string) {
 	fmt.Fprintf(a.out, "Now finish by hand:\n")
 	revoke := "If it had a hands-free secrets token, revoke it. 1Password.com: Developer → Service accounts → its account → revoke the token. Bitwarden: Machine accounts → its account → Access tokens → revoke."
 	if account != "" {
@@ -291,6 +356,11 @@ func (a *app) lostChecklist(name, account string, keys, stillTrust []string) {
 		revoke,
 		"Rotate any secret that vault or account could read, and any API keys or tokens stored on " + name + " itself.",
 		"Remove its ssh keys anywhere else that trusts them, such as GitHub or GitLab (Settings → SSH keys) and servers outside the fleet:\n" + keyList(keys),
+	}
+	if len(kept) > 0 {
+		who := sharedWith(users)
+		steps = append(steps, fmt.Sprintf("%s still holds %d key(s) that %s also use, so every machine still trusts them. Make new keys on %s, then run `yonder remove %s --lost --include-shared --yes`:\n%s",
+			name, len(kept), who, who, name, sharedList(kept, users)))
 	}
 	if len(stillTrust) > 0 {
 		steps = append(steps, "These machines still trust its key because yonder couldn't reach them: "+strings.Join(stillTrust, ", ")+
@@ -340,12 +410,8 @@ func (a *app) isOnline(m registry.Machine) bool {
 	if m.Pending || m.SSHHostKey == "" {
 		return false
 	}
-	st, err := a.status()
-	if err != nil {
-		return false
-	}
-	p, ok := st.Lookup(m.Name)
-	return ok && p.Online
+	_, err := a.pinned(m)
+	return err == nil
 }
 
 // logRemoval records the removal in this machine's log as a caller-side entry.
@@ -376,7 +442,8 @@ func (a *app) forgetLocal(yes bool) error {
 }
 
 // stripKeysCommand is the target side of `remove --lost`: keys on stdin, one per line.
-func (a *app) stripKeysCommand() error {
+// with lostName set, keys another record here lists are kept unless includeShared.
+func (a *app) stripKeysCommand(lostName string, includeShared bool) error {
 	var keys []string
 	sc := bufio.NewScanner(io.LimitReader(a.in, 1<<20))
 	sc.Buffer(make([]byte, 64<<10), 64<<10)
@@ -388,10 +455,24 @@ func (a *app) stripKeysCommand() error {
 	if err := sc.Err(); err != nil {
 		return err
 	}
+	var kept []string
+	var users map[string][]string
+	if lostName != "" && !includeShared {
+		ms, err := a.store.Machines()
+		if err != nil {
+			return err
+		}
+		live := slices.DeleteFunc(ms, func(m registry.Machine) bool { return m.Name == lostName })
+		keys, kept, users = remote.SplitShared(keys, live)
+	}
 	n, backup, err := transport.StripAuthorizedKeys(transport.AuthorizedKeysPath(registry.UserHome()), keys)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(a.out, stripSummary(n, backup))
+	msg := stripSummary(n, backup)
+	if len(kept) > 0 {
+		msg += fmt.Sprintf("; kept %d key(s) %s also uses", len(kept), sharedWith(users))
+	}
+	fmt.Fprintln(a.out, msg)
 	return nil
 }

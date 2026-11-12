@@ -30,9 +30,33 @@ type Entry struct {
 	Side     string    `json:"side"`
 	Detached bool      `json:"detached,omitempty"`
 	Error    string    `json:"error,omitempty"`
+	// "started" on the entry _exec writes before running; the completion entry has none
+	Status string `json:"status,omitempty"`
 }
 
+// StatusStarted marks a start entry. a completion entry with the same id follows it.
+const StatusStarted = "started"
+
 func Exit(code int) *int { return &code }
+
+// Merge pairs start entries with their completions: one entry per run.
+// a start with no completion stays, marked started with a nil exit.
+func Merge(es []Entry) []Entry {
+	done := map[string]bool{}
+	for _, e := range es {
+		if e.Status != StatusStarted && e.Side == SideTarget {
+			done[e.ID+"|"+e.To] = true
+		}
+	}
+	out := make([]Entry, 0, len(es))
+	for _, e := range es {
+		if e.Status == StatusStarted && done[e.ID+"|"+e.To] {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
 
 // Append writes one entry as a single O_APPEND write.
 func Append(path string, e Entry) error {

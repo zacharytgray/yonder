@@ -64,7 +64,8 @@ func recommendedMode() string {
 const modesExplained = `How 1Password modes work:
   desktop          op asks the 1Password app, which asks you (Touch ID, Apple Watch or
                    your system password). One approval lasts until 10 min idle, 12 h max.
-                   Needs the app on this machine and someone at it.
+                   Needs the app on this machine and someone at it. While approved,
+                   an agent here can read any vault your 1Password session can.
   service-account  hands-free. A read-only 1Password service account token, stored in this
                    machine's keychain. It can only see vaults you grant it, and never your
                    Personal/Private vault, so make a vault just for this.
@@ -144,7 +145,7 @@ func setupPrompt(w io.Writer, cur Settings) error {
 	}
 	err := huh.NewSelect[string]().
 		Title("Secrets provider for this machine").
-		Description("Agents ask for secrets by name. Yonder resolves them here and passes them to the\ntarget's environment. The model never sees a value.").
+		Description("Agents ask for secrets by name. Yonder resolves them here and passes them to the\ntarget's environment. Values stay out of command lines, logs and accidental output;\nan agent that sets out to read one still can.").
 		Options(
 			huh.NewOption(opLabel, Provider1Password),
 			huh.NewOption(bwsLabel, ProviderBWS),

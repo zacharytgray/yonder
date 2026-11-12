@@ -102,3 +102,69 @@ func TestGetFixtureAndState(t *testing.T) {
 		t.Fatalf("want ErrNotRunning, got %v", err)
 	}
 }
+
+func loadShared(t *testing.T) *Status {
+	t.Helper()
+	data, err := os.ReadFile("testdata/shared.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+// a node shared in from another account can carry the same short name as yours
+func TestMatchAndOwnership(t *testing.T) {
+	st := loadShared(t)
+	ps := st.Match("gpu-box")
+	if len(ps) != 2 {
+		t.Fatalf("want both gpu-boxes, got %+v", ps)
+	}
+	mine := st.Match("gpu-box.example.ts.net.")
+	if len(mine) != 1 || mine[0].IP() != "100.64.0.2" || !st.Owned(mine[0]) {
+		t.Fatalf("full name: %+v", mine)
+	}
+	theirs := st.Match("GPU-BOX.other.example.ts.net")
+	if len(theirs) != 1 || st.Owned(theirs[0]) {
+		t.Fatalf("foreign gpu-box should match by full name and not be owned: %+v", theirs)
+	}
+	if nas := st.Match("nas"); len(nas) != 1 || st.Owned(nas[0]) {
+		t.Fatalf("nas is another user's: %+v", nas)
+	}
+	if fb := st.Match("friend-box"); len(fb) != 1 || st.Owned(fb[0]) {
+		t.Fatalf("a sharee node is not owned: %+v", fb)
+	}
+	if d := st.Match("desktop-pc"); len(d) != 1 || !st.Owned(d[0]) {
+		t.Fatalf("desktop-pc: %+v", d)
+	}
+	// a record finds its own peer among same-named ones, by dns name or address
+	if p, ok := st.ForRecord("gpu-box", "gpu-box.example.ts.net", "100.64.0.2"); !ok || p.IP() != "100.64.0.2" {
+		t.Fatalf("for record by dns: %+v", p)
+	}
+	if p, ok := st.ForRecord("gpu-box", "", "100.64.0.2"); !ok || p.IP() != "100.64.0.2" {
+		t.Fatalf("for record by ip: %+v", p)
+	}
+	if _, ok := st.ForRecord("gpu-box", "", "100.64.0.99"); ok {
+		t.Fatal("two gpu-boxes and neither is the record's: no match")
+	}
+}
+
+func TestReach(t *testing.T) {
+	st := loadShared(t)
+	if _, r := st.Reach("desktop-pc", "desktop-pc.example.ts.net", "100.64.0.3"); r != Reachable {
+		t.Fatalf("desktop-pc: %v", r)
+	}
+	if _, r := st.Reach("desktop-pc", "desktop-pc.example.ts.net", "100.64.0.30"); r != AddressChanged {
+		t.Fatalf("moved: %v", r)
+	}
+	// the record's gpu-box is offline; the online foreign one must not stand in for it
+	if _, r := st.Reach("gpu-box", "gpu-box.example.ts.net", "100.64.0.2"); r != Offline {
+		t.Fatalf("gpu-box: %v", r)
+	}
+	if _, r := st.Reach("nope", "", ""); r != NotInTailnet {
+		t.Fatalf("nope: %v", r)
+	}
+}

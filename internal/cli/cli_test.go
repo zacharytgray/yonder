@@ -153,6 +153,20 @@ func TestFilterLog(t *testing.T) {
 	}
 }
 
+// a start entry pairs with its completion; one with none shows as unfinished
+func TestFilterLogPairsStartEntries(t *testing.T) {
+	t0 := time.Date(2026, 11, 11, 20, 0, 0, 0, time.UTC)
+	es := []runlog.Entry{
+		{Time: t0, ID: "a", From: "laptop", To: "desk", Side: "target", Status: runlog.StatusStarted},
+		{Time: t0, ID: "a", From: "laptop", To: "desk", Side: "target", Exit: runlog.Exit(0)},
+		{Time: t0.Add(time.Minute), ID: "b", From: "laptop", To: "desk", Side: "target", Status: runlog.StatusStarted},
+	}
+	got := filterLog(es, "", 0)
+	if len(got) != 2 || got[0].ID != "a" || got[0].Exit == nil || got[1].ID != "b" || got[1].Status != runlog.StatusStarted {
+		t.Fatalf("got %+v", got)
+	}
+}
+
 func TestParseProbe(t *testing.T) {
 	p := parseProbe("yonder=/home/me/.local/bin/yonder\nos=Linux\narch=x86_64\nhome=/home/me\npub=ssh-ed25519 AAAA me@gpu-box\njunk line\n")
 	if p.yonder != "/home/me/.local/bin/yonder" || p.os != "linux" || p.arch != "amd64" || p.home != "/home/me" || len(p.pubs) != 1 {

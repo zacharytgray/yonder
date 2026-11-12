@@ -323,7 +323,7 @@ func TestRemovePendingMachineIsQuiet(t *testing.T) {
 	if err := a.store.SaveMachine(pend); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.removeCommand("new-box", false, true); err != nil {
+	if err := a.removeCommand("new-box", false, true, false); err != nil {
 		t.Fatal(err)
 	}
 	s := out.String()
@@ -337,5 +337,109 @@ func TestRemovePendingMachineIsQuiet(t *testing.T) {
 	}
 	if _, ok := a.store.Tombstone("new-box"); !ok {
 		t.Fatal("tombstone missing")
+	}
+}
+
+// remove --lost keeps a key a live record also lists, here and in what it sends
+// to other machines, unless --include-shared
+func TestRemoveLostKeepsSharedKeys(t *testing.T) {
+	const (
+		ownKey    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIown me@gpu-box"
+		sharedKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIshared me@desk"
+	)
+	for _, include := range []bool{false, true} {
+		t.Run(fmt.Sprint("include-shared=", include), func(t *testing.T) {
+			st := &tailnet.Status{Self: peer("laptop", true), Peers: []tailnet.Peer{peer("desk", true)}}
+			var sent, sentCmd string
+			fake := &fakeSSH{yonder: func(_ transport.Target, args []string, stdio transport.IO) (int, error) {
+				if args[0] == "_sync" {
+					fmt.Fprint(stdio.Stdout, `{"machines":[],"tombstones":[]}`)
+					return 0, nil
+				}
+				all, _ := io.ReadAll(stdio.Stdin)
+				env, rest, _ := strings.Cut(string(all), "\n")
+				sentCmd, sent = env, rest
+				fmt.Fprintln(stdio.Stdout, "removed 1 line(s)")
+				return 0, nil
+			}}
+			a, out := testApp(t, fake, st)
+			if err := a.store.SetSelf("laptop"); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().UTC().Add(-time.Hour)
+			for _, m := range []registry.Machine{
+				{Name: "laptop", TailscaleIP: "100.64.0.1", SSHClientKeys: []string{}},
+				{Name: "desk", TailscaleIP: "100.64.0.9", SSHHostKey: "ssh-ed25519 AAAAhost", SSHClientKeys: []string{sharedKey}},
+				{Name: "gpu-box", TailscaleIP: "100.64.0.2", SSHHostKey: "ssh-ed25519 AAAAhost", SSHClientKeys: []string{ownKey, sharedKey}},
+			} {
+				m.UpdatedAt, m.AddedAt = now, now
+				if err := a.store.SaveMachine(m); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ak := transport.AuthorizedKeysPath(registry.UserHome())
+			if err := os.MkdirAll(filepath.Dir(ak), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(ak, []byte(ownKey+"\n"+sharedKey+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.removeCommand("gpu-box", true, true, include); err != nil {
+				t.Fatal(err)
+			}
+			s := out.String()
+			if !strings.Contains(s, "strip the 1 ssh key(s) only gpu-box uses") || !strings.Contains(s, "shares with desk") || !strings.Contains(s, "(also desk)") {
+				t.Fatalf("plan should list the shared key apart:\n%s", s)
+			}
+			left, _ := os.ReadFile(ak)
+			if strings.Contains(string(left), ownKey) {
+				t.Fatalf("own key not stripped:\n%s", left)
+			}
+			if got := strings.Contains(string(left), sharedKey); got == include {
+				t.Fatalf("include-shared=%v but shared key kept=%v:\n%s", include, got, left)
+			}
+			if !strings.Contains(sent, ownKey) || strings.Contains(sent, sharedKey) != include {
+				t.Fatalf("keys sent to desk:\n%s", sent)
+			}
+			if !strings.Contains(sentCmd, "--for gpu-box") || strings.Contains(sentCmd, "--include-shared") != include {
+				t.Fatalf("strip command sent to desk: %s", sentCmd)
+			}
+			if !include && !strings.Contains(s, "--include-shared --yes") {
+				t.Fatalf("checklist should say how to strip the shared key:\n%s", s)
+			}
+		})
+	}
+}
+
+// the target side keeps keys its own records list, unless told to strip them
+func TestStripKeysCommandKeepsShared(t *testing.T) {
+	const (
+		ownKey    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIown me@gpu-box"
+		sharedKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIshared me@desk"
+	)
+	a, out := testApp(t, &fakeSSH{}, nil)
+	now := time.Now().UTC()
+	for _, m := range []registry.Machine{
+		{Name: "desk", SSHClientKeys: []string{sharedKey}, UpdatedAt: now},
+		{Name: "gpu-box", SSHClientKeys: []string{ownKey, sharedKey}, UpdatedAt: now},
+	} {
+		if err := a.store.SaveMachine(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ak := transport.AuthorizedKeysPath(registry.UserHome())
+	_ = os.MkdirAll(filepath.Dir(ak), 0o700)
+	if err := os.WriteFile(ak, []byte(ownKey+"\n"+sharedKey+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.in = strings.NewReader(ownKey + "\n" + sharedKey + "\n")
+	if err := a.stripKeysCommand("gpu-box", false); err != nil {
+		t.Fatal(err)
+	}
+	if left, _ := os.ReadFile(ak); string(left) != sharedKey+"\n" {
+		t.Fatalf("left:\n%s", left)
+	}
+	if !strings.Contains(out.String(), "kept 1 key(s) desk also uses") {
+		t.Fatalf("output: %s", out.String())
 	}
 }

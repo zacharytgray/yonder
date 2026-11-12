@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -57,6 +58,27 @@ func childEnv(extra ...string) []string {
 		env = append(env, kv)
 	}
 	return append(env, extra...)
+}
+
+// providerVars are credentials yonder or a provider cli reads from the
+// environment. a command run for an agent never inherits them; a --secret
+// of the same name is added back by the caller.
+var providerVars = []string{"OP_SERVICE_ACCOUNT_TOKEN", "BWS_ACCESS_TOKEN", "YONDER_OP_TOKEN", "OP_CONNECT_TOKEN", "OP_CONNECT_HOST"}
+
+// IsProviderVar reports whether name is a provider credential, OP_SESSION_* included.
+func IsProviderVar(name string) bool {
+	return slices.Contains(providerVars, name) || strings.HasPrefix(name, "OP_SESSION_")
+}
+
+// WithoutProviderVars is env minus every provider credential.
+func WithoutProviderVars(env []string) []string {
+	var out []string
+	for _, kv := range env {
+		if k, _, _ := strings.Cut(kv, "="); !IsProviderVar(k) {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 func exitCode(err error) int {

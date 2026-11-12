@@ -27,6 +27,10 @@ const (
 
 func alias(t Target) string { return "yonder-" + t.Name }
 
+// noMux keeps a ControlMaster from the user's ssh config out: a shared
+// connection would skip the pinned host key check.
+var noMux = []string{"-o", "ControlMaster=no", "-o", "ControlPath=none"}
+
 // opts are the -o flags shared by ssh, scp and ssh-copy-id.
 func (s *SSH) opts(t Target, knownHosts, checking string) []string {
 	port := t.Port
@@ -47,6 +51,7 @@ func (s *SSH) opts(t Target, knownHosts, checking string) []string {
 		"-o", "UpdateHostKeys=no",
 		"-o", "LogLevel=ERROR",
 	}
+	o = append(o, noMux...)
 	if t.User != "" {
 		o = append(o, "-o", "User="+t.User)
 	}
@@ -199,6 +204,7 @@ func (s *SSH) CopyID(ctx context.Context, t Target, stdio IO) error {
 		"-o", "GlobalKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=yes",
 	}
+	args = append(args, noMux...)
 	if id := s.identity(t); id != "" {
 		args = append(args, "-i", id, "-o", "IdentitiesOnly=yes")
 	}

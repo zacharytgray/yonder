@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"slices"
 	"sort"
@@ -32,12 +33,11 @@ const maxHold = 64 << 10
 func NewScrubber(w io.Writer, values map[string]string) *Scrubber {
 	s := &Scrubber{w: w}
 	for name, v := range values {
-		if v == "" {
-			continue
-		}
-		s.pats = append(s.pats, pattern{val: []byte(v), name: name})
-		if len(v) > s.maxLn {
-			s.maxLn = len(v)
+		for _, f := range forms(v) {
+			s.pats = append(s.pats, pattern{val: []byte(f), name: name})
+			if len(f) > s.maxLn {
+				s.maxLn = len(f)
+			}
 		}
 	}
 	// longest first so a value containing another wins at the same offset
@@ -150,4 +150,41 @@ func (s *Scrubber) heldTail(b []byte) int {
 		}
 	}
 	return 0
+}
+
+// minLine is the shortest line of a multi-line value scrubbed on its own.
+// shorter lines would match ordinary output.
+const minLine = 8
+
+// forms are the spellings of v worth catching: v, v trimmed, each long
+// enough line of a multi-line v, and v json-escaped. a deliberate transform
+// (rev, base64, a cut) still gets through; nothing here can stop that.
+func forms(v string) []string {
+	if v == "" {
+		return nil
+	}
+	out := []string{v}
+	add := func(f string) {
+		if f != "" && !slices.Contains(out, f) {
+			out = append(out, f)
+		}
+	}
+	add(strings.TrimSpace(v))
+	if strings.Contains(v, "\n") {
+		for _, l := range strings.Split(v, "\n") {
+			if l = strings.TrimSpace(l); len(l) >= minLine {
+				add(l)
+			}
+		}
+	}
+	for _, html := range []bool{true, false} {
+		var b bytes.Buffer
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(html)
+		if enc.Encode(v) == nil {
+			q := strings.TrimSuffix(b.String(), "\n")
+			add(q[1 : len(q)-1])
+		}
+	}
+	return out
 }

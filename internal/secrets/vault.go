@@ -69,7 +69,8 @@ func pickField(fields []opField) int {
 	return -1
 }
 
-// opCall runs op with this mode's env. msg is op's last stderr line.
+// opCall runs op with this mode's env. msg is op's last stderr line, with
+// the token scrubbed from all of stderr first.
 func (o *onePassword) opCall(ctx context.Context, stdin []byte, args ...string) (out []byte, msg string, err error) {
 	bin, err := lookPath("op")
 	if err != nil {
@@ -81,7 +82,13 @@ func (o *onePassword) opCall(ctx context.Context, stdin []byte, args ...string) 
 	}
 	out, stderr, err := run(ctx, bin, args, env, stdin)
 	if err != nil {
-		return nil, errLine(stderr, err), err
+		vals := map[string]string{}
+		for _, kv := range env {
+			if v, ok := strings.CutPrefix(kv, opEnvToken+"="); ok {
+				vals["TOKEN"] = v
+			}
+		}
+		return nil, scrubbedLine(stderr, err, vals), err
 	}
 	return out, "", nil
 }
@@ -255,7 +262,6 @@ func (o *onePassword) store(vault, name, value string, replace bool) error {
 			match = append(match, it)
 		}
 	}
-	scrub := map[string]string{name: value}
 	switch {
 	case len(match) > 1:
 		return fmt.Errorf("%d items in the vault %q are titled %s; rename or delete the extras in 1Password", len(match), vault, name)
@@ -273,7 +279,7 @@ func (o *onePassword) store(vault, name, value string, replace bool) error {
 		return err
 	}
 	if _, msg, err := o.opCall(ctx, tmpl, "item", "create", "--vault", vault, "--tags", "yonder", "-"); err != nil {
-		return o.writeErr("op item create", msg, err, scrub)
+		return o.writeErr(msg, err, fmt.Sprintf("1Password could not create the item (op exit %d); run `op item create --help` or check that this machine can write to the vault %q", exitCode(err), vault))
 	}
 	return nil
 }
@@ -281,7 +287,6 @@ func (o *onePassword) store(vault, name, value string, replace bool) error {
 // replaceValue rewrites the chosen field of an existing item through piped
 // JSON, keeping everything else as op returned it.
 func (o *onePassword) replaceValue(ctx context.Context, it vaultItem, vault, name, value string) error {
-	scrub := map[string]string{name: value}
 	raw, err := o.getItem(ctx, it.ID, vaultOf(it, vault))
 	if err != nil {
 		return err
@@ -308,12 +313,14 @@ func (o *onePassword) replaceValue(ctx context.Context, it vaultItem, vault, nam
 		return err
 	}
 	if _, msg, err := o.opCall(ctx, body, "item", "edit", it.ID, "--vault", vaultOf(it, vault)); err != nil {
-		return o.writeErr("op item edit", msg, err, scrub)
+		return o.writeErr(msg, err, fmt.Sprintf("1Password could not update the item (op exit %d); run `op item edit --help` or check that this machine can write to the vault %q", exitCode(err), vaultOf(it, vault)))
 	}
 	return nil
 }
 
-func (o *onePassword) writeErr(what, msg string, err error, scrub map[string]string) error {
+// writeErr never quotes op: what it sent held the value and, for an edit,
+// every other field of the item.
+func (o *onePassword) writeErr(msg string, err error, safe string) error {
 	if msg == "" {
 		return err
 	}
@@ -324,7 +331,7 @@ func (o *onePassword) writeErr(what, msg string, err error, scrub map[string]str
 		}
 		return fmt.Errorf("this machine's service account is read-only; run `yonder secret setup --allow-write --machines %s --replace` from a machine with the 1Password app (it makes a new account; revoke the old one: %s, at %s)", selfOrPlaceholder(), acct, RevokeWhere)
 	}
-	return fmt.Errorf("%s failed: %s", what, ScrubText(msg, scrub))
+	return errors.New(safe)
 }
 
 func permissionDenied(msg string) bool {

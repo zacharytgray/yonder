@@ -95,16 +95,45 @@ func TestExecScrubsAndLogs(t *testing.T) {
 		t.Fatalf("stderr %q", errb.String())
 	}
 	es, err := runlog.Read(registry.LogPath(), time.Time{})
-	if err != nil || len(es) != 1 {
+	if err != nil || len(es) != 2 {
 		t.Fatalf("log: %v %+v", err, es)
 	}
-	e := es[0]
-	if e.ID != "run-1" || e.From != "laptop" || e.To != "gpu-box" || *e.Exit != 7 || e.Side != runlog.SideTarget || e.Secrets[0] != "API_KEY" {
+	if s := es[0]; s.Status != runlog.StatusStarted || s.Exit != nil || s.ID != "run-1" {
+		t.Fatalf("start entry %+v", s)
+	}
+	e := es[1]
+	if e.ID != "run-1" || e.From != "laptop" || e.To != "gpu-box" || *e.Exit != 7 || e.Side != runlog.SideTarget || e.Secrets[0] != "API_KEY" || e.Status != "" {
 		t.Fatalf("entry %+v", e)
+	}
+	if m := runlog.Merge(es); len(m) != 1 || m[0].Exit == nil {
+		t.Fatalf("merged %+v", m)
 	}
 	raw, _ := os.ReadFile(registry.LogPath())
 	if bytes.Contains(raw, []byte("sk-example-123")) {
 		t.Fatal("secret value leaked into the log")
+	}
+}
+
+// a run cut off midway (caller gone, ssh dropped) must already be in the log
+func TestExecLogsStartBeforeRunning(t *testing.T) {
+	setup(t)
+	env := Envelope{
+		ID: "run-2", From: "laptop", Secrets: map[string]string{"TOK": "sk-start-secret-9"},
+		Command: `echo sk-start-secret-9 >/dev/null; cat "` + registry.LogPath() + `"`,
+	}
+	var out bytes.Buffer
+	if code := Exec(context.Background(), nil, input(t, env, ""), &out, io.Discard); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	var e runlog.Entry
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &e); err != nil {
+		t.Fatalf("command saw no single start entry: %q (%v)", out.String(), err)
+	}
+	if e.ID != "run-2" || e.Status != runlog.StatusStarted || e.Exit != nil || e.Secrets[0] != "TOK" {
+		t.Fatalf("start entry %+v", e)
+	}
+	if strings.Contains(e.Command, "sk-start-secret-9") {
+		t.Fatalf("start entry not scrubbed: %q", e.Command)
 	}
 }
 

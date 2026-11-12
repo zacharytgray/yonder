@@ -435,3 +435,31 @@ func TestExpandHome(t *testing.T) {
 		t.Fatal("only a leading ~/ expands")
 	}
 }
+
+// a peer's pending copy (init run elsewhere while the machine slept) must not
+// unpin a set-up record; a held pin survives a pending copy too
+func TestFromPeerNeverUnpins(t *testing.T) {
+	now := t0.Add(24 * time.Hour)
+	setUp := Machine{Name: "gpu-box", TailscaleIP: "100.64.0.2", SSHHostKey: "ssh-ed25519 AAAAhost",
+		SSHClientKeys: []string{"ssh-ed25519 AAAAkey"}, YonderPath: "/home/me/.local/bin/yonder", AddedAt: t0, UpdatedAt: t0}
+	pend := Machine{Name: "gpu-box", TailscaleIP: "100.64.0.2", Pending: true, SSHClientKeys: []string{}, AddedAt: now, UpdatedAt: now}
+
+	got := Merge(Bundle{Machines: []Machine{setUp}}, FromPeer(Bundle{Machines: []Machine{setUp}}, Bundle{Machines: []Machine{pend}}, "laptop", now))
+	if g := got.Machines[0]; g.Pending || g.SSHHostKey != setUp.SSHHostKey || g.YonderPath == "" {
+		t.Fatalf("set-up record turned pending through sync: %+v", g)
+	}
+
+	// pending with a held pin, from `add` while it slept: the pin stays
+	heldPin := pend
+	heldPin.SSHHostKey, heldPin.UpdatedAt = setUp.SSHHostKey, t0
+	got = Merge(Bundle{Machines: []Machine{heldPin}}, FromPeer(Bundle{Machines: []Machine{heldPin}}, Bundle{Machines: []Machine{pend}}, "laptop", now))
+	if g := got.Machines[0]; g.SSHHostKey != setUp.SSHHostKey {
+		t.Fatalf("held pin dropped: %+v", g)
+	}
+
+	// pending with no pin here, a peer has the set-up record: it wins even though older
+	got = Merge(Bundle{Machines: []Machine{pend}}, FromPeer(Bundle{Machines: []Machine{pend}}, Bundle{Machines: []Machine{setUp}}, "laptop", now))
+	if g := got.Machines[0]; g.Pending || g.SSHHostKey != setUp.SSHHostKey {
+		t.Fatalf("full record should finish the pending one: %+v", g)
+	}
+}

@@ -119,3 +119,28 @@ func TestScrubOverlappingValuesNeverLeak(t *testing.T) {
 		t.Fatalf("self overlap: %q", got)
 	}
 }
+
+// the value as a program might print it without meaning to transform it.
+func TestScrubValueForms(t *testing.T) {
+	vals := map[string]string{"K": "sk-line-one-123\nsk-line-two-456\n", "Q": `pa"ss<w>rd\`}
+	cases := map[string]string{
+		"trimmed":   "x sk-line-one-123\nsk-line-two-456 y",
+		"one line":  "got sk-line-two-456 here",
+		"json":      `{"v":"sk-line-one-123\nsk-line-two-456\n"}`,
+		"json html": `"pa\"ss\u003cw\u003erd\\"`,
+		"json raw":  `"pa\"ss<w>rd\\"`,
+	}
+	for name, in := range cases {
+		got := ScrubText(in, vals)
+		if strings.Contains(got, "sk-line") || strings.Contains(got, "ss<w>") || strings.Contains(got, "u003cw") {
+			t.Errorf("%s: %q", name, got)
+		}
+		if got2 := scrubAll(vals, strings.Split(in, "")...); got2 != got {
+			t.Errorf("%s: stream %q != text %q", name, got2, got)
+		}
+	}
+	// short lines of a multi-line value are left alone
+	if got := ScrubText("ok then", map[string]string{"K": "ok\nlong-enough-line"}); got != "ok then" {
+		t.Fatalf("short line scrubbed: %q", got)
+	}
+}

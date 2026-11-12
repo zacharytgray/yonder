@@ -89,14 +89,38 @@ func AuthorizedKeysPath(home string) string {
 	return filepath.Join(home, ".ssh", "authorized_keys")
 }
 
+// SymlinkError is a strip refused because authorized_keys (or ~/.ssh) is a
+// symlink. Lines are the exact lines to delete by hand from Real.
+type SymlinkError struct {
+	Path, Real string
+	Lines      []string
+}
+
+func (e *SymlinkError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s is a symlink to %s, so yonder won't rewrite it. Delete these %d line(s) from %s by hand:", e.Path, e.Real, len(e.Lines), e.Real)
+	for _, l := range e.Lines {
+		b.WriteString("\n    " + l)
+	}
+	return b.String()
+}
+
+// symlinked reports whether path or its directory is a symlink.
+func symlinked(path string) bool {
+	for _, p := range []string{path, filepath.Dir(path)} {
+		if st, err := os.Lstat(p); err == nil && st.Mode()&os.ModeSymlink != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // StripAuthorizedKeys removes the lines whose key is in keys and keeps every
 // other line as is. the original goes to authorized_keys.yonder-bak.<unix-nanos>
 // first, a new one per change. a missing
 // file is not an error. returns how many lines it removed.
+// it never writes through a symlink: that is a *SymlinkError naming the lines.
 func StripAuthorizedKeys(path string, keys []string) (removed int, backup string, err error) {
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		path = real
-	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, "", nil
@@ -107,6 +131,17 @@ func StripAuthorizedKeys(path string, keys []string) (removed int, backup string
 	set := keySet(keys)
 	if len(set) == 0 {
 		return 0, "", nil
+	}
+	if symlinked(path) {
+		lines := MatchingKeys(string(data), keys)
+		if len(lines) == 0 {
+			return 0, "", nil
+		}
+		real, rerr := filepath.EvalSymlinks(path)
+		if rerr != nil {
+			real = path
+		}
+		return 0, "", &SymlinkError{Path: path, Real: real, Lines: lines}
 	}
 	lines := strings.SplitAfter(string(data), "\n")
 	var kept strings.Builder

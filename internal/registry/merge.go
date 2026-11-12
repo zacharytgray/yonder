@@ -69,9 +69,11 @@ func Merge(bundles ...Bundle) Bundle {
 
 // FromPeer filters a bundle a peer sent before it is merged into local.
 // it drops anything about self (unless local has no self record yet) and
-// anything dated more than MaxSkew ahead of now. for a record held here (and
-// set up), identity fields keep their local values: changing them takes
-// `yonder remove` then `yonder add`.
+// anything dated more than MaxSkew ahead of now. for a record held here that
+// is set up or holds a pinned host key, identity fields keep their local
+// values: changing them takes `yonder remove` then `yonder add`. a pending
+// record never replaces a set-up one, so sync can't unpin a host key, and a
+// full record always finishes a pending one held without a pin.
 func FromPeer(local, in Bundle, self string, now time.Time) Bundle {
 	held := map[string]Machine{}
 	for _, m := range local.Machines {
@@ -84,8 +86,14 @@ func FromPeer(local, in Bundle, self string, now time.Time) Bundle {
 		if m.UpdatedAt.After(limit) || m.AddedAt.After(limit) || (m.Name == self && haveSelf) {
 			continue
 		}
-		if l, ok := held[m.Name]; ok && !l.Pending {
+		if l, ok := held[m.Name]; ok && (!l.Pending || l.SSHHostKey != "") {
+			if !l.Pending && m.Pending {
+				continue
+			}
 			m.TailscaleIP, m.SSHHostKey, m.SSHClientKeys, m.AddedAt = l.TailscaleIP, l.SSHHostKey, l.SSHClientKeys, l.AddedAt
+		} else if ok && !m.Pending && m.SSHHostKey != "" && !m.UpdatedAt.After(l.UpdatedAt) {
+			// a full record finishes a pending one here even when older, so its pin is used
+			m.UpdatedAt = l.UpdatedAt.Add(time.Second)
 		}
 		out.Machines = append(out.Machines, m)
 	}

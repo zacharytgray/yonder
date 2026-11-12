@@ -28,6 +28,8 @@ type Peer struct {
 	OS           string    `json:"os"`
 	Online       bool      `json:"online"`
 	LastSeen     time.Time `json:"last_seen"`
+	UserID       int64     `json:"user_id"`
+	ShareeNode   bool      `json:"sharee_node"` // shared into this tailnet by another account
 }
 
 type Status struct {
@@ -71,17 +73,86 @@ func (p Peer) Mobile() bool {
 	return false
 }
 
-// Lookup finds a peer (or self) by yonder name.
+// Lookup finds a peer (or self) by yonder name. with several of that name it
+// returns the first; Match and ForRecord tell them apart.
 func (s *Status) Lookup(name string) (Peer, bool) {
-	if s.Self.Name() == name {
-		return s.Self, true
+	if ps := s.Match(name); len(ps) > 0 {
+		return ps[0], true
 	}
-	for _, p := range s.Peers {
-		if p.Name() == name {
+	return Peer{}, false
+}
+
+// Match returns every peer (self first) that name could mean: a full dns name
+// matches exactly, anything else matches the yonder name.
+func (s *Status) Match(name string) []Peer {
+	full := strings.TrimSuffix(strings.ToLower(name), ".")
+	var out []Peer
+	for _, p := range append([]Peer{s.Self}, s.Peers...) {
+		if strings.Contains(full, ".") {
+			if strings.EqualFold(p.DNSName, full) {
+				out = append(out, p)
+			}
+		} else if p.Name() == name {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// ForRecord finds the peer behind a registry record: among same-named peers,
+// the one with the record's dns name, else the one at its address, else the
+// only one. callers still check the address (Reach).
+func (s *Status) ForRecord(name, dnsName, ip string) (Peer, bool) {
+	ps := s.Match(name)
+	for _, p := range ps {
+		if dnsName != "" && strings.EqualFold(p.DNSName, dnsName) {
 			return p, true
 		}
 	}
+	for _, p := range ps {
+		if ip != "" && slices.Contains(p.TailscaleIPs, ip) {
+			return p, true
+		}
+	}
+	if len(ps) == 1 {
+		return ps[0], true
+	}
 	return Peer{}, false
+}
+
+// Reachability is what Reach found for a recorded peer.
+type Reachability int
+
+const (
+	Reachable      Reachability = iota
+	NotInTailnet                // no peer by that name (or several, none of them the record's)
+	Offline                     // tailscale says offline
+	AddressChanged              // its tailnet address isn't the pinned one
+)
+
+// Reach is the one check before any connection to a recorded peer: it is in
+// the tailnet, online, and still at the address the record pinned.
+func (s *Status) Reach(name, dnsName, ip string) (Peer, Reachability) {
+	p, ok := s.ForRecord(name, dnsName, ip)
+	switch {
+	case !ok:
+		return p, NotInTailnet
+	case !p.Online:
+		return p, Offline
+	case ip != p.IP():
+		return p, AddressChanged
+	}
+	return p, Reachable
+}
+
+// Owned reports whether p belongs to the account this machine is logged in as.
+// a node shared in from another account (node sharing) is not owned.
+// with no user id for self (old fixtures) every peer counts as owned.
+func (s *Status) Owned(p Peer) bool {
+	if p.ShareeNode {
+		return false
+	}
+	return s.Self.UserID == 0 || p.UserID == s.Self.UserID
 }
 
 // LookupIP finds a peer (or self) by one of its tailscale addresses.
@@ -128,6 +199,8 @@ type rawPeer struct {
 	OS           string
 	Online       bool
 	LastSeen     time.Time
+	UserID       int64
+	ShareeNode   bool
 }
 
 type rawStatus struct {
@@ -144,6 +217,8 @@ func (r *rawPeer) peer() Peer {
 		OS:           r.OS,
 		Online:       r.Online,
 		LastSeen:     r.LastSeen.UTC(),
+		UserID:       r.UserID,
+		ShareeNode:   r.ShareeNode,
 	}
 }
 

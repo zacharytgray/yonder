@@ -3,6 +3,7 @@
   "BackendState": "Running",
   "Self": {
     "ID": "nSelf",
+    "UserID": 1001,
     "HostName": "Laptop",
     "DNSName": "laptop.example.ts.net.",
     "OS": "macOS",
@@ -12,6 +13,7 @@
   },
   "Peer": {
     "nodekey:aaa": {
+      "UserID": 1001,
       "HostName": "gpu-box",
       "DNSName": "gpu-box.example.ts.net.",
       "OS": "linux",
@@ -20,6 +22,7 @@
       "LastSeen": "2026-11-11T18:00:00Z"
     },
     "nodekey:bbb": {
+      "UserID": 1001,
       "HostName": "Desktop_PC",
       "DNSName": "desktop-pc.example.ts.net.",
       "OS": "linux",
@@ -28,6 +31,7 @@
       "LastSeen": "0001-01-01T00:00:00Z"
     },
     "nodekey:ccc": {
+      "UserID": 1001,
       "HostName": "my phone",
       "DNSName": "my-phone.example.ts.net.",
       "OS": "iOS",
@@ -36,6 +40,7 @@
       "LastSeen": "2026-11-11T19:00:00Z"
     },
     "nodekey:ddd": {
+      "UserID": 1001,
       "HostName": "old-server",
       "DNSName": "old-server.example.ts.net.",
       "OS": "linux",

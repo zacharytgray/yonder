@@ -30,6 +30,7 @@ func newInitCmd() *cobra.Command {
 		user     string
 		idents   []string
 		noSkill  bool
+		shared   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -41,7 +42,9 @@ Non-interactive: yonder init --yes --machines gpu-box,laptop [--user me]
 If you reach a peer with a specific ssh key: --identity gpu-box=~/.ssh/id_ed25519_gpubox
 (repeat the flag per peer; the key path stays on this machine).
 With --yes and no --machines, only this machine is set up.
---no-skill leaves every harness's skills folder alone (install later with yonder agents install).`,
+--no-skill leaves every harness's skills folder alone (install later with yonder agents install).
+Peers your tailscale account doesn't own (shared in) are listed but can't be picked
+unless --allow-shared is given. Two peers with one short name: pass the full dns name.`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a := newApp(cmd)
@@ -50,13 +53,14 @@ With --yes and no --machines, only this machine is set up.
 			if err != nil {
 				return &usageError{err}
 			}
-			return a.initCommand(interactive, machines, user, ids, noSkill)
+			return a.initCommand(interactive, machines, user, ids, noSkill, shared)
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "never prompt")
 	cmd.Flags().StringSliceVar(&machines, "machines", nil, "peers to add, comma-separated")
 	cmd.Flags().StringVar(&user, "user", "", "ssh user on the peers (default: the current user)")
 	cmd.Flags().BoolVar(&noSkill, "no-skill", false, "don't install the agent skill on any machine")
+	cmd.Flags().BoolVar(&shared, "allow-shared", false, "allow peers another tailscale account owns (node sharing)")
 	cmd.Flags().StringArrayVar(&idents, "identity", nil, "ssh key for a peer, as machine=path (repeatable, kept on this machine only)")
 	return cmd
 }
@@ -81,7 +85,7 @@ func parseIdentities(in []string) (map[string]string, error) {
 	return out, nil
 }
 
-func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string, noSkill bool) error {
+func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string, noSkill, allowShared bool) error {
 	st, err := a.status()
 	if err != nil {
 		if errors.Is(err, tailnet.ErrNotInstalled) || errors.Is(err, tailnet.ErrNotRunning) {
@@ -105,8 +109,8 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 		a.warnf("no sshd host key in /etc/ssh; other machines can't reach this one until sshd (Remote Login on macOS) is on")
 	}
 
-	candidates := a.initCandidates(st, self)
-	picks, err := a.pickPeers(candidates, chosen, interactive)
+	candidates := a.initCandidates(st, self, allowShared)
+	picks, err := a.pickPeers(st, candidates, chosen, interactive, allowShared)
 	if err != nil {
 		return err
 	}
@@ -227,15 +231,16 @@ func (a *app) selfRecord(p tailnet.Peer) registry.Machine {
 }
 
 type candidate struct {
-	peer tailnet.Peer
-	note string // why it can't be picked, if anything
+	peer   tailnet.Peer
+	note   string // why it can't be picked, if anything
+	shared bool   // another tailscale account owns it
 }
 
-func (a *app) initCandidates(st *tailnet.Status, self string) []candidate {
+func (a *app) initCandidates(st *tailnet.Status, self string, allowShared bool) []candidate {
 	var out []candidate
 	for _, p := range st.Peers {
 		name := p.Name()
-		c := candidate{peer: p}
+		c := candidate{peer: p, shared: !st.Owned(p)}
 		switch {
 		case name == self:
 			continue
@@ -243,8 +248,12 @@ func (a *app) initCandidates(st *tailnet.Status, self string) []candidate {
 			c.note = p.OS + " device, skipped"
 		case registry.ValidName(name) != nil:
 			c.note = "name is not kebab-case, skipped"
+		case c.shared && !allowShared:
+			c.note = "not owned by your tailscale account (shared in); --allow-shared lets you pick it"
 		default:
-			if old, err := a.store.Machine(name); err == nil && !old.Pending {
+			if old, err := a.store.Machine(name); err == nil && old.DNSName != "" && !strings.EqualFold(old.DNSName, p.DNSName) {
+				c.note = "another " + name + " (" + old.DNSName + ") is in the fleet"
+			} else if err == nil && !old.Pending {
 				c.note = "already in the fleet"
 			} else if _, gone := a.store.Tombstone(name); gone {
 				c.note = "removed earlier; `yonder add " + name + "` re-adds it"
@@ -255,28 +264,45 @@ func (a *app) initCandidates(st *tailnet.Status, self string) []candidate {
 	return out
 }
 
-func (a *app) pickPeers(cands []candidate, chosen []string, interactive bool) ([]tailnet.Peer, error) {
-	byName := map[string]candidate{}
+// label is a candidate's name for lists: its dns name when another peer shares the short name.
+func label(c candidate, cands []candidate) string {
+	n := 0
+	for _, o := range cands {
+		if o.peer.Name() == c.peer.Name() {
+			n++
+		}
+	}
+	if n > 1 {
+		return c.peer.DNSName
+	}
+	return c.peer.Name()
+}
+
+func (a *app) pickPeers(st *tailnet.Status, cands []candidate, chosen []string, interactive, allowShared bool) ([]tailnet.Peer, error) {
+	byDNS := map[string]candidate{}
 	var open []candidate
 	for _, c := range cands {
-		byName[c.peer.Name()] = c
+		byDNS[c.peer.DNSName] = c
 		if c.note == "" {
 			open = append(open, c)
 		} else if len(chosen) == 0 {
-			fmt.Fprintf(a.out, "  %s: %s\n", c.peer.Name(), c.note)
+			fmt.Fprintf(a.out, "  %s: %s\n", label(c, cands), c.note)
 		}
 	}
 	if len(chosen) > 0 {
 		var picks []tailnet.Peer
 		for _, n := range chosen {
-			c, ok := byName[strings.TrimSpace(n)]
-			if !ok {
-				return nil, fmt.Errorf("%s is not a peer in this tailnet", n)
+			p, err := a.resolvePeer(st, strings.TrimSpace(n), allowShared, interactive)
+			if err != nil {
+				return nil, err
 			}
-			if c.peer.Mobile() {
-				return nil, fmt.Errorf("%s is a %s device; yonder runs on macOS and Linux only", n, c.peer.OS)
+			if p.DNSName == st.Self.DNSName {
+				return nil, fmt.Errorf("%s is this machine", n)
 			}
-			picks = append(picks, c.peer)
+			if p.Mobile() {
+				return nil, fmt.Errorf("%s is a %s device; yonder runs on macOS and Linux only", n, p.OS)
+			}
+			picks = append(picks, p)
 		}
 		return picks, nil
 	}
@@ -287,18 +313,25 @@ func (a *app) pickPeers(cands []candidate, chosen []string, interactive bool) ([
 	if !interactive {
 		names := make([]string, len(open))
 		for i, c := range open {
-			names[i] = c.peer.Name()
+			names[i] = label(c, cands)
+			if c.shared {
+				names[i] += " (not yours)"
+			}
 		}
 		fmt.Fprintf(a.out, "peers you can add: %s\npass --machines a,b to add them, or run `yonder add <machine>` later\n", strings.Join(names, ", "))
 		return nil, nil
 	}
 	opts := make([]huh.Option[string], len(open))
 	for i, c := range open {
-		label := fmt.Sprintf("%s  (%s, online)", c.peer.Name(), c.peer.GOOS())
-		if !c.peer.Online {
-			label = fmt.Sprintf("%s  (%s, offline %s: added as pending)", c.peer.Name(), c.peer.GOOS(), ago(c.peer.LastSeen))
+		name := label(c, cands)
+		if c.shared {
+			name += "  [NOT YOURS: shared from another tailscale account]"
 		}
-		opts[i] = huh.NewOption(label, c.peer.Name())
+		text := fmt.Sprintf("%s  (%s, online)", name, c.peer.GOOS())
+		if !c.peer.Online {
+			text = fmt.Sprintf("%s  (%s, offline %s: added as pending)", name, c.peer.GOOS(), ago(c.peer.LastSeen))
+		}
+		opts[i] = huh.NewOption(text, c.peer.DNSName) // nothing starts selected
 	}
 	var sel []string
 	err := huh.NewMultiSelect[string]().
@@ -310,8 +343,12 @@ func (a *app) pickPeers(cands []candidate, chosen []string, interactive bool) ([
 		return nil, err
 	}
 	var picks []tailnet.Peer
-	for _, n := range sel {
-		picks = append(picks, byName[n].peer)
+	for _, d := range sel {
+		c := byDNS[d]
+		if c.shared && !a.confirm(fmt.Sprintf("%s belongs to another tailscale account. Trust it with ssh and secrets anyway?", d)) {
+			continue
+		}
+		picks = append(picks, c.peer)
 	}
 	return picks, nil
 }

@@ -89,7 +89,7 @@ for a in "$@"; do case "$a" in UserKnownHostsFile=*) cat "${a#UserKnownHostsFile
 	for _, want := range []string{
 		"BatchMode=yes", "ConnectTimeout=5", "Port=22", "User=me", "StrictHostKeyChecking=yes",
 		"HostKeyAlias=yonder-gpu-box", "yonder-gpu-box ssh-ed25519 AAAAexample",
-		"/home/me/.local/bin/yonder _exec",
+		"/home/me/.local/bin/yonder _exec", "ControlMaster=no", "ControlPath=none",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
@@ -218,5 +218,41 @@ func TestIdentityOnScpAndCopyID(t *testing.T) {
 	}
 	if got := args("ssh-copy-id"); strings.Contains(got, "-i\n") {
 		t.Errorf("no key set, but:\n%s", got)
+	}
+}
+
+// a ControlMaster socket from ~/.ssh/config would reuse a connection and skip the pin
+func TestNoConnectionSharing(t *testing.T) {
+	dir := t.TempDir()
+	for _, bin := range []string{"scp", "ssh-copy-id"} {
+		body := "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > " + filepath.Join(dir, bin+".args") + "\n"
+		if err := os.WriteFile(filepath.Join(dir, bin), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	read := func(bin string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, bin+".args"))
+		return string(b)
+	}
+	s := fakeSSH(t, `for a in "$@"; do echo "$a"; done`)
+	var shell, pin bytes.Buffer
+	if _, err := s.Shell(context.Background(), tgt, "true", IO{Stdout: &shell}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Pin(context.Background(), tgt, "true", IO{Stdout: &pin}); err != nil {
+		t.Fatal(err)
+	}
+	plain := &SSH{}
+	if err := plain.Copy(context.Background(), tgt, "/tmp/f", "f"); err != nil {
+		t.Fatal(err)
+	}
+	if err := plain.CopyID(context.Background(), tgt, IO{}); err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]string{"ssh": shell.String(), "pin": pin.String(), "scp": read("scp"), "ssh-copy-id": read("ssh-copy-id")} {
+		if !strings.Contains(got, "ControlMaster=no\n") || !strings.Contains(got, "ControlPath=none\n") {
+			t.Errorf("%s args lack the no-sharing options:\n%s", name, got)
+		}
 	}
 }

@@ -131,27 +131,44 @@ func (a *app) reach(m registry.Machine, self string) (transport.Runner, error) {
 	if err != nil {
 		return nil, withCode(ExitTempErr, "cannot check %s: %v", m.Name, err)
 	}
-	p, ok := st.Lookup(m.Name)
-	if !ok {
-		return nil, withCode(ExitTempErr, "%s is not in tailscale status (renamed or removed from the tailnet?)%s", m.Name, notesSuffix(m))
-	}
-	if !p.Online {
-		return nil, offlineError(m, p)
+	p, r := st.Reach(m.Name, m.DNSName, m.TailscaleIP)
+	if r == tailnet.NotInTailnet || r == tailnet.Offline {
+		return nil, reachError(m, p, r)
 	}
 	if m.Pending {
 		return nil, withCode(ExitTempErr, "%s is not set up yet (it was offline when added); run `yonder refresh %s`", m.Name, m.Name)
 	}
-	if err := addressChanged(m, p); err != nil {
-		return nil, err
+	if r != tailnet.Reachable {
+		return nil, reachError(m, p, r)
 	}
 	return a.ssh, nil
 }
 
+// pinned is the check every ssh call to a recorded peer goes through: in the
+// tailnet, online, and at the address its record pinned.
+func (a *app) pinned(m registry.Machine) (tailnet.Peer, error) {
+	st, err := a.status()
+	if err != nil {
+		return tailnet.Peer{}, withCode(ExitTempErr, "cannot check %s: %v", m.Name, err)
+	}
+	p, r := st.Reach(m.Name, m.DNSName, m.TailscaleIP)
+	return p, reachError(m, p, r)
+}
+
+func reachError(m registry.Machine, p tailnet.Peer, r tailnet.Reachability) error {
+	switch r {
+	case tailnet.NotInTailnet:
+		return withCode(ExitTempErr, "%s is not in tailscale status (renamed or removed from the tailnet?)%s", m.Name, notesSuffix(m))
+	case tailnet.Offline:
+		return offlineError(m, p)
+	case tailnet.AddressChanged:
+		return addressChanged(m, p)
+	}
+	return nil
+}
+
 // addressChanged refuses a peer whose tailnet address isn't the one on record.
 func addressChanged(m registry.Machine, p tailnet.Peer) error {
-	if m.TailscaleIP == p.IP() {
-		return nil
-	}
 	return withCode(ExitError, "%s's address changed (record %s, tailnet %s); run `yonder doctor`", m.Name, m.TailscaleIP, p.IP())
 }
 

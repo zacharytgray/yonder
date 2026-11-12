@@ -27,6 +27,8 @@ type addOpts struct {
 	notes       string
 	identity    string // ssh key for this machine, as typed (~ unexpanded); stored locally
 	interactive bool
+	allowShared bool   // take a peer another tailscale account owns
+	pin         string // a host key held from before: checked strictly, never replaced
 }
 
 func newAddCmd() *cobra.Command {
@@ -36,7 +38,11 @@ func newAddCmd() *cobra.Command {
 		Use:   "add <machine>",
 		Short: "Add a tailnet peer to the fleet",
 		Long: `Add a tailnet peer to the fleet: check ssh, pin its host key, find or install
-yonder there, gather its facts, and sync the registry to every online machine.`,
+yonder there, gather its facts, and sync the registry to every online machine.
+
+<machine> is the peer's short name, or its full dns name when two peers share a
+short name. A peer your tailscale account doesn't own (shared in from another
+account) is refused unless --allow-shared is given.`,
 		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a := newApp(cmd)
@@ -53,28 +59,38 @@ yonder there, gather its facts, and sync the registry to every online machine.`,
 	f.StringVar(&o.role, "role", "", "laptop | desktop | server | gpu | other")
 	f.StringVar(&o.notes, "notes", "", "free text shown when the machine is offline")
 	f.StringVar(&o.identity, "identity", "", "ssh private key to use for this machine (kept on this machine only)")
+	f.BoolVar(&o.allowShared, "allow-shared", false, "allow a peer another tailscale account owns (node sharing)")
 	f.BoolVar(&yes, "yes", false, "never prompt")
 	return cmd
 }
 
-func (a *app) addCommand(name string, o addOpts) error {
+func (a *app) addCommand(arg string, o addOpts) error {
 	self, err := a.selfName()
 	if err != nil {
 		return err
 	}
-	if err := registry.ValidName(name); err != nil {
-		return &usageError{err}
+	if !strings.Contains(arg, ".") {
+		if err := registry.ValidName(arg); err != nil {
+			return &usageError{err}
+		}
 	}
-	if name == self {
-		return fmt.Errorf("%s is this machine; `yonder refresh %s` updates its record", name, name)
+	if arg == self {
+		return fmt.Errorf("%s is this machine; `yonder refresh %s` updates its record", arg, arg)
 	}
 	st, err := a.status()
 	if err != nil {
 		return err
 	}
-	p, ok := st.Lookup(name)
-	if !ok {
-		return fmt.Errorf("%s is not a peer in this tailnet; `tailscale status` lists them", name)
+	p, err := a.resolvePeer(st, arg, o.allowShared, o.interactive)
+	if err != nil {
+		return err
+	}
+	name := p.Name()
+	if err := registry.ValidName(name); err != nil {
+		return &usageError{err}
+	}
+	if name == self {
+		return fmt.Errorf("%s is this machine; `yonder refresh %s` updates its record", name, name)
 	}
 	if p.Mobile() {
 		return fmt.Errorf("%s is a %s device; yonder runs on macOS and Linux only", name, p.OS)
@@ -93,6 +109,43 @@ func (a *app) addCommand(name string, o addOpts) error {
 	fmt.Fprintf(a.out, "added %s (%s/%s, %s@%s)\n", m.Name, m.OS, m.Arch, m.SSHUser, m.TailscaleIP)
 	a.syncFleet(self)
 	return nil
+}
+
+// resolvePeer finds the one tailnet peer arg names (short or full dns name).
+// it refuses an ambiguous name, a name already used in the fleet by a
+// different node, and a peer another account owns unless allowShared, which
+// asks first in a terminal.
+func (a *app) resolvePeer(st *tailnet.Status, arg string, allowShared, interactive bool) (tailnet.Peer, error) {
+	ps := st.Match(arg)
+	switch len(ps) {
+	case 0:
+		return tailnet.Peer{}, fmt.Errorf("%s is not a peer in this tailnet; `tailscale status` lists them", arg)
+	case 1:
+	default:
+		names := make([]string, len(ps))
+		for i, p := range ps {
+			names[i] = p.DNSName
+			if !st.Owned(p) {
+				names[i] += " (not yours)"
+			}
+		}
+		return tailnet.Peer{}, fmt.Errorf("%d tailnet peers are named %s: %s. Pass the full name of the one you mean, like %s",
+			len(ps), arg, strings.Join(names, ", "), ps[0].DNSName)
+	}
+	p := ps[0]
+	if old, err := a.store.Machine(p.Name()); err == nil && old.DNSName != "" && !strings.EqualFold(old.DNSName, p.DNSName) {
+		return p, fmt.Errorf("%s in the fleet is %s, not %s; `yonder remove %s` first if you mean to replace it", old.Name, old.DNSName, p.DNSName, old.Name)
+	}
+	if st.Owned(p) {
+		return p, nil
+	}
+	if !allowShared {
+		return p, fmt.Errorf("%s is not owned by your tailscale account (another user's, or shared into your tailnet). Adding it trusts it with ssh and can hand it a secrets token. If it really is your machine, pass --allow-shared", p.DNSName)
+	}
+	if interactive && !a.confirm(fmt.Sprintf("%s belongs to another tailscale account. Trust it with ssh and secrets anyway?", p.DNSName)) {
+		return p, withCode(ExitError, "cancelled; %s not added", p.DNSName)
+	}
+	return p, nil
 }
 
 // withDefaults fills user, port, role and notes from an existing record, then the local user.
@@ -129,6 +182,10 @@ func (a *app) savePending(p tailnet.Peer, o addOpts) error {
 		Name: p.Name(), OS: p.GOOS(), TailscaleIP: p.IP(), DNSName: p.DNSName,
 		SSHUser: o.user, SSHPort: o.port, Role: o.role, Notes: o.notes,
 		SSHClientKeys: []string{}, Pending: true, UpdatedAt: now, AddedAt: now,
+	}
+	// keep a pin held from before: refresh finishes against it, never accept-new
+	if old, err := a.store.Machine(m.Name); err == nil && old.SSHHostKey != "" {
+		m.TailscaleIP, m.SSHHostKey, m.SSHClientKeys = old.TailscaleIP, old.SSHHostKey, old.SSHClientKeys
 	}
 	if err := a.store.ClearLost(m.Name); err != nil {
 		return err
@@ -207,7 +264,15 @@ func (a *app) addPeer(p tailnet.Peer, o addOpts) (registry.Machine, error) {
 	t := transport.Target{Name: name, Host: p.IP(), Port: o.port, User: o.user, Identity: registry.ExpandHome(o.identity)}
 
 	var out, errb bytes.Buffer
-	key, code, err := a.ssh.Pin(a.ctx, t, probeScript, transport.IO{Stdout: &out, Stderr: &errb})
+	var key string
+	var code int
+	var err error
+	if o.pin != "" {
+		t.HostKey, key = o.pin, o.pin
+		code, err = a.ssh.Shell(a.ctx, t, probeScript, transport.IO{Stdout: &out, Stderr: &errb})
+	} else {
+		key, code, err = a.ssh.Pin(a.ctx, t, probeScript, transport.IO{Stdout: &out, Stderr: &errb})
+	}
 	authFailed := func() bool {
 		ue, ok := transport.IsUnreachable(err)
 		return ok && ue.AuthFailed() && key != ""
@@ -239,6 +304,9 @@ func (a *app) addPeer(p tailnet.Peer, o addOpts) (registry.Machine, error) {
 		code, err = a.ssh.Shell(a.ctx, t, probeScript, transport.IO{Stdout: &out, Stderr: &errb})
 	}
 	if ue, ok := transport.IsUnreachable(err); ok {
+		if o.pin != "" && (strings.Contains(ue.Detail, "Host key verification failed") || strings.Contains(ue.Detail, "IDENTIFICATION")) {
+			return registry.Machine{}, fmt.Errorf("%s presented a different ssh host key from the one pinned for it, so yonder stopped. If you reinstalled it, `yonder add %s` pins the new key; if not, treat it as lost: `yonder remove %s --lost`", name, name, name)
+		}
 		return registry.Machine{}, withCode(ExitTempErr, "%s", ue.Error())
 	}
 	if err != nil {
@@ -249,6 +317,10 @@ func (a *app) addPeer(p tailnet.Peer, o addOpts) (registry.Machine, error) {
 	}
 	if key == "" {
 		return registry.Machine{}, fmt.Errorf("could not read %s's ssh host key", name)
+	}
+	if old, err := a.store.Machine(name); err == nil && old.SSHHostKey != "" && old.SSHHostKey != key {
+		a.warnf("%s's ssh host key changed (was %s, now %s); pinned the new one. If you didn't reinstall %s or its sshd, run `yonder remove %s --lost`",
+			name, shortKey(old.SSHHostKey), shortKey(key), name, name)
 	}
 	// ssh works with this key, so keep it before any call that goes through the store
 	if err := a.saveIdentity(name, o.identity); err != nil {
@@ -371,6 +443,15 @@ install it there, then run `+"`yonder add %s`"+` again:
 	}
 	fmt.Fprintf(a.out, "installed yonder on %s at %s\n", t.Name, path)
 	return path, nil
+}
+
+// shortKey is "type …tail" for messages.
+func shortKey(k string) string {
+	f := strings.Fields(k)
+	if len(f) < 2 {
+		return k
+	}
+	return f[0] + " …" + tail(f[1], 12)
 }
 
 func lastLine(s string) string {

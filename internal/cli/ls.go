@@ -119,7 +119,7 @@ func view(m registry.Machine, self string, st *tailnet.Status, stErr error) mach
 	case stErr != nil || st == nil:
 		v.State = "unknown"
 	default:
-		p, ok := st.Lookup(m.Name)
+		p, ok := st.ForRecord(m.Name, m.DNSName, m.TailscaleIP)
 		if !ok {
 			v.State = "missing"
 			v.Online = boolp(false)

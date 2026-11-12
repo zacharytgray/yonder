@@ -71,6 +71,8 @@ func newLogCmd() *cobra.Command {
 			for _, e := range entries {
 				exit := "-"
 				switch {
+				case e.Status == runlog.StatusStarted:
+					exit = "?"
 				case e.Detached && e.Exit == nil:
 					exit = "bg"
 				case e.Exit != nil:
@@ -84,6 +86,9 @@ func newLogCmd() *cobra.Command {
 				if len(e.Secrets) > 0 {
 					cmdText += fmt.Sprintf("  [secrets: %v]", e.Secrets)
 				}
+				if e.Status == runlog.StatusStarted {
+					cmdText += "  (no completion logged: still running, or cut off)"
+				}
 				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t%s\n", e.Time.Local().Format(time.DateTime), e.From, to, e.Harness, exit, e.MS, cmdText)
 			}
 			return tw.Flush()
@@ -95,12 +100,13 @@ func newLogCmd() *cobra.Command {
 	return cmd
 }
 
-// filterLog dedupes, filters by machine, sorts by time and keeps the newest limit.
+// filterLog pairs start and completion entries, dedupes, filters by machine,
+// sorts by time and keeps the newest limit.
 func filterLog(es []runlog.Entry, machine string, limit int) []runlog.Entry {
 	seen := map[string]bool{}
 	out := []runlog.Entry{}
-	for _, e := range es {
-		key := e.ID + "|" + e.Side + "|" + e.To + "|" + fmt.Sprint(e.Detached)
+	for _, e := range runlog.Merge(es) {
+		key := e.ID + "|" + e.Side + "|" + e.To + "|" + fmt.Sprint(e.Detached) + "|" + e.Status
 		if seen[key] {
 			continue
 		}

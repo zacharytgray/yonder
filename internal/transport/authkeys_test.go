@@ -1,8 +1,10 @@
 package transport
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -103,4 +105,60 @@ func TestStripKeepsEveryBackup(t *testing.T) {
 	if b, _ := os.ReadFile(baks[0]); string(b) != orig {
 		t.Fatalf("the first backup should still hold the original: %q", b)
 	}
+}
+
+// a symlinked authorized_keys (or ~/.ssh) is never rewritten: the error names the real file and lines
+func TestStripRefusesSymlinks(t *testing.T) {
+	orig := otherKey + "\nrestrict " + lostKey + "\n"
+	check := func(t *testing.T, path, real string) {
+		t.Helper()
+		n, backup, err := StripAuthorizedKeys(path, []string{lostKey})
+		var se *SymlinkError
+		if !errors.As(err, &se) || n != 0 || backup != "" {
+			t.Fatalf("want a SymlinkError, got %d %q %v", n, backup, err)
+		}
+		if len(se.Lines) != 1 || se.Lines[0] != "restrict "+lostKey || !strings.Contains(err.Error(), "restrict "+lostKey) {
+			t.Fatalf("lines %q, msg %q", se.Lines, err)
+		}
+		if want, _ := filepath.EvalSymlinks(real); se.Real != want {
+			t.Fatalf("real path %q, want %q", se.Real, want)
+		}
+		if got, _ := os.ReadFile(real); string(got) != orig {
+			t.Fatalf("target rewritten:\n%s", got)
+		}
+		if baks, _ := filepath.Glob(filepath.Join(filepath.Dir(real), "*yonder-bak*")); len(baks) != 0 {
+			t.Fatalf("backup written next to the target: %v", baks)
+		}
+		// nothing matching: no error
+		if n, _, err := StripAuthorizedKeys(path, []string{"ssh-ed25519 AAAAnotthere"}); n != 0 || err != nil {
+			t.Fatalf("no match: %d %v", n, err)
+		}
+	}
+	t.Run("file", func(t *testing.T) {
+		dir := t.TempDir()
+		real := filepath.Join(dir, "unrelated-file")
+		if err := os.WriteFile(real, []byte(orig), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		link := filepath.Join(dir, "authorized_keys")
+		if err := os.Symlink(real, link); err != nil {
+			t.Fatal(err)
+		}
+		check(t, link, real)
+	})
+	t.Run("dir", func(t *testing.T) {
+		dir := t.TempDir()
+		realDir := filepath.Join(dir, "dotfiles-ssh")
+		if err := os.Mkdir(realDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		real := filepath.Join(realDir, "authorized_keys")
+		if err := os.WriteFile(real, []byte(orig), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(realDir, filepath.Join(dir, ".ssh")); err != nil {
+			t.Fatal(err)
+		}
+		check(t, filepath.Join(dir, ".ssh", "authorized_keys"), real)
+	})
 }
