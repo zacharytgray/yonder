@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // past this many lines on a side, Diff only says the files differ
@@ -78,10 +80,46 @@ func Diff(a, b []byte, nameA, nameB string) string {
 			gap = false
 		}
 		out.WriteByte(o.kind)
-		out.WriteString(o.text)
+		out.WriteString(Printable(o.text))
 		out.WriteByte('\n')
 	}
 	return out.String()
+}
+
+// Printable escapes control, format and bidi characters and invalid bytes, so
+// a diff shows what a file holds instead of letting it drive the terminal.
+func Printable(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		r, n := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && n == 1:
+			fmt.Fprintf(&b, "\\x%02x", s[i])
+		case r == '\t':
+			b.WriteRune(r)
+		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r):
+			if r < 0x100 {
+				fmt.Fprintf(&b, "\\x%02x", r)
+			} else {
+				fmt.Fprintf(&b, "\\u%04x", r)
+			}
+		default:
+			b.WriteRune(r)
+		}
+		i += n
+	}
+	return b.String()
+}
+
+// ModeChange is a line saying the exec bit changes, or "".
+func ModeChange(from, to bool) string {
+	switch {
+	case from == to:
+		return ""
+	case to:
+		return "mode: not executable -> executable\n"
+	}
+	return "mode: executable -> not executable\n"
 }
 
 func lines(b []byte) []string {

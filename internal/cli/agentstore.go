@@ -360,8 +360,13 @@ review, it shows what accepting would change.`,
 			}
 			rel := storeRel(s, args[0])
 			if live, in, err := s.PendingData(rel); err == nil {
+				items, _ := s.PendingList()
 				fmt.Fprintf(a.out, "%s waits for review here (yonder agents accept %s)\n", rel, rel)
-				fmt.Fprint(a.out, orNoDiff(agents.Diff(live, in, "live", "incoming")))
+				for _, it := range items {
+					if it.Path == rel {
+						fmt.Fprint(a.out, pendingDiff(it, live, in))
+					}
+				}
 				return nil
 			}
 			vs, err := s.History(rel)
@@ -388,6 +393,16 @@ review, it shows what accepting would change.`,
 	}
 	cmd.Flags().IntVar(&n, "version", 1, "compare with this kept version (1 is the most recent)")
 	return cmd
+}
+
+// pendingDiff shows a waiting change: the exec bit, then the text.
+func pendingDiff(it store.PendingItem, live, in []byte) string {
+	mode := agents.ModeChange(it.Pending.LiveExists && it.Pending.LiveExec, it.State.Exec)
+	d := agents.Diff(live, in, "live", "incoming")
+	if mode == "" {
+		return orNoDiff(d)
+	}
+	return mode + d
 }
 
 func orNoDiff(d string) string {
@@ -443,8 +458,8 @@ default: hooks, executable files, hook configs), "all", or "none".`,
 						fmt.Fprintf(a.out, "%s: %v\n", it.Path, err)
 						continue
 					}
-					fmt.Fprintf(a.out, "\n%s (%s)\n", it.Path, originText(it.State.Origin))
-					fmt.Fprint(a.out, orNoDiff(agents.Diff(live, in, "live", "incoming")))
+					fmt.Fprintf(a.out, "\n%s (%s)\n", agents.Printable(it.Path), originText(it.State.Origin))
+					fmt.Fprint(a.out, pendingDiff(it, live, in))
 					if !acceptAsk("Make " + it.Path + " live on this machine?") {
 						fmt.Fprintf(a.out, "left %s waiting\n", it.Path)
 						continue

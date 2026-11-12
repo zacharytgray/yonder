@@ -50,7 +50,7 @@ func TestRuns(t *testing.T) {
 		"files/codex/hooks.json":          true,
 		"skills/a/SKILL.md":               false,
 		"instructions.md":                 false,
-		"files/codex/models.catalog.json": false,
+		"files/codex/models.catalog.json": true, // everything linked into a harness folder
 	} {
 		if Runs(rel, false) != want {
 			t.Errorf("Runs(%s) != %v", rel, want)
@@ -360,11 +360,13 @@ func TestPlanImport(t *testing.T) {
 
 func TestBlockRoundTrip(t *testing.T) {
 	for _, text := range []string{"", "mine\n", "mine", "top\n\nmore\n"} {
-		with := withBlock(text, "@x\n")
-		if again := withBlock(with, "@y\n"); strings.Count(again, blockBegin) != 1 || !strings.Contains(again, "@y") {
+		with, err := withBlock(text, "@x\n")
+		must(t, err)
+		if again, _ := withBlock(with, "@y\n"); strings.Count(again, blockBegin) != 1 || !strings.Contains(again, "@y") {
 			t.Errorf("replace block in %q: %q", text, again)
 		}
-		back := withoutBlock(with)
+		back, err := withoutBlock(with)
+		must(t, err)
 		want := text
 		if want != "" && !strings.HasSuffix(want, "\n") {
 			want += "\n"

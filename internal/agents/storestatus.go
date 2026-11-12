@@ -2,6 +2,7 @@ package agents
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ type StoreStatus struct {
 	HomePaths []string             `json:"home_paths"` // instruction files that name an absolute home path
 	Problems  []string             `json:"link_problems"`
 	Large     []string             `json:"large_instructions"` // rendered instructions over 25 KB
+	HeldBack  []string             `json:"held_back"`          // kept from others after a long absence
+	Missing   bool                 `json:"missing"`            // the store folder is gone, with files on record
 }
 
 // StoreReport reads the store's state without changing anything.
@@ -34,7 +37,7 @@ func StoreReport(self string) (StoreStatus, error) {
 	r := StoreStatus{
 		LayerOn: registry.Open().LayerOn(registry.LayerAgents), Review: ReviewMode(),
 		Linked: []string{}, Pending: []string{}, Conflicts: []string{}, Refused: []store.Refusal{},
-		LastSync: map[string]time.Time{}, Notices: []store.Notice{}, HomePaths: []string{}, Problems: []string{}, Large: []string{},
+		LastSync: map[string]time.Time{}, Notices: []store.Notice{}, HomePaths: []string{}, Problems: []string{}, Large: []string{}, HeldBack: []string{},
 	}
 	s, err := store.Open(StoreName, self)
 	if err != nil {
@@ -61,6 +64,13 @@ func StoreReport(self string) (StoreStatus, error) {
 	}
 	for p := range st.Pending {
 		r.Pending = append(r.Pending, p)
+	}
+	for p := range st.Suspect {
+		r.HeldBack = append(r.HeldBack, p)
+	}
+	sort.Strings(r.HeldBack)
+	if _, err := os.Stat(s.Dir); err != nil && r.Files > 0 {
+		r.Missing = true
 	}
 	cs, _ := s.Conflicts()
 	for base := range cs {
@@ -93,10 +103,7 @@ func StoreReport(self string) (StoreStatus, error) {
 }
 
 func isInstructions(rel string) bool {
-	parts := strings.Split(rel, "/")
-	if len(parts) == 3 && parts[0] == "machines" {
-		parts = parts[2:]
-	}
+	parts := layout(rel)
 	return len(parts) == 1 && strings.HasPrefix(parts[0], "instructions") && strings.HasSuffix(parts[0], ".md")
 }
 

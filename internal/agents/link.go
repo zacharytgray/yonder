@@ -1,6 +1,9 @@
 package agents
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zacharytgray/yonder/internal/registry"
@@ -52,6 +56,8 @@ type Entry struct {
 	Backup  string `json:"backup,omitempty"`   // what was at Path, moved here
 	OldLink string `json:"old_link,omitempty"` // Path was a symlink to this
 	Created bool   `json:"created,omitempty"`  // Path didn't exist before
+	Wrote   string `json:"wrote,omitempty"`    // sha256 of the file as yonder last wrote it
+	Carry   bool   `json:"carry,omitempty"`    // a link to what a replaced symlinked folder held
 }
 
 // LinkState is <state>/agents/links.json.
@@ -151,6 +157,12 @@ func (l *Linker) items(sub string, dirs bool) []item {
 			if !dirs && !e.Type().IsRegular() {
 				continue
 			}
+			// a name that never syncs is never linked either: a settings file
+			// under files/, a secret, yonder's own skill
+			rel, _ := filepath.Rel(l.StoreDir, filepath.Join(base, sub, n))
+			if r := Check(filepath.ToSlash(rel), nil); r != nil && r.Final {
+				continue
+			}
 			byName[n] = filepath.Join(base, sub, n)
 		}
 	}
@@ -184,6 +196,11 @@ func (l *Linker) renderText(key string) string {
 	for _, f := range l.instructionFiles(key) {
 		data, err := os.ReadFile(f)
 		if err != nil {
+			continue
+		}
+		// text that can't sync isn't rendered either (a key, a block marker)
+		rel, _ := filepath.Rel(l.StoreDir, f)
+		if r := Check(filepath.ToSlash(rel), data); r != nil && r.Final {
 			continue
 		}
 		if t := strings.TrimSpace(string(data)); t != "" {
@@ -263,6 +280,10 @@ func (l *Linker) wants(harnesses []string) ([]want, []string) {
 // hook and passthrough file. settings files are never touched. anything in the
 // way is backed up first, and unlink puts it back. it is safe to run again.
 func (l *Linker) Link(harnesses []string) error {
+	return l.locked(func() error { return l.link(harnesses) })
+}
+
+func (l *Linker) link(harnesses []string) error {
 	st, err := l.State()
 	if err != nil {
 		return err
@@ -283,7 +304,8 @@ func (l *Linker) Link(harnesses []string) error {
 			keep = append(keep, e)
 			continue
 		}
-		if e.Kind == kindDir && l.stillNeedsDir(e.Path, wants) {
+		// folders that replaced a symlink, and the links carried into them, stay until unlink
+		if e.Kind == kindDir || e.Carry {
 			keep = append(keep, e)
 			continue
 		}
@@ -319,15 +341,6 @@ func sortForRemoval(es []Entry) []Entry {
 	out := append([]Entry(nil), es...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Kind != kindDir && out[j].Kind == kindDir })
 	return out
-}
-
-func (l *Linker) stillNeedsDir(dir string, wants []want) bool {
-	for _, w := range wants {
-		if filepath.Dir(w.path) == dir {
-			return true
-		}
-	}
-	return false
 }
 
 func findEntry(es []Entry, path string) int {
@@ -408,12 +421,51 @@ func (l *Linker) parentOK(p string, st *LinkState) error {
 		}
 		st.Entries = append(st.Entries, Entry{Path: cur, Kind: kindDir, OldLink: target})
 		l.printf("replaced the symlink %s (to %s) with a real folder", l.tilde(cur), target)
-		l.reinstallSkill(cur)
+		l.carry(cur, target, st)
 	}
 	if l.DryRun {
 		return nil
 	}
 	return os.MkdirAll(dir, 0o755)
+}
+
+// carry links each entry of a replaced symlinked folder's target into the
+// new real folder, so the harness keeps loading the user's own skills and
+// files. a name the store also has is left to the store, with a warning.
+func (l *Linker) carry(dir, target string, st *LinkState) {
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(dir), target)
+	}
+	wants, _ := l.wants(st.Harnesses)
+	es, err := os.ReadDir(target)
+	if err != nil {
+		l.printf("warning: could not read %s (%v); the harness no longer sees what it held", target, err)
+		return
+	}
+	yonderCarried := false
+	for _, e := range es {
+		p := filepath.Join(dir, e.Name())
+		shadowed := false
+		for _, w := range wants {
+			if w.path == p {
+				shadowed = true
+			}
+		}
+		if shadowed {
+			l.printf("warning: the store's %s takes the place of %s", e.Name(), filepath.Join(target, e.Name()))
+			continue
+		}
+		if err := os.Symlink(filepath.Join(target, e.Name()), p); err != nil {
+			l.printf("warning: could not carry %s: %v", e.Name(), err)
+			continue
+		}
+		yonderCarried = yonderCarried || e.Name() == folder
+		st.Entries = append(st.Entries, Entry{Path: p, Kind: kindLink, Target: filepath.Join(target, e.Name()), Carry: true})
+	}
+	l.printf("carried %d entries of %s into it, as links", len(es), target)
+	if !yonderCarried {
+		l.reinstallSkill(dir)
+	}
 }
 
 // reinstallSkill puts yonder's own skill back when its skills folder was a
@@ -453,16 +505,20 @@ func (l *Linker) make(w want, st *LinkState) ([]Entry, error) {
 			return es, nil
 		}
 		if _, err := os.Lstat(w.path); err == nil {
-			if i >= 0 {
+			if t, link := isLink(w.path); link && i >= 0 && t == es[i].Target {
 				if err := os.Remove(w.path); err != nil { // our own older link
 					return es, err
 				}
 			} else {
+				// anything else, even at a path link made: an editor's save by
+				// rename leaves a real file where the link was
 				b, err := l.backup(w.path)
 				if err != nil {
 					return es, err
 				}
-				e.Backup = b
+				if e.Backup == "" {
+					e.Backup = b
+				}
 				l.printf("backed up %s to %s", l.tilde(w.path), b)
 			}
 		}
@@ -482,8 +538,11 @@ func (l *Linker) make(w want, st *LinkState) ([]Entry, error) {
 	return es, fmt.Errorf("unknown kind %s", w.kind)
 }
 
-// writeText writes an instructions file: the whole file when yonder owns it
-// (render), else a marked block inside the user's own text.
+// writeText writes an instructions file. yonder owns the whole file only
+// when it is missing or starts with yonder's marker; anything else is the
+// user's, and gets a marked block. the decision is made from the file each
+// time, never from what link wrote before. a file yonder didn't write last is
+// backed up before every change.
 func (l *Linker) writeText(w want, es []Entry, i int) ([]Entry, error) {
 	var e Entry
 	if i >= 0 {
@@ -491,40 +550,56 @@ func (l *Linker) writeText(w want, es []Entry, i int) ([]Entry, error) {
 	} else {
 		e = Entry{Path: w.path, Kind: w.kind}
 	}
+	var old []byte
+	exists, replacedLink := false, false
 	if t, ok := isLink(w.path); ok {
 		if !l.Replace {
 			return es, fmt.Errorf("it is a symlink to %s, and yonder doesn't write through it; rerun with --replace-links to replace the link with a real file (unlink puts it back)", t)
 		}
+		// the user's own text comes along, so the harness still reads it
+		text, err := os.ReadFile(w.path)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return es, err
+		}
 		if l.DryRun {
-			l.printf("would replace the symlink %s (to %s) with a file yonder writes", l.tilde(w.path), t)
+			l.printf("would replace the symlink %s (to %s) with a file holding its text and the yonder block", l.tilde(w.path), t)
 			return es, nil
 		}
 		if err := os.Remove(w.path); err != nil {
 			return es, err
 		}
-		e.OldLink, e.Created = t, true
-		l.printf("replaced the symlink %s (to %s)", l.tilde(w.path), t)
-	}
-	old, err := os.ReadFile(w.path)
-	exists := err == nil
-	if !exists && !errors.Is(err, os.ErrNotExist) {
-		return es, err
+		e.OldLink, e.Created, e.Wrote = t, true, ""
+		old, exists, replacedLink = text, true, true
+		l.printf("replaced the symlink %s (to %s) with a file holding its text", l.tilde(w.path), t)
+	} else {
+		data, err := os.ReadFile(w.path)
+		exists = err == nil
+		if !exists && !errors.Is(err, os.ErrNotExist) {
+			return es, err
+		}
+		old = data
 	}
 	if !exists && i < 0 {
 		e.Created = true
 	}
 	var next string
-	switch {
-	case w.kind == kindRender && (!exists || strings.HasPrefix(string(old), renderMark) || (i >= 0 && es[i].Kind == kindRender)):
+	if w.kind == kindRender && (!exists || strings.HasPrefix(string(old), renderMark)) {
 		e.Kind = kindRender
 		next = renderMark + "\n\n" + w.content
-	default:
+	} else {
 		e.Kind = kindBlock
-		next = withBlock(string(old), w.content)
+		n, err := withBlock(string(old), w.content)
+		if err != nil {
+			return es, err
+		}
+		next = n
 	}
-	if exists && string(old) == next {
+	if exists && !replacedLink && string(old) == next {
+		e.Wrote = hashText(next)
 		if i < 0 {
 			es = append(es, e)
+		} else {
+			es[i] = e
 		}
 		return es, nil
 	}
@@ -532,16 +607,20 @@ func (l *Linker) writeText(w want, es []Entry, i int) ([]Entry, error) {
 		l.printf("would write %s", l.tilde(w.path))
 		return es, nil
 	}
-	if exists && e.Backup == "" && !strings.HasPrefix(string(old), renderMark) {
+	if exists && !replacedLink && hashText(string(old)) != e.Wrote {
 		b, err := l.copyBackup(w.path)
 		if err != nil {
 			return es, err
 		}
-		e.Backup = b
+		if e.Backup == "" {
+			e.Backup = b
+		}
+		l.printf("backed up %s to %s", l.tilde(w.path), b)
 	}
 	if err := writeFileAtomic(w.path, []byte(next)); err != nil {
 		return es, err
 	}
+	e.Wrote = hashText(next)
 	if e.Kind == kindBlock {
 		l.printf("wrote the yonder block in %s", l.tilde(w.path))
 	} else {
@@ -555,43 +634,65 @@ func (l *Linker) writeText(w want, es []Entry, i int) ([]Entry, error) {
 	return es, nil
 }
 
+func hashText(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+const beginPrefix = "<!-- yonder:begin"
+
+// errOpenBlock: a begin marker with no end marker after it. yonder can't
+// tell where its block stops, so it changes nothing.
+var errOpenBlock = errors.New("it has a yonder begin marker with no end marker after it, so yonder can't tell where its block stops; delete the begin line, or add `" + blockEnd + "` where the block ends, then run `yonder agents link`")
+
+// splitBlock finds the block: the first begin marker to the last end marker.
+func splitBlock(text string) (before, after string, found bool, err error) {
+	b := strings.Index(text, beginPrefix)
+	if b < 0 {
+		return text, "", false, nil
+	}
+	rest := text[b:]
+	e := strings.LastIndex(rest, blockEnd)
+	if e < 0 {
+		return "", "", false, errOpenBlock
+	}
+	return text[:b], strings.TrimPrefix(rest[e+len(blockEnd):], "\n"), true, nil
+}
+
 // withBlock puts content between the markers, replacing an existing block
 // or appending one.
-func withBlock(text, content string) string {
+func withBlock(text, content string) (string, error) {
 	block := blockBegin + "\n" + content + blockEnd + "\n"
-	if before, rest, ok := strings.Cut(text, "<!-- yonder:begin"); ok {
-		if _, after, ok := strings.Cut(rest, blockEnd); ok {
-			return before + block + strings.TrimPrefix(after, "\n")
-		}
+	before, after, found, err := splitBlock(text)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		return before + block + after, nil
 	}
 	if text == "" {
-		return block
+		return block, nil
 	}
 	if !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
-	return text + "\n" + block
+	return text + "\n" + block, nil
 }
 
 // withoutBlock removes the marked block and the blank line before it.
-func withoutBlock(text string) string {
-	before, rest, ok := strings.Cut(text, "<!-- yonder:begin")
-	if !ok {
-		return text
-	}
-	_, after, ok := strings.Cut(rest, blockEnd)
-	if !ok {
-		return text
+func withoutBlock(text string) (string, error) {
+	before, after, found, err := splitBlock(text)
+	if err != nil || !found {
+		return text, err
 	}
 	before = strings.TrimRight(before, "\n")
-	after = strings.TrimPrefix(after, "\n")
 	switch {
 	case before == "":
-		return after
+		return after, nil
 	case after == "":
-		return before + "\n"
+		return before + "\n", nil
 	}
-	return before + "\n\n" + after
+	return before + "\n\n" + after, nil
 }
 
 func writeFileAtomic(p string, data []byte) error {
@@ -606,7 +707,9 @@ func writeFileAtomic(p string, data []byte) error {
 	return os.Rename(tmp, p)
 }
 
-// remove undoes one entry and puts back what it replaced.
+// remove undoes one entry and puts back what it replaced. it removes only
+// what yonder can tell is its own: a symlink to the recorded target, a file
+// that starts with its marker, the text between its markers.
 func (l *Linker) remove(e Entry) error {
 	if l.DryRun {
 		l.printf("would undo %s", l.tilde(e.Path))
@@ -618,7 +721,17 @@ func (l *Linker) remove(e Entry) error {
 			if err := os.Remove(e.Path); err != nil {
 				return err
 			}
-			l.printf("unlinked %s", l.tilde(e.Path))
+			if !e.Carry {
+				l.printf("unlinked %s", l.tilde(e.Path))
+			}
+		}
+		if e.Backup != "" {
+			if _, err := os.Lstat(e.Path); errors.Is(err, os.ErrNotExist) {
+				if err := os.Rename(e.Backup, e.Path); err != nil {
+					return err
+				}
+				l.printf("put back %s", l.tilde(e.Path))
+			}
 		}
 	case kindBlock, kindRender:
 		data, err := os.ReadFile(e.Path)
@@ -626,14 +739,24 @@ func (l *Linker) remove(e Entry) error {
 		case errors.Is(err, os.ErrNotExist):
 		case err != nil:
 			return err
-		case e.Kind == kindRender || strings.HasPrefix(string(data), renderMark):
+		case strings.HasPrefix(string(data), renderMark):
+			if hashText(string(data)) != e.Wrote {
+				b, err := l.copyBackup(e.Path)
+				if err != nil {
+					return err
+				}
+				l.printf("backed up %s to %s (it was changed after yonder wrote it)", l.tilde(e.Path), b)
+			}
 			if err := os.Remove(e.Path); err != nil {
 				return err
 			}
 			l.printf("removed %s", l.tilde(e.Path))
-		default:
-			next := withoutBlock(string(data))
-			if strings.TrimSpace(next) == "" && e.Created {
+		case strings.Contains(string(data), beginPrefix):
+			next, err := withoutBlock(string(data))
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(next) == "" && e.Created && e.OldLink == "" {
 				if err := os.Remove(e.Path); err != nil {
 					return err
 				}
@@ -644,22 +767,22 @@ func (l *Linker) remove(e Entry) error {
 				}
 				l.printf("took the yonder block out of %s", l.tilde(e.Path))
 			}
+		default:
+			l.printf("left %s alone: it no longer has yonder's marker", l.tilde(e.Path))
 		}
+		if e.OldLink != "" {
+			if err := l.restoreFileLink(e); err != nil {
+				return err
+			}
+		}
+		return nil
 	case kindDir:
-		// the yonder skill link reinstalled here is ours too
+		// the yonder skill reinstalled here is ours too
 		if _, _, ok := readStamp(filepath.Join(e.Path, folder)); ok {
 			os.RemoveAll(filepath.Join(e.Path, folder))
 		}
 		if err := os.Remove(e.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("%s still holds files; move them, then `yonder agents unlink` again: %w", l.tilde(e.Path), err)
-		}
-	}
-	if e.Backup != "" && (e.Kind == kindLink || e.Kind == kindRender) {
-		if _, err := os.Lstat(e.Path); errors.Is(err, os.ErrNotExist) {
-			if err := os.Rename(e.Backup, e.Path); err != nil {
-				return err
-			}
-			l.printf("put back %s", l.tilde(e.Path))
 		}
 	}
 	if e.OldLink != "" {
@@ -673,9 +796,44 @@ func (l *Linker) remove(e Entry) error {
 	return nil
 }
 
+// restoreFileLink puts back a symlinked instructions file that link replaced
+// with a copy of its text. the copy, now without the block, goes; if it no
+// longer matches the link's target (edited since), it is backed up first.
+func (l *Linker) restoreFileLink(e Entry) error {
+	cur, err := os.ReadFile(e.Path)
+	if err == nil {
+		target := e.OldLink
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(e.Path), target)
+		}
+		orig, _ := os.ReadFile(target)
+		if !bytes.Equal(cur, orig) {
+			b, err := l.copyBackup(e.Path)
+			if err != nil {
+				return err
+			}
+			l.printf("backed up %s to %s (it differs from %s)", l.tilde(e.Path), b, e.OldLink)
+		}
+		if err := os.Remove(e.Path); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Symlink(e.OldLink, e.Path); err != nil {
+		return err
+	}
+	l.printf("put back the symlink %s -> %s", l.tilde(e.Path), e.OldLink)
+	return nil
+}
+
 // Unlink undoes everything link made and puts back what it replaced.
 // pause keeps the harness list, so turning the layer back on links again.
 func (l *Linker) Unlink(pause bool) error {
+	return l.locked(func() error { return l.unlink(pause) })
+}
+
+func (l *Linker) unlink(pause bool) error {
 	st, err := l.State()
 	if err != nil {
 		return err
@@ -713,21 +871,55 @@ func (l *Linker) Linked() bool {
 // pauses; on links again where it was paused.
 func ApplyLayer(on bool, self string, out io.Writer) error {
 	l := NewLinker(self, out)
-	st, err := l.State()
+	return l.locked(func() error {
+		st, err := l.State()
+		if err != nil {
+			return err
+		}
+		switch {
+		case !on && len(st.Entries) > 0:
+			return l.unlink(true)
+		case on && st.Paused:
+			st.Paused = false
+			if err := l.save(st); err != nil {
+				return err
+			}
+			return l.link(st.Harnesses)
+		}
+		return nil
+	})
+}
+
+// how long link waits for another yonder's link to finish. a var for tests.
+var linkLockWait = 30 * time.Second
+
+// locked runs fn holding links.lock, so a sync's relink and a layer change
+// arriving through _sync never edit links.json at once.
+func (l *Linker) locked(fn func() error) error {
+	if l.DryRun {
+		return fn()
+	}
+	if err := os.MkdirAll(l.StateDir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(l.StateDir, "links.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
-	switch {
-	case !on && len(st.Entries) > 0:
-		return l.Unlink(true)
-	case on && st.Paused:
-		st.Paused = false
-		if err := l.save(st); err != nil {
-			return err
+	defer f.Close()
+	deadline := time.Now().Add(linkLockWait)
+	for {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			break
 		}
-		return l.Link(st.Harnesses)
+		if !errors.Is(err, syscall.EWOULDBLOCK) || time.Now().After(deadline) {
+			return fmt.Errorf("links are busy: another yonder is linking here: %w", err)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	return nil
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
+	return fn()
 }
 
 // afterChange relinks after a sync changed the store, so new skills get
@@ -745,7 +937,8 @@ func upToDate(data, kind, content string) bool {
 	if kind == kindRender {
 		return data == renderMark+"\n\n"+content
 	}
-	return withBlock(data, content) == data
+	next, err := withBlock(data, content)
+	return err == nil && next == data
 }
 
 // LargeTexts names the rendered instructions past BlockWarn, with their size.
@@ -791,8 +984,14 @@ func (l *Linker) Problems() []string {
 				out = append(out, l.tilde(e.Path)+" links to "+l.tilde(e.Target)+", which is gone")
 			}
 		case kindBlock:
-			if data, err := os.ReadFile(e.Path); err != nil || !strings.Contains(string(data), "<!-- yonder:begin") {
+			data, err := os.ReadFile(e.Path)
+			switch {
+			case err != nil || !strings.Contains(string(data), beginPrefix):
 				out = append(out, l.tilde(e.Path)+" lost its yonder block")
+			default:
+				if _, _, _, err := splitBlock(string(data)); err != nil {
+					out = append(out, l.tilde(e.Path)+": "+err.Error())
+				}
 			}
 		case kindRender:
 			if data, err := os.ReadFile(e.Path); err != nil || !strings.HasPrefix(string(data), renderMark) {

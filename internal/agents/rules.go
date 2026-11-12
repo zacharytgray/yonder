@@ -51,20 +51,44 @@ func ReviewMode() string {
 	return ReviewExecutables
 }
 
-// Runs: hooks, executable files and hook configs run code, so an incoming
-// change to one waits for review under the default setting.
+// layout is rel's parts below any machines/<name>/, folded to lower case:
+// a Mac keeps Hooks/ and hooks/ in one folder, so every rule matches both.
+func layout(rel string) []string {
+	parts := strings.Split(strings.ToLower(rel), "/")
+	if len(parts) >= 3 && parts[0] == "machines" {
+		parts = parts[2:]
+	}
+	return parts
+}
+
+// Runs: hooks, executable files and everything linked into a harness's own
+// folder (hook configs, MCP configs, catalogs) can run code or change what
+// runs, so an incoming change to one waits for review by default.
 func Runs(rel string, exec bool) bool {
 	if exec {
 		return true
 	}
-	parts := strings.Split(rel, "/")
-	if len(parts) >= 3 && parts[0] == "machines" {
-		parts = parts[2:]
+	parts := layout(rel)
+	return len(parts) >= 2 && (parts[0] == "hooks" || parts[0] == "files")
+}
+
+// a harness's own settings, auth and instruction files: never under files/,
+// since linking one would replace the user's file
+var harnessFiles = []string{
+	"settings*.json", "config.toml", "config.yaml", "config.yml", ".claude.json",
+	"auth.json", ".credentials*", "credentials*",
+	"claude.md", "claude.local.md", "agents.md", "soul.md",
+}
+
+// HarnessFile reports whether a files/<key>/ name is one of those.
+func HarnessFile(name string) bool {
+	name = strings.ToLower(name)
+	for _, pat := range harnessFiles {
+		if ok, _ := path.Match(pat, name); ok {
+			return true
+		}
 	}
-	if len(parts) >= 2 && parts[0] == "hooks" {
-		return true
-	}
-	return len(parts) == 3 && parts[0] == "files" && strings.HasPrefix(parts[2], "hooks")
+	return false
 }
 
 func review(rel string, exec bool) bool {
@@ -78,7 +102,11 @@ func review(rel string, exec bool) bool {
 }
 
 // names that never sync, matched on the file name
-var secretNames = []string{".env*", "*.pem", "*.key", "id_*", "auth.json", "credentials*", "*.age", "*token*", "*secret*"}
+var secretNames = []string{".env*", "*.pem", "*.key", "*.p12", "*.pfx", "id_*", "auth.json", "credentials*", ".credentials*",
+	".git-credentials", ".netrc", "_netrc", "*.age", "*token*", "*secret*"}
+
+// the strings that open yonder's own blocks and rendered files
+const markerPrefix = "<!-- yonder:"
 
 // skill folders that belong to one machine or another tool
 var reservedSkills = map[string]string{
@@ -92,17 +120,22 @@ func Check(rel string, data []byte) *store.Refusal {
 	for _, pat := range secretNames {
 		if ok, _ := path.Match(pat, base); ok {
 			return &store.Refusal{Reason: fmt.Sprintf("the name %s looks like a secret (%s)", path.Base(rel), pat),
-				Fix: "secrets never sync; keep it out of the store (references like op://... are fine inside a file)"}
+				Fix: "secrets never sync; keep it out of the store (references like op://... are fine inside a file)", Final: true}
 		}
 	}
-	parts := strings.Split(rel, "/")
-	if len(parts) >= 3 && parts[0] == "machines" {
-		parts = parts[2:]
-	}
+	parts := layout(rel)
 	if len(parts) >= 2 && parts[0] == "skills" {
 		if why, ok := reservedSkills[parts[1]]; ok {
-			return &store.Refusal{Reason: "the name skills/" + parts[1] + " is reserved: " + why, Fix: "remove it from the store"}
+			return &store.Refusal{Reason: "the name skills/" + parts[1] + " is reserved: " + why, Fix: "remove it from the store", Final: true}
 		}
+	}
+	if len(parts) >= 3 && parts[0] == "files" && HarnessFile(parts[len(parts)-1]) {
+		return &store.Refusal{Reason: "the name " + rel + " is a harness's own settings, auth or instructions file, which yonder never syncs",
+			Fix: "keep it out of the store; put instructions in instructions.md", Final: true}
+	}
+	if isInstructions(rel) && bytes.Contains(data, []byte(markerPrefix)) {
+		return &store.Refusal{Reason: "it holds yonder's own marker (" + markerPrefix + "...), which would break the block it is rendered into",
+			Fix: "take that text out", Final: true}
 	}
 	if line, what := secretContent(data); line > 0 {
 		return &store.Refusal{Reason: fmt.Sprintf("looks like %s (line %d)", what, line),

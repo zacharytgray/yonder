@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zacharytgray/yonder/internal/agents"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/remote"
 	"github.com/zacharytgray/yonder/internal/store"
@@ -303,7 +304,7 @@ func (a *app) printReport(name string, r store.Report, quiet bool) bool {
 		case "pending":
 			what = "waits for review:"
 		}
-		line("%s %s (%s)", what, g.Path, originText(g.State.Origin))
+		line("%s %s (%s)", what, agents.Printable(g.Path), originText(g.State.Origin))
 	}
 	if !quiet {
 		for _, p := range r.Sent {
@@ -333,10 +334,11 @@ func (a *app) printReport(name string, r store.Report, quiet bool) bool {
 	return ok
 }
 
+// originText says where a version came from. a peer writes these fields.
 func originText(o store.Origin) string {
-	s := "from " + orDash(o.Machine)
+	s := "from " + orDash(agents.Printable(o.Machine))
 	if o.Harness != "" {
-		s += " via " + o.Harness
+		s += " via " + agents.Printable(o.Harness)
 	}
 	if !o.Time.IsZero() {
 		s += ", " + ago(o.Time)

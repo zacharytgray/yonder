@@ -245,9 +245,31 @@ func (p *ImportPlan) addFile(src, rel string) error {
 		p.Skipped = append(p.Skipped, src+": "+err.Error())
 		return nil
 	}
+	if parts := layout(rel); len(parts) >= 3 && parts[0] == "files" && HarnessFile(parts[len(parts)-1]) {
+		p.Skipped = append(p.Skipped, src+": a harness's own settings, auth or instructions file; those never go in the store")
+		return nil
+	}
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
+	}
+	if isInstructions(rel) {
+		text := string(data)
+		if strings.HasPrefix(text, renderMark) {
+			p.Skipped = append(p.Skipped, src+": yonder rendered it from the store; nothing to import")
+			return nil
+		}
+		// an instructions file already linked here holds yonder's block: take the user's text only
+		mine, err := withoutBlock(text)
+		if err != nil {
+			p.Skipped = append(p.Skipped, src+": "+err.Error())
+			return nil
+		}
+		if strings.Contains(mine, markerPrefix) {
+			p.Skipped = append(p.Skipped, src+": it holds a yonder marker outside a block; take it out first")
+			return nil
+		}
+		data = []byte(mine)
 	}
 	p.Files = append(p.Files, ImportFile{Src: src, Rel: rel, Data: data, Exec: info.Mode()&0o111 != 0})
 	return nil
