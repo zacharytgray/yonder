@@ -491,11 +491,9 @@ func (a *app) relinkHere() {
 	if err != nil {
 		return
 	}
-	l := agents.NewLinker(self, a.out)
-	if l.Linked() {
-		if err := l.Link(nil); err != nil {
-			a.warnf("%v", err)
-		}
+	// a no-op unless linked and not paused, checked under the lock
+	if err := agents.NewLinker(self, a.out).Link(nil); err != nil {
+		a.warnf("%v", err)
 	}
 }
 

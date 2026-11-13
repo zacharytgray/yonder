@@ -360,3 +360,19 @@ func TestNonASCIIFolderNamesAreRefused(t *testing.T) {
 		t.Fatal("the user's hooks.json must stay")
 	}
 }
+
+func TestRelinkAfterPauseDoesNothing(t *testing.T) {
+	f := newFixture(t)
+	f.put(f.storeDir, "skills/a/SKILL.md", "a\n")
+	l := f.linker()
+	must(t, l.Link([]string{"claude-code"}))
+	sawLinked := l.Linked() // a relink after a sync looked before the layer went off
+	must(t, l.Unlink(true))
+	if sawLinked {
+		must(t, l.Link(nil))
+	}
+	st, _ := l.State()
+	if _, err := os.Lstat(filepath.Join(f.home, ".claude/skills/a")); err == nil || !st.Paused || len(st.Entries) != 0 {
+		t.Fatalf("a relink after a layer-off unlink must do nothing: paused=%v entries=%d", st.Paused, len(st.Entries))
+	}
+}

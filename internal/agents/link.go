@@ -289,6 +289,11 @@ func (l *Linker) link(harnesses []string) error {
 		return err
 	}
 	if harnesses == nil {
+		// a relink: decided under the lock, so a layer-off unlink that got
+		// there first stays unlinked
+		if st.Paused || len(st.Harnesses) == 0 {
+			return nil
+		}
 		harnesses = st.Harnesses
 	}
 	wants, notes := l.wants(harnesses)
@@ -947,9 +952,7 @@ func (l *Linker) locked(fn func() error) error {
 func afterChange(s *store.Store, _ []string) {
 	l := NewLinker(s.Self, nil)
 	l.StoreDir = s.Dir
-	if l.Linked() {
-		_ = l.Link(nil)
-	}
+	_ = l.Link(nil) // a no-op unless linked and not paused, checked under the lock
 }
 
 // upToDate: the file holds exactly the rendered text.
