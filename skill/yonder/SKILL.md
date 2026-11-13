@@ -114,6 +114,40 @@ instructions, skills, subagents and hooks, and syncs between machines:
   take the value out and use a secret name instead.
 - Hooks from other machines wait for review. Only the user can run `yonder agents accept`, in a
   terminal. Tell them when something waits.
+- The first part of yonder's block in your instructions is the briefing about the user's
+  machines. Its machine list comes from the records: change a role or note with
+  `yonder set <machine> --role R --notes TEXT`, never by hand. The rest is `briefing.md` in the
+  store. Keep it short (2 KB). Write paths as `<machine>:<path>`, or `~/...` for every machine.
+  When the user confirms a section is still true, set its `reviewed: YYYY-MM-DD` line to today.
+- `yonder agents briefing review` lists what is stale or repeated and suggests a trimmed draft.
+  Go through it with the user and edit `briefing.md` together. Never delete text on your own.
+- To name a model tier in shared text, write `{{model:<tier>}}`, like `{{model:top}}`. Each
+  harness's name for it is in `render.toml` in the store. A rule that differs in substance
+  between harnesses goes in `instructions.<harness>.md` instead.
+
+## Reconcile machines whose instructions differ
+
+When `yonder enable agents` or `yonder agents gather` says the machines' instructions differ,
+yonder has picked nothing. Do this with the user:
+
+1. Run `yonder agents gather --json`. Each section is `same`, `differs`, `some` or `only`, with
+   every version's text and the files it is in.
+2. Sort each section as shared (meant for every machine), machine-only (about one machine) or
+   conflicting (versions differ). A section that differs between one machine's CLAUDE.md and
+   AGENTS.md may belong in `instructions.claude.md` or `instructions.codex.md`.
+3. Ask the user about each conflict, one at a time. Show the versions and which machines have
+   them. Never pick one yourself.
+4. Show the result as a diff: the new `instructions.md`, each `machines/<m>/instructions.md`,
+   and what each machine's own file keeps. Write nothing until the user approves.
+5. Write the approved text to files in a temp folder, then
+   `yonder agents import <file> --kind instructions` for the shared text and
+   `yonder agents import <file> --kind instructions --machine <m>` for each machine's.
+   Use `--replace` only if the user agreed to replace a store file. Then `yonder sync`.
+6. Trim each machine's own file, one machine at a time. First back it up:
+   `yonder run <m> -- cp ~/.claude/CLAUDE.md ~/.claude/CLAUDE.md.bak-<yyyymmdd>`. Remove only
+   the sections that moved into the store, and keep the rest. Then run
+   `yonder run <m> -- yonder agents link` so the block arrives there.
+7. Run `yonder agents gather` again. What is left in each machine's own text should be its own.
 
 ## Other commands
 
