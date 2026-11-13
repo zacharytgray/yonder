@@ -6,6 +6,7 @@ import (
 	"math"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/zacharytgray/yonder/internal/registry"
@@ -60,6 +61,39 @@ func layout(rel string) []string {
 	}
 	return parts
 }
+
+// foldable returns the first path segment that decides a rule (the top
+// folder, a machine name, a skill or claude/ folder, a files/ harness and
+// file name) and isn't plain ASCII. a Mac folds some non-ASCII names into
+// ASCII ones, so hookſ/ would land in hooks/ without matching its rules.
+func foldable(rel string) string {
+	parts := strings.Split(rel, "/")
+	var check []string
+	if len(parts) >= 2 && strings.EqualFold(parts[0], "machines") {
+		check, parts = append(check, parts[0], parts[1]), parts[2:]
+	}
+	if len(parts) > 0 {
+		check = append(check, parts[0])
+	}
+	if len(parts) >= 2 {
+		switch strings.ToLower(parts[0]) {
+		case "files":
+			check = append(check, parts[1], parts[len(parts)-1])
+		case "skills", "claude":
+			check = append(check, parts[1])
+		}
+	}
+	for _, seg := range check {
+		for i := 0; i < len(seg); i++ {
+			if seg[i] >= 0x80 {
+				return seg
+			}
+		}
+	}
+	return ""
+}
+
+func strconvQuote(s string) string { return strconv.Quote(s) }
 
 // Runs: hooks, executable files and everything linked into a harness's own
 // folder (hook configs, MCP configs, catalogs) can run code or change what
@@ -122,6 +156,10 @@ func Check(rel string, data []byte) *store.Refusal {
 			return &store.Refusal{Reason: fmt.Sprintf("the name %s looks like a secret (%s)", path.Base(rel), pat),
 				Fix: "secrets never sync; keep it out of the store (references like op://... are fine inside a file)", Final: true}
 		}
+	}
+	if seg := foldable(rel); seg != "" {
+		return &store.Refusal{Reason: "the name " + rel + " has a non-ASCII character in " + strconvQuote(seg) + ", which a Mac may fold into another name (ſ into s, ﬁ into fi)",
+			Fix: "use plain ASCII for the store's folder names and files/ names", Final: true}
 	}
 	parts := layout(rel)
 	if len(parts) >= 2 && parts[0] == "skills" {

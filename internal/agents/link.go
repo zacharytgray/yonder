@@ -645,18 +645,38 @@ const beginPrefix = "<!-- yonder:begin"
 // tell where its block stops, so it changes nothing.
 var errOpenBlock = errors.New("it has a yonder begin marker with no end marker after it, so yonder can't tell where its block stops; delete the begin line, or add `" + blockEnd + "` where the block ends, then run `yonder agents link`")
 
-// splitBlock finds the block: the first begin marker to the last end marker.
+// splitBlock finds the block: the first line that is a begin marker to the
+// first line after it that is the end marker. markers count only as whole
+// lines, so text that mentions them (in backticks, say) is the user's.
 func splitBlock(text string) (before, after string, found bool, err error) {
-	b := strings.Index(text, beginPrefix)
-	if b < 0 {
-		return text, "", false, nil
+	begin, end := -1, -1
+	off := 0
+	for _, line := range strings.SplitAfter(text, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case begin < 0 && strings.HasPrefix(t, beginPrefix) && strings.HasSuffix(t, "-->"):
+			begin = off
+		case begin >= 0 && t == blockEnd:
+			end = off + len(line)
+		}
+		if end >= 0 {
+			break
+		}
+		off += len(line)
 	}
-	rest := text[b:]
-	e := strings.LastIndex(rest, blockEnd)
-	if e < 0 {
+	switch {
+	case begin < 0:
+		return text, "", false, nil
+	case end < 0:
 		return "", "", false, errOpenBlock
 	}
-	return text[:b], strings.TrimPrefix(rest[e+len(blockEnd):], "\n"), true, nil
+	return text[:begin], text[end:], true, nil
+}
+
+// hasBlock reports whether text has a begin marker line.
+func hasBlock(text string) bool {
+	_, _, found, err := splitBlock(text)
+	return found || err != nil
 }
 
 // withBlock puts content between the markers, replacing an existing block
@@ -751,7 +771,7 @@ func (l *Linker) remove(e Entry) error {
 				return err
 			}
 			l.printf("removed %s", l.tilde(e.Path))
-		case strings.Contains(string(data), beginPrefix):
+		case hasBlock(string(data)):
 			next, err := withoutBlock(string(data))
 			if err != nil {
 				return err
@@ -986,7 +1006,7 @@ func (l *Linker) Problems() []string {
 		case kindBlock:
 			data, err := os.ReadFile(e.Path)
 			switch {
-			case err != nil || !strings.Contains(string(data), beginPrefix):
+			case err != nil || !hasBlock(string(data)):
 				out = append(out, l.tilde(e.Path)+" lost its yonder block")
 			default:
 				if _, _, _, err := splitBlock(string(data)); err != nil {

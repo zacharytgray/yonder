@@ -206,12 +206,12 @@ func TestBlockMarkers(t *testing.T) {
 		t.Fatalf("nothing leaks past the block: %q", got)
 	}
 
-	// the last end marker closes the block
+	// the first end marker line closes the block; everything after is the user's
 	text := "top\n\n" + blockBegin + "\nold\n" + blockEnd + "\nmine\n" + blockEnd + "\nbelow\n"
 	next, err := withBlock(text, "new\n")
 	must(t, err)
-	if next != "top\n\n"+blockBegin+"\nnew\n"+blockEnd+"\nbelow\n" {
-		t.Fatalf("last end marker: %q", next)
+	if next != "top\n\n"+blockBegin+"\nnew\n"+blockEnd+"\nmine\n"+blockEnd+"\nbelow\n" {
+		t.Fatalf("first end marker: %q", next)
 	}
 
 	// a begin with no end: yonder changes nothing and says why
@@ -305,5 +305,58 @@ func TestDiffShowsModeAndEscapesControlCharacters(t *testing.T) {
 	}
 	if ModeChange(false, true) != "mode: not executable -> executable\n" || ModeChange(true, true) != "" {
 		t.Fatal("mode line")
+	}
+}
+
+func TestUserTextNamingTheMarkersIsKept(t *testing.T) {
+	// notes after the block that mention the end marker survive a relink
+	f := newFixture(t)
+	f.put(f.storeDir, "instructions.md", "rules v1\n")
+	f.put(f.home, ".claude/CLAUDE.md", "top\n")
+	l := f.linker()
+	must(t, l.Link([]string{"claude-code"}))
+	p := filepath.Join(f.home, ".claude/CLAUDE.md")
+	notes := "\nMY NOTES AFTER THE BLOCK\nnote: yonder's block ends at `" + blockEnd + "`\nlast line\n"
+	must(t, os.WriteFile(p, []byte(read(p)+notes), 0o644))
+	f.put(f.storeDir, "instructions.md", "rules v2\n")
+	must(t, l.Link(nil))
+	if got := read(p); !strings.Contains(got, "rules v2") || !strings.HasSuffix(got, notes) {
+		t.Fatalf("the user's notes must stay: %q", got)
+	}
+
+	// a file never linked that documents both markers inline keeps all its text
+	f2 := newFixture(t)
+	f2.put(f2.storeDir, "instructions.md", "rules\n")
+	doc := "A\nyonder writes from `<!-- yonder:begin` ...\nMY RULES IN BETWEEN\n... to `" + blockEnd + "`\nZ\n"
+	f2.put(f2.home, ".claude/CLAUDE.md", doc)
+	must(t, f2.linker().Link([]string{"claude-code"}))
+	if got := read(filepath.Join(f2.home, ".claude/CLAUDE.md")); !strings.HasPrefix(got, doc) || !strings.Contains(got, "\nrules\n") {
+		t.Fatalf("documented markers are the user's text: %q", got)
+	}
+}
+
+func TestNonASCIIFolderNamesAreRefused(t *testing.T) {
+	for _, rel := range []string{"hookſ/evil.sh", "ﬁles/codex/hooks.json", "ﬁles/claude/settings.json", "files/claude/ſettings.json",
+		"skills/ſynced/SKILL.md", "machines/gpu-box/hookſ/x", "files/codeẋ/a.json"} {
+		if r := Check(rel, []byte("x")); r == nil || !r.Final || !strings.Contains(r.Reason, "non-ASCII") {
+			t.Errorf("%s should be refused for good: %v", rel, r)
+		}
+	}
+	for _, rel := range []string{"skills/cafe/notes-é.md", "hooks/ünïcode.sh", "instructions.md"} {
+		if r := Check(rel, []byte("x")); r != nil {
+			t.Errorf("%s is fine: %v", rel, r)
+		}
+	}
+	home, s := receiver(t)
+	must(t, os.MkdirAll(filepath.Join(home, ".codex"), 0o755))
+	must(t, os.WriteFile(filepath.Join(home, ".codex/hooks.json"), []byte(`{"mine":true}`), 0o644))
+	must(t, NewLinker("gpu-box", nil).Link([]string{"claude-code", "codex"}))
+	r := receive(t, s, map[string]string{"hookſ/evil.sh": "#!/bin/sh\nevil\n", "ﬁles/codex/hooks.json": `{"evil":true}`})
+	if len(r.Refused) != 2 || len(r.Applied)+len(r.Pending) != 0 {
+		t.Fatalf("both refused: %+v", r)
+	}
+	must(t, NewLinker("gpu-box", nil).Link(nil))
+	if read(filepath.Join(home, ".codex/hooks.json")) != `{"mine":true}` {
+		t.Fatal("the user's hooks.json must stay")
 	}
 }

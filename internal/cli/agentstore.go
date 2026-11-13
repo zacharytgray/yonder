@@ -446,7 +446,7 @@ default: hooks, executable files, hook configs), "all", or "none".`,
 			}
 			if !acceptTTY() {
 				for _, it := range items {
-					fmt.Fprintf(a.out, "waiting: %s (%s)\n", it.Path, originText(it.State.Origin))
+					fmt.Fprintf(a.out, "waiting: %s (%s)\n", agents.Printable(it.Path), originText(it.State.Origin))
 				}
 				return errors.New("accept needs a person at a terminal; run `yonder agents accept` there (yonder agents diff <path> shows a change)")
 			}
@@ -455,21 +455,21 @@ default: hooks, executable files, hook configs), "all", or "none".`,
 				for _, it := range items {
 					live, in, err := s.PendingData(it.Path)
 					if err != nil {
-						fmt.Fprintf(a.out, "%s: %v\n", it.Path, err)
+						fmt.Fprintf(a.out, "%s: %v\n", agents.Printable(it.Path), err)
 						continue
 					}
 					fmt.Fprintf(a.out, "\n%s (%s)\n", agents.Printable(it.Path), originText(it.State.Origin))
 					fmt.Fprint(a.out, pendingDiff(it, live, in))
-					if !acceptAsk("Make " + it.Path + " live on this machine?") {
-						fmt.Fprintf(a.out, "left %s waiting\n", it.Path)
+					if !acceptAsk("Make " + agents.Printable(it.Path) + " live on this machine?") {
+						fmt.Fprintf(a.out, "left %s waiting\n", agents.Printable(it.Path))
 						continue
 					}
 					if err := s.Accept(it.Path); err != nil {
-						fmt.Fprintf(a.out, "%s: %v\n", it.Path, err)
+						fmt.Fprintf(a.out, "%s: %v\n", agents.Printable(it.Path), err)
 						continue
 					}
 					accepted++
-					fmt.Fprintf(a.out, "accepted %s\n", it.Path)
+					fmt.Fprintf(a.out, "accepted %s\n", agents.Printable(it.Path))
 				}
 				return nil
 			})
