@@ -152,6 +152,11 @@ func Run(e Env) []Check {
 		add(groupLocal, "log dir", Pass, e.StateDir+" is writable", "")
 	}
 
+	if e.Store.OldModelPorts() {
+		// a note, not a warning: nothing breaks
+		add(groupLocal, "config", Pass, "[discover] model_ports in config.toml is no longer read (model discovery left in v0.3.1); it can go", "")
+	}
+
 	out = append(out, skillChecks(groupLocal, agents.Status(e.Home), e.Home, "yonder agents install")...)
 
 	lost := lostKeys(tombs, ms)

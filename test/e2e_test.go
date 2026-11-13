@@ -145,6 +145,10 @@ func TestLocalEndToEnd(t *testing.T) {
 	if ls.Self != "laptop" || len(ls.Machines) != 2 {
 		t.Fatalf("ls: %+v", ls)
 	}
+	// v0.3.1 dropped model discovery: no model_count, no facts.models
+	if strings.Contains(r.stdout, "model") {
+		t.Fatalf("ls --json still says models: %s", r.stdout)
+	}
 	gpu, self := ls.Machines[0], ls.Machines[1]
 	if gpu.Name != "gpu-box" || gpu.State != "pending" || gpu.Online == nil || *gpu.Online || gpu.LastSeen == nil || gpu.Role != "gpu" {
 		t.Fatalf("gpu-box: %+v", gpu)
@@ -152,10 +156,10 @@ func TestLocalEndToEnd(t *testing.T) {
 	if self.Name != "laptop" || self.State != "self" {
 		t.Fatalf("self: %+v", self)
 	}
-	if r := f.must("ls"); !strings.Contains(r.stdout, "this machine") || !strings.Contains(r.stdout, "pending, offline") {
+	if r := f.must("ls"); !strings.Contains(r.stdout, "this machine") || !strings.Contains(r.stdout, "pending, offline") || strings.Contains(r.stdout, "MODELS") {
 		t.Fatalf("ls table: %s", r.stdout)
 	}
-	if r := f.must("show", "gpu-box", "--json"); !strings.Contains(r.stdout, `"record"`) {
+	if r := f.must("show", "gpu-box", "--json"); !strings.Contains(r.stdout, `"record"`) || strings.Contains(r.stdout, "model") {
 		t.Fatalf("show --json should carry the record: %s", r.stdout)
 	}
 

@@ -335,3 +335,26 @@ func TestMeshUnreachedAndLeftover(t *testing.T) {
 		t.Fatalf("gpu-box mesh checks: %+v", warns)
 	}
 }
+
+// a config.toml from before v0.3.1 still says model_ports. doctor stays clean
+// and says once that it can go.
+func TestOldModelPortsNote(t *testing.T) {
+	e := env(t, machine("gpu-box", now))
+	e.Status.Peers = []tailnet.Peer{peer("gpu-box", true)}
+	e.Remote = fakeRemote{version: map[string]string{"gpu-box": "1.0.0"}, names: map[string][]string{"gpu-box": {"gpu-box", "laptop"}}}
+	if _, ok := find(Run(e), groupLocal, "config"); ok {
+		t.Fatal("no note without model_ports")
+	}
+	cfg := "self = \"laptop\"\n\n[discover]\nmodel_ports = [9292]\n"
+	if err := os.WriteFile(filepath.Join(e.Store.Dir, "config.toml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := NewReport("laptop", "1.0.0", Run(e))
+	c, ok := find(r.Checks, groupLocal, "config")
+	if !ok || c.Status != Pass || !strings.Contains(c.Detail, "model_ports") || !strings.Contains(c.Detail, "it can go") {
+		t.Fatalf("note %+v", c)
+	}
+	if !r.OK || r.Summary.Warn != 0 {
+		t.Fatalf("want clean: %+v", r.Summary)
+	}
+}

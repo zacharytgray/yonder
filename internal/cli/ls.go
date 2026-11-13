@@ -34,7 +34,6 @@ type machineView struct {
 	SSHPort      int               `json:"ssh_port"`
 	Hardware     string            `json:"hardware"`
 	Summary      string            `json:"summary"` // short, for the ls table
-	ModelCount   int               `json:"model_count"`
 	Harnesses    []string          `json:"harnesses"`
 	Stale        bool              `json:"stale"`
 	DiscoveredAt time.Time         `json:"discovered_at"`
@@ -112,7 +111,6 @@ func view(m registry.Machine, self string, st *tailnet.Status, stErr error) mach
 		SSHUser: m.SSHUser, SSHPort: m.SSHPort,
 		Hardware:     hardware(f),
 		Summary:      summary(f),
-		ModelCount:   len(f.Models),
 		Harnesses:    []string{},
 		Stale:        !m.Pending && (m.DiscoveredAt.IsZero() || time.Since(m.DiscoveredAt) > staleAfter),
 		DiscoveredAt: m.DiscoveredAt, UpdatedAt: m.UpdatedAt,
@@ -237,7 +235,7 @@ func stateText(v machineView) string {
 
 func printTable(w io.Writer, vs []machineView) error {
 	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tROLE\tSTATE\tHARDWARE\tMODELS\tHARNESSES")
+	fmt.Fprintln(tw, "NAME\tROLE\tSTATE\tHARDWARE\tHARNESSES")
 	stale := false
 	for _, v := range vs {
 		name := v.Name
@@ -245,7 +243,7 @@ func printTable(w io.Writer, vs []machineView) error {
 			name += "*"
 			stale = true
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n", name, dash(v.Role), stateText(v), dash(v.Summary), v.ModelCount, dash(strings.Join(v.Harnesses, ",")))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", name, dash(v.Role), stateText(v), dash(v.Summary), dash(strings.Join(v.Harnesses, ",")))
 	}
 	if err := tw.Flush(); err != nil {
 		return err

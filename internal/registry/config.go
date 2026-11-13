@@ -9,11 +9,10 @@ import (
 
 // Config is this machine's config.toml.
 type Config struct {
-	Self     string         `toml:"self"`
-	Secrets  map[string]any `toml:"secrets,omitempty"`  // provider settings, step 3
-	SSH      map[string]SSH `toml:"ssh,omitempty"`      // per-target ssh settings, this machine only
-	Discover Discover       `toml:"discover,omitempty"` // hand-edited discovery settings, this machine only
-	Sync     SyncSettings   `toml:"sync,omitempty"`     // hand-edited store sync settings, this machine only
+	Self    string         `toml:"self"`
+	Secrets map[string]any `toml:"secrets,omitempty"` // provider settings, step 3
+	SSH     map[string]SSH `toml:"ssh,omitempty"`     // per-target ssh settings, this machine only
+	Sync    SyncSettings   `toml:"sync,omitempty"`    // hand-edited store sync settings, this machine only
 }
 
 // SyncSettings tunes store sync on this machine. yonder only reads it.
@@ -22,9 +21,16 @@ type SyncSettings struct {
 	Review string `toml:"review,omitempty"`
 }
 
-// Discover tunes discovery on this machine. yonder only reads it.
-type Discover struct {
-	ModelPorts []int `toml:"model_ports,omitempty"` // more local openai-compatible ports to probe
+// OldModelPorts reports a [discover] model_ports setting left from before
+// v0.3.1. nothing reads it now; doctor says it can go.
+func (s *Store) OldModelPorts() bool {
+	raw := map[string]any{}
+	if readTOML(s.configPath(), &raw) != nil {
+		return false
+	}
+	d, _ := raw["discover"].(map[string]any)
+	_, ok := d["model_ports"]
+	return ok
 }
 
 // SSH is how this machine reaches one target. it never leaves this machine.

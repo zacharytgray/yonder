@@ -109,11 +109,10 @@ func TestView(t *testing.T) {
 	gpu := registry.Machine{Name: "gpu-box", DiscoveredAt: old, Facts: registry.Facts{
 		CPUCores: 16, MemoryGB: 64,
 		GPUs:      []registry.GPU{{Name: "Example GPU"}, {Name: "Example GPU"}},
-		Models:    []registry.Model{{Name: "a"}, {Name: "b"}},
 		Harnesses: []registry.Harness{{Name: "codex"}},
 	}}
 	v := view(gpu, "laptop", st, nil)
-	if v.State != "offline" || v.LastSeen == nil || !v.Stale || v.ModelCount != 2 || v.Harnesses[0] != "codex" {
+	if v.State != "offline" || v.LastSeen == nil || !v.Stale || v.Harnesses[0] != "codex" {
 		t.Fatalf("gpu view %+v", v)
 	}
 	if v.Hardware != "16 cores, 64 GB RAM, 2× Example GPU" {

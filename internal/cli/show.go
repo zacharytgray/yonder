@@ -79,9 +79,6 @@ func newShowCmd() *cobra.Command {
 			for _, g := range f.GPUs {
 				row("gpu", gpuText(g))
 			}
-			for _, mo := range f.Models {
-				row("model", modelText(mo))
-			}
 			for _, h := range f.Harnesses {
 				row("harness", strings.TrimSpace(h.Name+" "+h.Version+" "+paren(h.Path)))
 			}
@@ -112,21 +109,6 @@ func gpuText(g registry.GPU) string {
 		t += " " + registry.GBText(g.MemoryGB)
 	}
 	return t
-}
-
-func modelText(m registry.Model) string {
-	t := m.Name
-	if m.SizeGB > 0 {
-		t += " " + registry.GBText(m.SizeGB)
-	}
-	var tags []string
-	if m.Runtime != "" {
-		tags = append(tags, m.Runtime)
-	}
-	if m.Serving {
-		tags = append(tags, fmt.Sprintf("serving on :%d", m.Port))
-	}
-	return strings.TrimSpace(t + " " + paren(strings.Join(tags, ", ")))
 }
 
 func paren(s string) string {

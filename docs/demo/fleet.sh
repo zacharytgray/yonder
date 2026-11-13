@@ -71,15 +71,6 @@ memory_gb = 64.0
 name = 'NVIDIA GeForce RTX 4090'
 vendor = 'nvidia'
 memory_gb = 24.0
-[[facts.models]]
-name = 'qwen3-coder:30b'
-runtime = 'ollama'
-[[facts.models]]
-name = 'llama3.3:70b'
-runtime = 'ollama'
-[[facts.models]]
-name = 'nomic-embed-text'
-runtime = 'ollama'
 EOF
 machine raspberry-pi linux arm64 100.64.0.4 other 'home automation'
 cat >> "$f/home/config/machines/raspberry-pi.toml" <<'EOF'

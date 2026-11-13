@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -281,7 +282,8 @@ func TestMovedPeerGetsNoSSH(t *testing.T) {
 	}
 }
 
-// facts a peer's _facts sends back are cleaned here too: a peer can send anything
+// facts a peer's _facts sends back are cleaned here too: a peer can send anything.
+// an older peer still sends models; they are dropped
 func TestPeerFactsSanitized(t *testing.T) {
 	a, s := newStrictApp(t, true)
 	evil := "llama\x1b[31m\u202e" + strings.Repeat("x", 300)
@@ -310,7 +312,8 @@ func TestPeerFactsSanitized(t *testing.T) {
 	if strings.ContainsAny(f.CPU, "\x1b\u202e") || len([]rune(f.CPU)) > 120 {
 		t.Fatalf("cpu %q", f.CPU)
 	}
-	if len(f.Models) != 1 || strings.ContainsAny(f.Models[0].Name, "\x1b\u202e") || len([]rune(f.Models[0].Name)) > 120 {
-		t.Fatalf("models %+v", f.Models)
+	data, _ := os.ReadFile(filepath.Join(a.store.Dir, "machines", "gpu-box.toml"))
+	if strings.Contains(string(data), "models") {
+		t.Fatalf("models kept:\n%s", data)
 	}
 }

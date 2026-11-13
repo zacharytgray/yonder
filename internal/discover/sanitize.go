@@ -7,7 +7,7 @@ import (
 	"github.com/zacharytgray/yonder/internal/registry"
 )
 
-// caps on discovered text. a model server or tool can print anything, and
+// caps on discovered text. a tool can print anything, and
 // agents read these strings back from `ls --json`.
 const (
 	maxText = 120
@@ -47,14 +47,6 @@ func Sanitize(f Facts) Facts {
 		gpus[i] = g
 	}
 	f.GPUs = gpus
-	var models []registry.Model
-	for _, m := range f.Models {
-		m.Name, m.Runtime, m.Source = clean(m.Name, maxText), clean(m.Runtime, maxText), clean(m.Source, maxText)
-		if m.Name != "" {
-			models = append(models, m)
-		}
-	}
-	f.Models = models
 	hs := make([]registry.Harness, len(f.Harnesses))
 	for i, h := range f.Harnesses {
 		h.Name, h.Version, h.Path = clean(h.Name, maxText), clean(h.Version, maxText), clean(h.Path, maxPath)
