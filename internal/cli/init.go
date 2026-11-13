@@ -33,6 +33,7 @@ func newInitCmd() *cobra.Command {
 		noSkill  bool
 		shared   bool
 		noMesh   bool
+		layers   []string
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -45,6 +46,8 @@ If you reach a peer with a specific ssh key: --identity gpu-box=~/.ssh/id_ed2551
 (repeat the flag per peer; the key path stays on this machine).
 With --yes and no --machines, only this machine is set up.
 --no-skill leaves every harness's skills folder alone (install later with yonder agents install).
+--layers secrets,agents picks the optional layers for the whole fleet (none: connect only);
+without it, --yes keeps what is set. ` + "`yonder enable` and `yonder disable`" + ` change them later.
 Peers your tailscale account doesn't own (shared in) are listed but can't be picked
 unless --allow-shared is given. Two peers with one short name: pass the full dns name.`,
 		Args: usageArgs(cobra.NoArgs),
@@ -55,7 +58,16 @@ unless --allow-shared is given. Two peers with one short name: pass the full dns
 			if err != nil {
 				return &usageError{err}
 			}
-			return a.initCommand(interactive, machines, user, ids, noSkill, shared, noMesh)
+			picked, err := parseLayers(layers)
+			if err != nil {
+				return err
+			}
+			if !cmd.Flags().Changed("layers") {
+				picked = nil
+			} else if picked == nil {
+				picked = []string{}
+			}
+			return a.initCommand(interactive, machines, user, ids, noSkill, shared, noMesh, picked)
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "never prompt")
@@ -64,6 +76,7 @@ unless --allow-shared is given. Two peers with one short name: pass the full dns
 	cmd.Flags().BoolVar(&noSkill, "no-skill", false, "don't install the agent skill on any machine")
 	cmd.Flags().BoolVar(&noMesh, "no-mesh", false, "don't add the fleet machines' ssh keys to each other's authorized_keys")
 	cmd.Flags().BoolVar(&shared, "allow-shared", false, "allow peers another tailscale account owns (node sharing)")
+	cmd.Flags().StringSliceVar(&layers, "layers", nil, "optional layers to turn on for the fleet: "+strings.Join(registry.LayerNames(), ",")+" (or none)")
 	cmd.Flags().StringArrayVar(&idents, "identity", nil, "ssh key for a peer, as machine=path (repeatable, kept on this machine only)")
 	return cmd
 }
@@ -88,7 +101,8 @@ func parseIdentities(in []string) (map[string]string, error) {
 	return out, nil
 }
 
-func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string, noSkill, allowShared, noMesh bool) error {
+// layers is nil when --layers wasn't given.
+func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string, noSkill, allowShared, noMesh bool, layers []string) error {
 	st, err := a.status()
 	if err != nil {
 		if errors.Is(err, tailnet.ErrNotInstalled) || errors.Is(err, tailnet.ErrNotRunning) {
@@ -110,6 +124,10 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	fmt.Fprintf(a.out, "this machine is %s (%s/%s, %s)\n", self, rec.OS, rec.Arch, rec.TailscaleIP)
 	if rec.SSHHostKey == "" {
 		a.warnf("no sshd host key in /etc/ssh; other machines can't reach this one until sshd (Remote Login on macOS) is on")
+	}
+
+	if err := a.initLayers(self, interactive, layers); err != nil {
+		return err
 	}
 
 	candidates := a.initCandidates(st, self, allowShared)
@@ -149,8 +167,10 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	}
 
 	// secrets: offer hands-free 1password for the fleet when this machine can
-	if err := a.secretsStep(interactive); err != nil {
-		a.warnf("secrets setup: %v", err)
+	if a.store.LayerOn(registry.LayerSecrets) {
+		if err := a.secretsStep(interactive); err != nil {
+			a.warnf("secrets setup: %v", err)
+		}
 	}
 	if !noSkill {
 		if err := agents.InstallAll(); err != nil {
@@ -159,6 +179,7 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	}
 
 	a.syncFleet(self)
+	a.applyLayers(self)
 	if len(added) > 0 {
 		a.offerMesh(self, "", addOpts{interactive: interactive, allowShared: allowShared, noMesh: noMesh})
 	}
@@ -167,6 +188,55 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	}
 	if len(failed) > 0 {
 		return fmt.Errorf("could not add %s; fix the errors above and run `yonder add <machine>`", strings.Join(failed, ", "))
+	}
+	return nil
+}
+
+// initLayers picks the optional layers: from --layers, else a multi-select in
+// a terminal, else it keeps what is set. only layers that change are written,
+// so an unchanged one keeps its fleet-wide date.
+func (a *app) initLayers(self string, interactive bool, layers []string) error {
+	cur := a.store.LayersOn()
+	want := map[string]bool{}
+	switch {
+	case layers != nil:
+		for _, n := range layers {
+			want[n] = true
+		}
+	case interactive:
+		var opts []huh.Option[string]
+		for _, l := range registry.Layers {
+			opts = append(opts, huh.NewOption(l.Name+"  "+l.Summary, l.Name).Selected(cur[l.Name]))
+		}
+		var sel []string
+		err := huh.NewMultiSelect[string]().
+			Title("Which layers do you want? Connecting the machines is always on.").
+			Description("Each is optional and fleet-wide. Change them later with `yonder enable` / `yonder disable`.").
+			Options(opts...).Value(&sel).Run()
+		if err != nil {
+			return err
+		}
+		for _, n := range sel {
+			want[n] = true
+		}
+	default:
+		want = cur
+	}
+	var on []string
+	for _, l := range registry.Layers {
+		if want[l.Name] != cur[l.Name] {
+			if err := a.store.SetLayer(l.Name, want[l.Name], self); err != nil {
+				return err
+			}
+		}
+		if want[l.Name] {
+			on = append(on, l.Name)
+		}
+	}
+	if len(on) == 0 {
+		fmt.Fprintln(a.out, "layers: none on, only connecting machines; `yonder enable <layer>` adds one ("+strings.Join(registry.LayerNames(), ", ")+")")
+	} else {
+		fmt.Fprintln(a.out, "layers on: "+strings.Join(on, ", "))
 	}
 	return nil
 }

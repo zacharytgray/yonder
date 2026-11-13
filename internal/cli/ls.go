@@ -47,9 +47,10 @@ type machineView struct {
 }
 
 type lsOutput struct {
-	Self           string        `json:"self"`
-	TailscaleError string        `json:"tailscale_error"`
-	Machines       []machineView `json:"machines"`
+	Self           string          `json:"self"`
+	TailscaleError string          `json:"tailscale_error"`
+	Machines       []machineView   `json:"machines"`
+	Layers         map[string]bool `json:"layers"` // fleet-wide optional layers, on or off here
 }
 
 func newLsCmd() *cobra.Command {
@@ -75,7 +76,7 @@ func newLsCmd() *cobra.Command {
 					return err
 				}
 			}
-			out := lsOutput{Self: self, Machines: []machineView{}}
+			out := lsOutput{Self: self, Machines: []machineView{}, Layers: a.store.LayersOn()}
 			if stErr != nil {
 				out.TailscaleError = stErr.Error()
 			}
@@ -92,7 +93,11 @@ func newLsCmd() *cobra.Command {
 				fmt.Fprintln(a.out, "no machines yet; run `yonder init`")
 				return nil
 			}
-			return printTable(a.out, out.Machines)
+			if err := printTable(a.out, out.Machines); err != nil {
+				return err
+			}
+			fmt.Fprintln(a.out, layersLine(out.Layers))
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON (shape documented in docs/design.md)")
@@ -296,4 +301,17 @@ func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// layersLine is the one line under the ls table.
+func layersLine(on map[string]bool) string {
+	var parts []string
+	for _, l := range registry.Layers {
+		state := "off"
+		if on[l.Name] {
+			state = "on"
+		}
+		parts = append(parts, l.Name+" "+state)
+	}
+	return "layers: " + strings.Join(parts, ", ") + " (yonder layers)"
 }

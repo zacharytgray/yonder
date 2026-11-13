@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/remote"
 	"github.com/zacharytgray/yonder/internal/secrets"
 	"github.com/zacharytgray/yonder/internal/transport"
@@ -75,6 +76,9 @@ func runCommand(a *app, name string, cmdArgs, secretNames []string, detach bool,
 			seen[n] = true
 			names = append(names, n)
 		}
+	}
+	if len(names) > 0 && !a.store.LayerOn(registry.LayerSecrets) {
+		return layerOff(registry.LayerSecrets, "--secret")
 	}
 	values, err := secrets.Resolve(names)
 	if err != nil {

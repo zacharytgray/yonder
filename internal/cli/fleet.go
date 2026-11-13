@@ -41,20 +41,21 @@ func (a *app) onlinePeers(self string) ([]registry.Machine, error) {
 // syncFleet pushes the registry to every online machine and merges what comes back.
 // a second pass catches machines that missed a newer record from a later peer.
 // each receiver, and this machine, strips lost machines' keys once.
-func (a *app) syncFleet(self string) {
+// returns the machines it reached.
+func (a *app) syncFleet(self string) (reached []string) {
 	defer a.stripLostHere()
 	peers, err := a.onlinePeers(self)
 	if err != nil {
 		a.warnf("sync skipped: %v", err)
-		return
+		return nil
 	}
 	if len(peers) == 0 {
-		return
+		return nil
 	}
 	local, err := a.store.Bundle()
 	if err != nil {
 		a.warnf("sync skipped: %v", err)
-		return
+		return nil
 	}
 	local.ClearLost = a.clearLost
 	// each reply is merged as from that peer, under the same rules _sync uses
@@ -67,14 +68,15 @@ func (a *app) syncFleet(self string) {
 		}
 		if _, err := a.store.MergeFrom(resp, m.Name); err != nil {
 			a.warnf("sync: %v", err)
-			return
+			return reached
 		}
 		seen[m.Name] = resp.Digest()
+		reached = append(reached, m.Name)
 	}
 	merged, err := a.store.Bundle()
 	if err != nil {
 		a.warnf("sync: %v", err)
-		return
+		return reached
 	}
 	merged.ClearLost = a.clearLost
 	final := merged.Digest()
@@ -85,6 +87,7 @@ func (a *app) syncFleet(self string) {
 			}
 		}
 	}
+	return reached
 }
 
 func (a *app) pushBundle(m registry.Machine, b registry.Bundle) (registry.Bundle, error) {

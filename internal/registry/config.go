@@ -13,6 +13,13 @@ type Config struct {
 	Secrets  map[string]any `toml:"secrets,omitempty"`  // provider settings, step 3
 	SSH      map[string]SSH `toml:"ssh,omitempty"`      // per-target ssh settings, this machine only
 	Discover Discover       `toml:"discover,omitempty"` // hand-edited discovery settings, this machine only
+	Sync     SyncSettings   `toml:"sync,omitempty"`     // hand-edited store sync settings, this machine only
+}
+
+// SyncSettings tunes store sync on this machine. yonder only reads it.
+type SyncSettings struct {
+	// which incoming changes wait for `yonder agents accept`: executables (default) | all | none
+	Review string `toml:"review,omitempty"`
 }
 
 // Discover tunes discovery on this machine. yonder only reads it.
@@ -108,10 +115,10 @@ func (s *Store) SetIdentity(target, path string) error {
 	return writeFile(s.configPath(), data)
 }
 
-// Forget clears this machine's copy of the registry and its name, keeping
+// Forget clears this machine's copy of the registry, its layers and its name, keeping
 // the rest of config.toml. a removed machine runs it to leave the fleet.
 func (s *Store) Forget() error {
-	for _, d := range []string{s.machinesDir(), s.removedDir()} {
+	for _, d := range []string{s.machinesDir(), s.removedDir(), s.layersPath()} {
 		if err := os.RemoveAll(d); err != nil {
 			return err
 		}

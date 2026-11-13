@@ -40,8 +40,32 @@ func TestLocalEndToEnd(t *testing.T) {
 	if r := f.run("piped input\n", "run", "laptop", "--", "cat"); r.stdout != "piped input\n" {
 		t.Fatalf("stdin passthrough: %+v", r)
 	}
+	// no provider and no layer choice: secrets starts off, and says how to turn it on
+	if r := f.run("", "run", "laptop", "--secret", "API_KEY", "--", "true"); r.code != 1 || !strings.Contains(r.stderr, "yonder enable secrets") {
+		t.Fatalf("secrets layer off: %+v", r)
+	}
+	if r := f.must("enable", "secrets"); !strings.Contains(r.stdout, "secrets: on for the whole fleet") {
+		t.Fatalf("enable: %+v", r)
+	}
 	if r := f.run("", "run", "laptop", "--secret", "API_KEY", "--", "true"); r.code != 1 || !strings.Contains(r.stderr, "no secrets provider") {
 		t.Fatalf("secret stub: %+v", r)
+	}
+	var lv struct {
+		Layers []struct {
+			Name string
+			On   bool
+			Set  bool
+			By   string
+		}
+	}
+	if err := json.Unmarshal([]byte(f.must("layers", "--json").stdout), &lv); err != nil || len(lv.Layers) != 2 || !lv.Layers[0].On || !lv.Layers[0].Set || lv.Layers[0].By != "laptop" || lv.Layers[1].On {
+		t.Fatalf("layers --json: %+v %v", lv, err)
+	}
+	if r := f.run("", "enable", "memory"); r.code != 2 || !strings.Contains(r.stderr, `no layer named "memory" (layers: secrets, agents)`) {
+		t.Fatalf("enable memory: %+v", r)
+	}
+	if r := f.run("", "enable", "nope"); r.code != 2 {
+		t.Fatalf("enable unknown: %+v", r)
 	}
 	if r := f.run("", "run", "laptop"); r.code != 2 {
 		t.Fatalf("usage error: %+v", r)
@@ -234,5 +258,34 @@ func TestCopyEndToEnd(t *testing.T) {
 	f.run("", "add", "gpu-box", "--yes")
 	if r := f.run("", "cp", src, "gpu-box:~/"); r.code != 75 || !strings.Contains(r.stderr, "gpu-box is offline") {
 		t.Fatalf("offline cp: %+v", r)
+	}
+}
+
+// TestLayers: init picks layers with a flag, and each turns on and off with one command.
+func TestLayers(t *testing.T) {
+	f := newFleet(t, "testdata/fleet.json")
+	if r := f.must("init", "--yes", "--layers", "agents"); !strings.Contains(r.stdout, "layers on: agents") {
+		t.Fatalf("init --layers: %s", r.stdout)
+	}
+	if r := f.must("ls", "--no-refresh"); !strings.Contains(r.stdout, "layers: secrets off, agents on") {
+		t.Fatalf("ls: %s", r.stdout)
+	}
+	var ls struct{ Layers map[string]bool }
+	if err := json.Unmarshal([]byte(f.must("ls", "--json", "--no-refresh").stdout), &ls); err != nil || !ls.Layers["agents"] || ls.Layers["secrets"] || len(ls.Layers) != 2 {
+		t.Fatalf("ls --json layers: %+v %v", ls, err)
+	}
+	// --yes without --layers keeps what is set
+	if r := f.must("init", "--yes"); !strings.Contains(r.stdout, "layers on: agents") {
+		t.Fatalf("re-init: %s", r.stdout)
+	}
+	f.must("disable", "agents")
+	if r := f.must("init", "--yes", "--layers", "none"); !strings.Contains(r.stdout, "layers: none on") {
+		t.Fatalf("init --layers none: %s", r.stdout)
+	}
+	if r := f.run("", "init", "--yes", "--layers", "bogus"); r.code != 2 {
+		t.Fatalf("bad layer: %+v", r)
+	}
+	if r := f.must("doctor", "--json"); !strings.Contains(r.stdout, `"detail": "off; `+"`yonder enable secrets`"+` turns it on"`) {
+		t.Fatalf("doctor should skip secrets checks while the layer is off: %s", r.stdout)
 	}
 }

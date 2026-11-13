@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/zacharytgray/yonder/internal/agents"
 	"github.com/zacharytgray/yonder/internal/discover"
 	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
@@ -34,6 +35,10 @@ var Commands = map[string]transport.Handler{
 	"_init-self": InitSelf,
 	"_send":      Send,
 	"_recv":      Recv,
+
+	"_store-offer": StoreOffer,
+	"_store-send":  StoreSend,
+	"_store-recv":  StoreRecv,
 
 	"_secret-probe":     SecretProbe,
 	"_secret-provision": SecretProvision,
@@ -88,6 +93,12 @@ func Sync(ctx context.Context, _ []string, in io.Reader, out, errw io.Writer) in
 	}
 	if _, err := mesh.StripRemoved(merged.Tombstones, merged.Machines); err != nil {
 		fmt.Fprintf(errw, "yonder _sync: %v\n", err)
+	}
+	// a layer turned off elsewhere stops here too
+	if cfg, err := s.Config(); err == nil && cfg.Self != "" {
+		if err := agents.ApplyLayer(s.LayerOn(registry.LayerAgents), cfg.Self, nil); err != nil {
+			fmt.Fprintf(errw, "yonder _sync: agents layer: %v\n", err)
+		}
 	}
 	if err := json.NewEncoder(out).Encode(merged); err != nil {
 		return 1

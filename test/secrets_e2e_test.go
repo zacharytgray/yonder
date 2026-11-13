@@ -2,9 +2,12 @@ package test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // fakeOp stands in for the 1password cli: inject swaps every reference for a dummy value.
@@ -12,7 +15,7 @@ const fakeOp = `#!/bin/sh
 case "$1" in
 --version) echo 2.34.0 ;;
 whoami) exit 0 ;;
-inject) sed -E 's/[{][{] op:[/][/][^}]* [}][}]/dummy-value-123/g' ;;
+inject) [ -n "$SLOW_OP" ] && sleep 30; sed -E 's/[{][{] op:[/][/][^}]* [}][}]/dummy-value-123/g' ;;
 *) echo "[ERROR] 2026/11/11 20:00:00 unsupported" >&2; exit 1 ;;
 esac
 `
@@ -80,7 +83,7 @@ func TestSecretsEndToEnd(t *testing.T) {
 	}
 	var reads []string
 	for _, l := range strings.Split(string(log), "\n") {
-		if strings.Contains(l, `"command":"secret read `) {
+		if strings.Contains(l, `"command":"secret read `) && !strings.Contains(l, `"status":"started"`) {
 			reads = append(reads, l)
 		}
 	}
@@ -88,6 +91,40 @@ func TestSecretsEndToEnd(t *testing.T) {
 		!strings.Contains(reads[0], `"from":"laptop"`) || !strings.Contains(reads[0], `"harness":"`) ||
 		!strings.Contains(reads[1], `"command":"secret read NOPE"`) || !strings.Contains(reads[1], `"exit":1`) {
 		t.Fatalf("read log entries: %q", reads)
+	}
+	if n := strings.Count(string(log), `"command":"secret read API_KEY","secrets":["API_KEY"],"exit":null,"ms":0,"side":"target","status":"started"`); n != 1 {
+		t.Fatalf("a read should log a start entry first: %d\n%s", n, log)
+	}
+
+	// a read killed while it waits for approval still leaves its start entry
+	started := `"command":"secret read API_KEY","secrets":["API_KEY"],"exit":null,"ms":0,"side":"target","status":"started"`
+	cmd := exec.Command(yonderBin, "secret", "read", "API_KEY")
+	cmd.Env = append(append([]string{}, f.env...), "SLOW_OP=1")
+	cmd.Dir = f.home
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // so the kill takes the sleeping op too
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(f.home, "yonder", "state", "log.jsonl")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		b, _ := os.ReadFile(logPath)
+		if strings.Count(string(b), started) == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			t.Fatal("no start entry while the read waited")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	_ = cmd.Wait()
+	if b, _ := os.ReadFile(logPath); strings.Count(string(b), `"command":"secret read API_KEY"`) != 3 {
+		t.Fatalf("the killed read logs no completion: %s", b)
+	}
+	if r := f.must("log", "--json", "--limit", "0"); !strings.Contains(r.stdout, `"status": "started"`) {
+		t.Fatalf("yonder log should show the cut-off read: %s", r.stdout)
 	}
 }
 

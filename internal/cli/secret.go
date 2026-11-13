@@ -101,6 +101,9 @@ Desktop mode asks for one approval. A service account needs write access:
 				return &usageError{err}
 			}
 			a := newApp(cmd)
+			if !a.store.LayerOn(registry.LayerSecrets) {
+				return layerOff(registry.LayerSecrets, "secret set")
+			}
 			val, err := readSecretValue(a.in, name)
 			if err != nil {
 				return err
@@ -291,11 +294,15 @@ func newSecretTestCmd() *cobra.Command {
 			if err := secrets.ValidName(name); err != nil {
 				return &usageError{err}
 			}
+			a := newApp(cmd)
+			if !a.store.LayerOn(registry.LayerSecrets) {
+				return layerOff(registry.LayerSecrets, "secret test")
+			}
 			vals, err := secrets.Resolve([]string{name})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(newApp(cmd).out, "%s: ok, %d chars\n", name, utf8.RuneCountInString(vals[name]))
+			fmt.Fprintf(a.out, "%s: ok, %d chars\n", name, utf8.RuneCountInString(vals[name]))
 			return nil
 		},
 	}
@@ -322,27 +329,36 @@ out of their output. The read is logged here by name, never the value.`,
 				return &usageError{err}
 			}
 			a := newApp(cmd)
-			start := time.Now()
+			if !a.store.LayerOn(registry.LayerSecrets) {
+				return layerOff(registry.LayerSecrets, "secret read")
+			}
+			// a start entry first, so a read killed while it waits for approval still shows
+			start, id := time.Now(), remote.NewID()
+			a.logRead(id, name, start, nil, true)
 			vals, err := secrets.Resolve([]string{name})
 			if err == nil {
 				_, err = fmt.Fprintln(a.out, vals[name])
 			}
-			a.logRead(name, start, err)
+			a.logRead(id, name, start, err, false)
 			return err
 		},
 	}
 }
 
-// logRead records a secret read in this machine's log, by name only.
-func (a *app) logRead(name string, start time.Time, err error) {
+// logRead records a secret read in this machine's log, by name only: a
+// start entry (exit null) before resolving, then the completion.
+func (a *app) logRead(id, name string, start time.Time, err error, started bool) {
 	self := ""
 	if c, cerr := a.store.Config(); cerr == nil {
 		self = c.Self
 	}
 	e := runlog.Entry{
-		Time: start.UTC(), ID: remote.NewID(), From: self, To: self, Harness: detectHarness(),
+		Time: start.UTC(), ID: id, From: self, To: self, Harness: detectHarness(),
 		User: localUser(), Command: "secret read " + name, Secrets: []string{name},
 		Exit: runlog.Exit(ExitCode(err)), MS: time.Since(start).Milliseconds(),
+	}
+	if started {
+		e.Status, e.Exit, e.MS = runlog.StatusStarted, nil, 0
 	}
 	if err != nil {
 		e.Error = err.Error()
