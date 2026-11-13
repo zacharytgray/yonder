@@ -26,6 +26,9 @@ func init() {
 func twoHomes(t *testing.T) (*app, string, *bytes.Buffer) {
 	t.Helper()
 	peerHome := t.TempDir()
+	// the in-process handlers must not take this test for an ssh caller and
+	// look it up in the real tailnet (a test run over ssh has this set)
+	t.Setenv("SSH_CONNECTION", "")
 	st := &tailnet.Status{Self: peer("laptop", true), Peers: []tailnet.Peer{peer("gpu-box", true)}}
 	var a *app
 	fake := &fakeSSH{yonder: func(tg transport.Target, args []string, stdio transport.IO) (int, error) {
