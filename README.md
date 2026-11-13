@@ -368,7 +368,9 @@ in all, 2 KB hand-written. Over a cap nothing renders, and nothing is cut. `yond
 `yonder agents briefing review` flag paths that are gone, machine names and roles that don't
 match the records, sections not reviewed in 90 days, and lines your own text already repeats.
 The review also prints a trimmed draft for you to edit. Hermes gets the block in
-`~/.hermes/SOUL.md`, the one file it loads in every session.
+`~/.hermes/SOUL.md`, the one file it loads in every session. Its block holds the briefing and
+`instructions.hermes.md`, not the shared instructions, since Hermes is a messaging agent with its
+own persona. `[shared] hermes = true` in `render.toml` in the store adds them.
 
 If your machines already have different `CLAUDE.md` or `AGENTS.md` files, `yonder agents gather`
 shows which sections are the same, which differ, and which only one machine has. Yonder doesn't

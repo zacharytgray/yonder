@@ -18,6 +18,9 @@ import (
 //	top = "Atlas"
 //	[codex]
 //	top = "Zephyr"
+//
+// [shared] holds the opt-ins for harnesses that don't get the shared
+// instructions by default: hermes = true puts instructions.md in its block.
 const RenderFile = "render.toml"
 
 var (
@@ -28,40 +31,81 @@ var (
 // harness keys a table may name
 var renderKeys = []string{"claude", "codex", "pi", "hermes"}
 
+// sharedTable is render.toml's table of opt-ins, and the harnesses it may name
+const sharedTable = "shared"
+
+var optInKeys = []string{"hermes"}
+
 // renderTable is render.toml: harness key -> tier -> model name.
 type renderTable map[string]map[string]string
 
 // parseRenderTable reads and checks render.toml. only tables named after a
-// harness, holding one-line names, are allowed.
+// harness, holding one-line names, and [shared] are allowed.
 func parseRenderTable(data []byte) (renderTable, error) {
+	t, _, err := parseRender(data)
+	return t, err
+}
+
+// parseRender is the tier tables and the [shared] opt-ins.
+func parseRender(data []byte) (renderTable, map[string]bool, error) {
 	var raw map[string]any
 	if err := toml.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("agents/%s is not valid TOML: %w", RenderFile, err)
+		return nil, nil, fmt.Errorf("agents/%s is not valid TOML: %w", RenderFile, err)
 	}
 	t := renderTable{}
+	shared := map[string]bool{}
 	for h, v := range raw {
+		if h == sharedTable {
+			tab, ok := v.(map[string]any)
+			if !ok {
+				return nil, nil, fmt.Errorf("agents/%s: shared must be a table, like [shared] hermes = true", RenderFile)
+			}
+			for k, val := range tab {
+				b, ok := val.(bool)
+				if !contains(optInKeys, k) || !ok {
+					return nil, nil, fmt.Errorf("agents/%s: [shared] takes only %s = true or false", RenderFile, strings.Join(optInKeys, ", "))
+				}
+				shared[k] = b
+			}
+			continue
+		}
 		if !contains(renderKeys, h) {
-			return nil, fmt.Errorf("agents/%s has [%s]; the tables are %s", RenderFile, h, strings.Join(renderKeys, ", "))
+			return nil, nil, fmt.Errorf("agents/%s has [%s]; the tables are %s and [shared]", RenderFile, h, strings.Join(renderKeys, ", "))
 		}
 		tab, ok := v.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("agents/%s: %s must be a table, like [%s]", RenderFile, h, h)
+			return nil, nil, fmt.Errorf("agents/%s: %s must be a table, like [%s]", RenderFile, h, h)
 		}
 		t[h] = map[string]string{}
 		for k, val := range tab {
 			s, ok := val.(string)
 			switch {
 			case !tierKey.MatchString(k):
-				return nil, fmt.Errorf("agents/%s: [%s] %s is not a tier name (a-z, 0-9, -)", RenderFile, h, k)
+				return nil, nil, fmt.Errorf("agents/%s: [%s] %s is not a tier name (a-z, 0-9, -)", RenderFile, h, k)
 			case !ok:
-				return nil, fmt.Errorf("agents/%s: [%s] %s must be a string", RenderFile, h, k)
+				return nil, nil, fmt.Errorf("agents/%s: [%s] %s must be a string", RenderFile, h, k)
 			case s == "" || len(s) > 100 || strings.ContainsAny(s, "\n\r") || strings.Contains(s, "{{") || strings.Contains(s, markerPrefix):
-				return nil, fmt.Errorf("agents/%s: [%s] %s must be one short line of plain text", RenderFile, h, k)
+				return nil, nil, fmt.Errorf("agents/%s: [%s] %s must be one short line of plain text", RenderFile, h, k)
 			}
 			t[h][k] = s
 		}
 	}
-	return t, nil
+	return t, shared, nil
+}
+
+// sharedFor reports whether a harness's block gets the shared instructions.
+// hermes, a messaging gateway with its own persona, gets only the briefing
+// and its own overlay unless render.toml says [shared] hermes = true.
+func (l *Linker) sharedFor(key string) bool {
+	if !contains(optInKeys, key) {
+		return true
+	}
+	data, err := os.ReadFile(filepath.Join(l.StoreDir, RenderFile))
+	if err != nil {
+		return false
+	}
+	_, shared, err := parseRender(data)
+	return err == nil && shared[key]
 }
 
 // renderTable is the store's table; none when there is no render.toml.

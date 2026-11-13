@@ -1013,7 +1013,7 @@ The agents layer syncs `~/.local/share/yonder/agents`:
 
 ```
 briefing.md                   the hand-written part of the briefing (see The briefing)
-render.toml                   each harness's name for each model tier (see Model names per harness)
+render.toml                   each harness's name for each model tier (see Model names per harness), and [shared] opt-ins
 instructions.md               shared, harness-neutral
 instructions.<key>.md         an optional overlay for one harness: claude, codex, pi or hermes
 skills/<name>/...             one folder per skill
@@ -1075,7 +1075,7 @@ harness found here (the same detection as the skill install), or the ones named:
 | Claude Code | A marked block in `~/.claude/CLAUDE.md` holding the briefing, then the text of `instructions.md`, `instructions.claude.md` and the machine's two, where they exist, joined with blank lines. The user's own text stays. | One link per skill in `~/.claude/skills/<name>`. | One link per file in `~/.claude/agents/`, `~/.claude/commands/` and `~/.claude/hooks/`; `files/claude/*` into `~/.claude/`. |
 | Codex | `~/.codex/AGENTS.md` rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/`. |
 | Pi | Same as Codex, into `~/.pi/agent/AGENTS.md`. | `~/.agents/skills` (shared with Codex). | `files/pi/*` into `~/.pi/agent/`. |
-| Hermes | A marked block in `~/.hermes/SOUL.md`, only when that file exists. Hermes loads SOUL.md from its home in every session, whatever the working folder; its AGENTS.md, CLAUDE.md and `.hermes.md` come from the working folder only, so none of those is global. It seeds a default SOUL.md when there is none, so yonder never creates it; link says to run Hermes once first. | Not wired: link prints that the store's skills folder can be added to `skills.external_dirs` in its config. | `files/hermes/*` into `~/.hermes/`. |
+| Hermes | A marked block in `~/.hermes/SOUL.md`, only when that file exists, holding the briefing and `instructions.hermes.md` (and the machine's), not the shared `instructions.md`. Hermes is a messaging gateway with its own persona, so coding-agent rules stay out of it unless `[shared] hermes = true` in `agents/render.toml` (then the shared text and the machine's come after the briefing, as for the others). Hermes loads SOUL.md from its home in every session, whatever the working folder; its AGENTS.md, CLAUDE.md and `.hermes.md` come from the working folder only, so none of those is global. It seeds a default SOUL.md when there is none, so yonder never creates it; link says to run Hermes once first. Its fleet lines outside the block are the user's to drop; doctor flags any that repeat the briefing. | Not wired: link prints that the store's skills folder can be added to `skills.external_dirs` in its config. | `files/hermes/*` into `~/.hermes/`. |
 
 The text is copied in, never `@`-imported. Claude Code asks once per project before it imports a
 file outside the project, and keeps the import off if declined; a headless session can't answer,
@@ -1217,8 +1217,10 @@ fast = "Quill"
 Only that exact syntax is replaced (`{{model:` then a tier of a-z, 0-9 and `-`, then `}}`); `{{
 model:top }}`, `{{model:Top}}` and the word "top" stay as they are. It works in
 `instructions*.md`, machine overlays included, and in `briefing.md`. The tables are `[claude]`,
-`[codex]`, `[pi]` and `[hermes]` (the overlay keys); each value is one short line. A table that
-breaks these rules is refused by the store check, so it doesn't sync.
+`[codex]`, `[pi]` and `[hermes]` (the overlay keys); each value is one short line. One more table,
+`[shared]`, holds opt-ins: `hermes = true` gives Hermes the shared instructions too (see Wiring
+the harnesses); it takes only `hermes` and a true or false. A table that breaks these rules is
+refused by the store check, so it doesn't sync.
 
 A tier a harness has no name for, whether no table defines it or only other harnesses' do,
 refuses that harness's render: its file keeps what it had, and the error names every missing tier,

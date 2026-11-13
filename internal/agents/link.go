@@ -181,11 +181,16 @@ func (l *Linker) items(sub string, dirs bool) []item {
 }
 
 // instructionFiles are the shared text, the harness overlay, and the
-// same two for this machine, in that order, where they exist.
+// same two for this machine, in that order, where they exist. a harness that
+// opts in to the shared text (hermes) gets only its overlays without it.
 func (l *Linker) instructionFiles(key string) []string {
+	names := []string{"instructions." + key + ".md"}
+	if l.sharedFor(key) {
+		names = append([]string{"instructions.md"}, names...)
+	}
 	var out []string
 	for _, base := range []string{l.StoreDir, filepath.Join(l.StoreDir, "machines", l.Self)} {
-		for _, n := range []string{"instructions.md", "instructions." + key + ".md"} {
+		for _, n := range names {
 			p := filepath.Join(base, n)
 			if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
 				out = append(out, p)

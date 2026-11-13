@@ -152,9 +152,12 @@ func TestBriefingOverCapRendersNothing(t *testing.T) {
 	}
 }
 
-func TestHermesGetsABlockInItsOwnSoulFile(t *testing.T) {
+func TestHermesGetsTheBriefingAndItsOwnOverlay(t *testing.T) {
 	f := newFixture(t)
-	f.put(f.storeDir, "instructions.md", "shared rules\n")
+	f.put(f.storeDir, "instructions.md", "shared coding rules\n")
+	f.put(f.storeDir, "instructions.hermes.md", "hermes extra\n")
+	f.put(f.storeDir, "machines/laptop/instructions.md", "laptop coding rules\n")
+	f.put(f.storeDir, "machines/laptop/instructions.hermes.md", "hermes on the laptop\n")
 	l := f.linker()
 	l.Registry = f.registry(exampleMachines()...)
 	must(t, l.Link([]string{"hermes"}))
@@ -165,8 +168,31 @@ func TestHermesGetsABlockInItsOwnSoulFile(t *testing.T) {
 	f.put(f.home, ".hermes/SOUL.md", "You are Hermes.\n")
 	must(t, l.Link([]string{"hermes"}))
 	got := read(soul)
-	if !strings.HasPrefix(got, "You are Hermes.\n") || !strings.Contains(got, "## Yonder briefing") || !strings.Contains(got, "shared rules") {
+	if !strings.HasPrefix(got, "You are Hermes.\n") || !strings.Contains(got, "## Yonder briefing") ||
+		!strings.Contains(got, "hermes extra") || !strings.Contains(got, "hermes on the laptop") {
 		t.Fatalf("SOUL.md:\n%s", got)
+	}
+	if strings.Contains(got, "coding rules") {
+		t.Fatalf("the shared instructions are opt-in for hermes:\n%s", got)
+	}
+	// the user's file was backed up before the first edit
+	backups, _ := filepath.Glob(filepath.Join(f.state, "backup", "*", ".hermes", "SOUL.md"))
+	if len(backups) != 1 || read(backups[0]) != "You are Hermes.\n" {
+		t.Fatalf("backups: %v", backups)
+	}
+
+	// opted in: the shared text follows the briefing, overlays after it
+	f.put(f.storeDir, RenderFile, "[shared]\nhermes = true\n")
+	must(t, l.Link(nil))
+	got = read(soul)
+	b, sh, ov := strings.Index(got, "## Yonder briefing"), strings.Index(got, "shared coding rules"), strings.Index(got, "hermes extra")
+	if b < 0 || sh < b || ov < sh || !strings.Contains(got, "laptop coding rules") {
+		t.Fatalf("opted in:\n%s", got)
+	}
+	// claude code is untouched by the setting
+	must(t, l.Link([]string{"claude-code", "hermes"}))
+	if c := read(filepath.Join(f.home, ".claude/CLAUDE.md")); !strings.Contains(c, "shared coding rules") || strings.Contains(c, "hermes extra") {
+		t.Fatalf("claude:\n%s", c)
 	}
 	must(t, l.Unlink(false))
 	if got := read(soul); got != "You are Hermes.\n" {

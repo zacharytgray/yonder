@@ -58,7 +58,12 @@ func TestRenderTableChecks(t *testing.T) {
 			t.Errorf("%q should be refused: %+v", bad, r)
 		}
 	}
-	if r := Check(RenderFile, []byte("[claude]\ntop = \"Atlas\"\n[pi]\nfast = \"Pebble 2\"\n")); r != nil {
+	for _, bad := range []string{"[shared]\nhermes = \"yes\"\n", "[shared]\nclaude = true\n", "shared = true\n"} {
+		if r := Check(RenderFile, []byte(bad)); r == nil || !r.Final {
+			t.Errorf("%q should be refused: %+v", bad, r)
+		}
+	}
+	if r := Check(RenderFile, []byte("[shared]\nhermes = false\n[claude]\ntop = \"Atlas\"\n[pi]\nfast = \"Pebble 2\"\n")); r != nil {
 		t.Errorf("a good table: %+v", r)
 	}
 	if got := Placeholders("{{model:a}} {{model:b}} {{model:a}} {{model:}}"); strings.Join(got, ",") != "a,b" {

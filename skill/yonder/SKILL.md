@@ -124,6 +124,9 @@ instructions, skills, subagents and hooks, and syncs between machines:
 - To name a model tier in shared text, write `{{model:<tier>}}`, like `{{model:top}}`. Each
   harness's name for it is in `render.toml` in the store. A rule that differs in substance
   between harnesses goes in `instructions.<harness>.md` instead.
+- Hermes's block in `~/.hermes/SOUL.md` holds the briefing and `instructions.hermes.md` only.
+  Shared coding rules reach it only if the user sets `[shared] hermes = true` in `render.toml`.
+  Don't set it for them. Fleet lines in their own SOUL.md text are theirs to drop.
 
 ## Reconcile machines whose instructions differ
 

@@ -104,8 +104,10 @@ instructions start with the briefing about your machines (yonder agents briefing
   codex        ~/.codex/AGENTS.md rendered from the store (a marked block if the file is
                your own), skills in ~/.agents/skills, files/codex/* linked into ~/.codex
   pi           ~/.pi/agent/AGENTS.md the same way, skills in ~/.agents/skills
-  hermes       a marked block in ~/.hermes/SOUL.md (once hermes has made it), and
-               files/hermes/*; it prints how to add the skills folder yourself
+  hermes       a marked block in ~/.hermes/SOUL.md (once hermes has made it) with the
+               briefing and instructions.hermes.md (the shared instructions too only with
+               [shared] hermes = true in render.toml), and files/hermes/*; it prints how
+               to add the skills folder yourself
 Settings files are never edited. Anything in the way is backed up first and put back by
 ` + "`yonder agents unlink`" + `. A symlink in the way (an instructions file or a skills folder
 that links elsewhere) is refused unless --replace-links. The instructions are a copy, not
