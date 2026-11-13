@@ -194,3 +194,17 @@ func TestDoctorReportsAHeldStore(t *testing.T) {
 		t.Fatalf("doctor should report the held store: %+v", agentsChecks("laptop"))
 	}
 }
+
+func TestHeldBackFilesGetOneLine(t *testing.T) {
+	a, out := testApp(t, &fakeSSH{}, &tailnet.Status{})
+	r := store.Report{Peer: "newbox", Held: 3, Sent: []string{"recent.md"}}
+	for _, p := range []string{"a.md", "b.md", "c.md"} {
+		r.Skipped = append(r.Skipped, store.Skip{Path: p, Why: "held back: this machine and newbox ..."})
+	}
+	a.printReport("agents", r, true)
+	got := out.String()
+	want := "agents: held back 3 files with newbox, since one of you last synced more than 90 days ago and the other may have deleted them meanwhile; if the old machine's deletes are already reflected, run `yonder sync --stale-ok`\n"
+	if !strings.Contains(got, want) || strings.Contains(got, "skipped a.md") {
+		t.Fatalf("one plain line, not one per file:\n%s", got)
+	}
+}

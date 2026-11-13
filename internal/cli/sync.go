@@ -328,10 +328,20 @@ func (a *app) printReport(name string, r store.Report, quiet bool) bool {
 		line("%s was deleted on one machine and edited on the other; the edit was kept", p)
 	}
 	for _, sk := range r.Skipped {
-		line("skipped %s: %s", sk.Path, sk.Why)
+		if !strings.HasPrefix(sk.Why, "held back:") { // those get one line below
+			line("skipped %s: %s", sk.Path, sk.Why)
+		}
 	}
 	if lines > 20 {
 		fmt.Fprintf(a.out, "  and %d more (yonder agents log)\n", lines-20)
+	}
+	if r.Held > 0 {
+		them := "them"
+		if r.Held == 1 {
+			them = "it"
+		}
+		fmt.Fprintf(a.out, "%s: held back %s with %s, since one of you last synced more than 90 days ago and the other may have deleted %s meanwhile; if the old machine's deletes are already reflected, run `yonder sync --stale-ok`\n",
+			name, plural(r.Held, "file"), r.Peer, them)
 	}
 	for _, rf := range r.PeerRefused {
 		fmt.Fprintf(a.out, "%s: FAIL on %s: %s\n", name, r.Peer, rf)
