@@ -480,7 +480,15 @@ func (l *Linker) BriefingUsage() BriefingUsage {
 		if err != nil {
 			u.Error = err.Error()
 		}
-		if i == 0 || u.Bytes > best.Bytes || (best.Error == "" && u.Error != "") {
+		// a failure, once seen, outranks any briefing that rendered
+		switch {
+		case i == 0:
+			best = u
+		case (u.Error != "") != (best.Error != ""):
+			if u.Error != "" {
+				best = u
+			}
+		case u.Bytes > best.Bytes:
 			best = u
 		}
 	}

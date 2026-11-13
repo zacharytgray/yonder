@@ -76,3 +76,27 @@ func TestRenderTableChecks(t *testing.T) {
 		t.Errorf("placeholders: %v", got)
 	}
 }
+
+// regression (recheck of fc24fe5): one harness's briefing fails on a missing
+// tier while another's renders; the usage keeps the failure, and the message
+// says only the briefing was left out
+func TestBriefingTierFailureShowsInUsage(t *testing.T) {
+	f := newFixture(t)
+	f.put(f.storeDir, RenderFile, "[claude]\nfast = \"Pebble\"\n")
+	f.put(f.storeDir, BriefingFile, "reviewed: 2026-11-01\n- local jobs use {{model:fast}}\n")
+	f.put(f.storeDir, "instructions.md", "shared rules\n")
+	l := f.linker()
+	l.Registry = f.registry(exampleMachines()...)
+	for _, order := range [][]string{{"codex", "claude-code"}, {"claude-code", "codex"}} {
+		err := l.Link(order)
+		if err == nil || !strings.Contains(err.Error(), "the briefing was left out for codex (the rest of its instructions render)") || strings.Contains(err.Error(), "nothing was rendered") {
+			t.Fatalf("%v: %v", order, err)
+		}
+		if u := l.BriefingUsage(); !strings.Contains(u.Error, "left out for codex") {
+			t.Fatalf("%v: usage lost the failure: %+v", order, u)
+		}
+	}
+	if !strings.Contains(read(filepath.Join(f.home, ".codex/AGENTS.md")), "shared rules") || !strings.Contains(read(filepath.Join(f.home, ".claude/CLAUDE.md")), "local jobs use Pebble") {
+		t.Fatal("both harnesses render the rest")
+	}
+}

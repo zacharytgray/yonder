@@ -242,8 +242,12 @@ func (l *Linker) tierError(key string, which int) error {
 	if len(files) > 1 {
 		verb = "use"
 	}
-	return fmt.Errorf("%s %s %s; nothing was rendered for %s; add %s under [%s] in agents/%s",
-		strings.Join(files, " and "), verb, strings.Join(what, ", and "), key, strings.Join(lines, ", "), key, RenderFile)
+	left := "nothing was rendered for " + key
+	if which == textsBriefing {
+		left = "the briefing was left out for " + key + " (the rest of its instructions render)"
+	}
+	return fmt.Errorf("%s %s %s; %s; add %s under [%s] in agents/%s",
+		strings.Join(files, " and "), verb, strings.Join(what, ", and "), left, strings.Join(lines, ", "), key, RenderFile)
 }
 
 func tiers(ks []string) string {
