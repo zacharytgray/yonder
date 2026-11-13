@@ -904,15 +904,23 @@ the offering machine's record of its last sync with the caller (`last_with`). Th
 sync is the later of the two. When it is more than 90 days ago, a file that only one side has,
 unchanged since that sync (its origin time is no later), is held back: not sent, not taken, and
 reported (`held back: ...`). A file both sides know syncs as usual, delete markers included, and
-so does anything changed since the pair last met, since a delete can't have been aimed at it. A
-pair that never synced is new, not stale, so a new machine gets everything.
+so does anything changed since the pair last met, since a delete can't have been aimed at it. At
+a first meeting the pair has no last sync, so each side's last sync with anyone stands in (the
+offer carries the peer's as `last_any`), and the earlier one counts: a machine back from a long
+absence meeting one that joined meanwhile still holds its old files back. A brand-new machine
+has synced with no one, so the other side's time decides, and it gets everything a fresh
+machine has. Delete markers for paths a side has never held are passed on too, quietly: a
+machine that joins takes the markers it is offered, so it turns away a deleted file from a
+machine that hasn't heard, for as long as the marker lasts there.
 
 A hold outlives the sync that found it, since that sync makes the pair fresh again. The machine
 that has the file records it (`held`: peer, path, since when), whether it was the caller or the
 caller told it to (`hold` in the push bundle). Its offers to that peer flag the file `held`, and
-the peer skips flagged paths it doesn't know. A hold ends when the file changes after it, when
-the peer turns out to know the path, or with `yonder sync <machine> --stale-ok`, which syncs
-held files and clears the holds. `doctor` warns for each machine last synced more than 90 days
+the peer skips flagged paths it doesn't know. The flag exists only on the wire: the caller reads it
+and clears it from every state it takes from an offer, and a bundle's reader drops it, so it is
+never saved or passed on. A hold ends when the file changes after it, when the peer turns out to
+know the path, or with `yonder sync --stale-ok`, which syncs held files and clears every hold
+the machine keeps, for every peer. `doctor` warns for each machine last synced more than 90 days
 ago.
 
 **A sync with one peer** (the caller holds its store lock; the peer takes its own, waiting up to 5
@@ -1087,7 +1095,8 @@ The rules:
   skill if the target had none. Unlink takes those out and puts the symlink back; a file whose
   text changed meanwhile is backed up first.
 - `agents/links.lock` serializes link and unlink on one machine, so a relink after a sync and a
-  layer change arriving through `_sync` can't edit `links.json` at once.
+  layer change arriving through `_sync` can't edit `links.json` at once. A relink checks whether
+  links are paused under that lock, so one that started before a layer-off unlink does nothing.
 - Conflict copies, dotfiles, pending changes and names that never sync are not linked. Link is idempotent; a second run
   with nothing new changes nothing. Entries no longer wanted (a skill deleted from the store) are
   undone, putting back what they replaced.

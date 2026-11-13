@@ -384,7 +384,7 @@ How sync behaves:
   entry running `yonder sync` on an always-on machine covers that.
 - Two machines that haven't synced with each other for more than 90 days hold back the old files
   only one of them has, since the other may have deleted them meanwhile. Files both know, and
-  anything changed since, sync as usual. `yonder sync <machine> --stale-ok` syncs the held files.
+  anything changed since, sync as usual. `yonder sync --stale-ok` syncs the held files (it clears every hold, for every machine).
 
 ## Commands
 
