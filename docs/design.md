@@ -883,8 +883,9 @@ yonder made the change itself (`import`, `restore`, `resolve`, `accept`; a scan 
 edited a file, so it records no harness). A scan bumps this machine's counter for every file whose
 hash or exec bit changed since the last scan and for every file that went missing (a delete
 marker). That is how edits made without yonder are caught without a watcher. A delete marker is
-dropped 90 days after the later of its origin time and when this machine recorded it (`marked` in
-the state), so a marker that reached a machine late lasts as long there as anywhere.
+dropped 90 days after its origin time, on every machine alike, so markers expire even in a fleet
+that syncs often. A marker dated more than 5 minutes ahead of the receiving machine's clock is
+taken as dated now, so it expires too.
 
 The scan reads the store folder through a symlink at its own path (a store moved into a dotfiles
 repo and linked back is the same store). It stops, changing nothing, when the folder is missing
@@ -911,16 +912,28 @@ absence meeting one that joined meanwhile still holds its old files back. A bran
 has synced with no one, so the other side's time decides, and it gets everything a fresh
 machine has. Delete markers for paths a side has never held are passed on too, quietly: a
 machine that joins takes the markers it is offered, so it turns away a deleted file from a
-machine that hasn't heard, for as long as the marker lasts there.
+machine that hasn't heard, while the marker lasts.
 
-A hold outlives the sync that found it, since that sync makes the pair fresh again. The machine
-that has the file records it (`held`: peer, path, since when), whether it was the caller or the
-caller told it to (`hold` in the push bundle). Its offers to that peer flag the file `held`, and
-the peer skips flagged paths it doesn't know. The flag exists only on the wire: the caller reads it
+When a sync holds files back, it prints one line for that machine instead of one per file, also
+from `yonder add`:
+
+```
+agents: held back 3 files with newbox, since one of you last synced more than 90 days ago and the other may have deleted them meanwhile; if the old machine's deletes are already reflected, run `yonder sync --stale-ok`
+```
+
+So a new machine added while another machine has been off for over 90 days gets only the files
+changed since then, until that is run.
+
+A hold outlives the sync that found it, since that sync makes the pair fresh again (and the
+machine's last sync with anyone with it). The machine that has the file records it
+(`held_files`: path, since when), whether it was the caller or the caller told it to (`hold` in
+the push bundle). Such a file may be one the fleet deleted and forgot, so it is held from every
+machine, not only the one that found it: its offers flag the file `held`, and any peer that
+doesn't know the path skips it. The flag exists only on the wire: the caller reads it
 and clears it from every state it takes from an offer, and a bundle's reader drops it, so it is
 never saved or passed on. A hold ends when the file changes after it, when the peer turns out to
 know the path, or with `yonder sync --stale-ok`, which syncs held files and clears every hold
-the machine keeps, for every peer. `doctor` warns for each machine last synced more than 90 days
+the machine keeps. `doctor` warns for each machine last synced more than 90 days
 ago.
 
 **A sync with one peer** (the caller holds its store lock; the peer takes its own, waiting up to 5
