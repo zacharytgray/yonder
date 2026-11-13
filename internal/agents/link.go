@@ -202,17 +202,16 @@ func (l *Linker) instructionFiles(key string) []string {
 
 // renderText is the briefing, then the shared text, the harness overlay and
 // the machine's two, joined with blank lines. empty when the store has none
-// and there are no records. an error means it can't render as it is.
-func (l *Linker) renderText(key string) (string, error) {
-	if err := l.tierError(key); err != nil {
-		return "", err
+// and there are no records. an error means the instructions can't render as
+// they are. a briefing that can't render is left out and returned as
+// briefErr, so one bad briefing never freezes the rest.
+func (l *Linker) renderText(key string) (text string, briefErr, err error) {
+	if err := l.tierError(key, textsInstructions); err != nil {
+		return "", nil, err
 	}
 	var parts []string
-	b, _, err := l.briefing(key)
-	if err != nil {
-		return "", err
-	}
-	if b != "" {
+	b, _, briefErr := l.briefing(key)
+	if briefErr == nil && b != "" {
 		parts = append(parts, strings.TrimSpace(b))
 	}
 	for _, f := range l.instructionFiles(key) {
@@ -227,16 +226,16 @@ func (l *Linker) renderText(key string) (string, error) {
 		}
 		t, err := l.resolve(strings.TrimSpace(string(data)), key)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		if t != "" {
 			parts = append(parts, t)
 		}
 	}
 	if len(parts) == 0 {
-		return "", nil
+		return "", briefErr, nil
 	}
-	return strings.Join(parts, "\n\n") + "\n", nil
+	return strings.Join(parts, "\n\n") + "\n", briefErr, nil
 }
 
 // BlockWarn is the rendered text size doctor warns past. there is no hard
@@ -255,12 +254,14 @@ type plan struct {
 	wants   []want
 	notes   []string
 	blocked map[string]error
+	noBrief map[string]error // rendered without the briefing, and why
 }
 
 func (l *Linker) wants(harnesses []string) plan {
 	var out []want
 	var notes []string
 	blocked := map[string]error{}
+	noBrief := map[string]error{}
 	seen := map[string]bool{}
 	add := func(w want) {
 		if !seen[w.path] {
@@ -277,8 +278,11 @@ func (l *Linker) wants(harnesses []string) plan {
 			// the text itself, never an @import: claude code asks once per project
 			// before importing a file outside it, which a headless session can't answer
 			p := filepath.Join(l.Home, w.instructions)
-			text, err := l.renderText(w.key)
+			text, briefErr, err := l.renderText(w.key)
 			_, statErr := os.Lstat(p)
+			if err == nil && briefErr != nil && (text != "" || !w.mustExist || statErr == nil) {
+				noBrief[p] = briefErr
+			}
 			switch {
 			case err != nil:
 				blocked[p] = err
@@ -316,7 +320,7 @@ func (l *Linker) wants(harnesses []string) plan {
 			notes = append(notes, fmt.Sprintf(w.note, filepath.Join(l.StoreDir, "skills")))
 		}
 	}
-	return plan{out, notes, blocked}
+	return plan{out, notes, blocked, noBrief}
 }
 
 // Link wires the store into the harnesses: the instructions rendered into a
@@ -373,6 +377,9 @@ func (l *Linker) link(harnesses []string) error {
 	var failed []string
 	for _, path := range sortedPaths(p.blocked) {
 		failed = append(failed, fmt.Sprintf("%s: %v", l.tilde(path), p.blocked[path]))
+	}
+	for _, path := range sortedPaths(p.noBrief) {
+		failed = append(failed, fmt.Sprintf("%s has no briefing: %v", l.tilde(path), p.noBrief[path]))
 	}
 	for _, w := range p.wants {
 		es, err := l.make(w, &st)
@@ -1041,6 +1048,16 @@ func (l *Linker) Blocked() map[string]error {
 	return l.wants(st.Harnesses).blocked
 }
 
+// NoBriefing is the instruction files linked here that render without the
+// briefing, with why (over its cap, a bad record). their other text is current.
+func (l *Linker) NoBriefing() map[string]error {
+	st, err := l.State()
+	if err != nil || st.Paused || len(st.Harnesses) == 0 {
+		return nil
+	}
+	return l.wants(st.Harnesses).noBrief
+}
+
 // LargeTexts names the rendered instructions past BlockWarn, with their size.
 func (l *Linker) LargeTexts() []string {
 	st, err := l.State()
@@ -1071,6 +1088,9 @@ func (l *Linker) Problems() []string {
 		}
 		for _, path := range sortedPaths(p.blocked) {
 			out = append(out, l.tilde(path)+" can't be rendered: "+p.blocked[path].Error())
+		}
+		for _, path := range sortedPaths(p.noBrief) {
+			out = append(out, l.tilde(path)+" has no briefing: "+p.noBrief[path].Error())
 		}
 	}
 	for _, e := range st.Entries {

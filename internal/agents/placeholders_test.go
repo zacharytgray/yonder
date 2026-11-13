@@ -34,7 +34,7 @@ func TestPlaceholdersPerHarness(t *testing.T) {
 	f.put(f.storeDir, RenderFile, "[claude]\ntop = \"Atlas\"\nfast = \"Pebble\"\n\n[codex]\ntop = \"Zephyr\"\n")
 	f.put(f.storeDir, "instructions.md", "Plan with {{model:top}}; scout with {{model:fast}}; review with {{model:deep}}.\n")
 	err := l.Link(nil)
-	if err == nil || !strings.Contains(err.Error(), "agents/briefing.md and agents/instructions.md use {{model:deep}}, which agents/render.toml doesn't define, and {{model:fast}}, which it names for other harnesses only; nothing was rendered for codex; add fast = \"...\", deep = \"...\" under [codex]") {
+	if err == nil || !strings.Contains(err.Error(), "agents/instructions.md uses {{model:deep}}, which agents/render.toml doesn't define, and {{model:fast}}, which it names for other harnesses only; nothing was rendered for codex; add fast = \"...\", deep = \"...\" under [codex]") {
 		t.Fatalf("want codex refused: %v", err)
 	}
 	if read(filepath.Join(f.home, ".codex/AGENTS.md")) != codex {
@@ -59,6 +59,12 @@ func TestRenderTableChecks(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"[shared]\nhermes = \"yes\"\n", "[shared]\nclaude = true\n", "shared = true\n"} {
+		if r := Check(RenderFile, []byte(bad)); r == nil || !r.Final {
+			t.Errorf("%q should be refused: %+v", bad, r)
+		}
+	}
+	// regression (review of a68f72a): escape and line-separator characters
+	for _, bad := range []string{"[claude]\ntop = \"a\\u001b[2J\"\n", "[claude]\ntop = \"a\\u2028b\"\n", "[claude]\ntop = \"a\\u2029b\"\n", "[claude]\ntop = \"a\\u202eb\"\n"} {
 		if r := Check(RenderFile, []byte(bad)); r == nil || !r.Final {
 			t.Errorf("%q should be refused: %+v", bad, r)
 		}

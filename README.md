@@ -364,7 +364,10 @@ The block starts with a briefing about your machines, so every agent knows them 
 Its machine list comes from the records: name, role, address, OS, hardware, served models, and
 one word on availability. The rest is yours, in `briefing.md` in the store: which work goes where,
 where things live, how secrets are used. Every session loads all of it, so it has a budget: 4 KB
-in all, 2 KB hand-written. Over a cap nothing renders, and nothing is cut. `yonder doctor` and
+in all, 2 KB hand-written, and the machine list gets the rest. A growing fleet shortens the list
+(models to a count, then no hardware, then name, role and address) instead of failing. If the
+briefing still can't fit, your instructions render without it, and `sync` and `doctor` say why.
+Nothing is ever cut out of your text. `yonder doctor` and
 `yonder agents briefing review` flag paths that are gone, machine names and roles that don't
 match the records, sections not reviewed in 90 days, and lines your own text already repeats.
 The review also prints a trimmed draft for you to edit. Hermes gets the block in

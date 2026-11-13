@@ -1,13 +1,17 @@
 package agents
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/zacharytgray/yonder/internal/registry"
 )
@@ -82,35 +86,75 @@ func isHeading(line string) bool {
 	return len(t) < len(line) && len(line)-len(t) <= 6 && strings.HasPrefix(t, " ")
 }
 
+// how much of each record the machine list says. it steps down to fit its
+// share of the budget.
+const (
+	detailFull     = iota // everything
+	detailModels          // served models as a count
+	detailHardware        // no OS, CPU, GPU or RAM either
+	detailMinimal         // name, role and address
+)
+
 // GeneratedBriefing is the machine list, from the records only. nothing in it
 // is hand-written, so it can't go stale while the records are fresh.
 func GeneratedBriefing(ms []registry.Machine, self string) string {
-	if len(ms) == 0 {
+	return generated(ms, self, detailFull)
+}
+
+// fitGenerated is the most detailed machine list that fits in budget bytes,
+// or the shortest one when none does.
+func fitGenerated(ms []registry.Machine, self string, budget int) (string, int) {
+	var text string
+	for d := detailFull; d <= detailMinimal; d++ {
+		if text = generated(ms, self, d); len(text) <= budget {
+			return text, d
+		}
+	}
+	return text, detailMinimal
+}
+
+func generated(ms []registry.Machine, self string, detail int) string {
+	var keep []registry.Machine
+	for _, m := range ms {
+		if registry.ValidName(m.Name) == nil {
+			keep = append(keep, m)
+		}
+	}
+	if len(keep) == 0 {
 		return ""
 	}
-	ms = append([]registry.Machine(nil), ms...)
-	sort.Slice(ms, func(i, j int) bool { return ms[i].Name < ms[j].Name })
+	sort.Slice(keep, func(i, j int) bool { return keep[i].Name < keep[j].Name })
 	var b strings.Builder
 	b.WriteString(briefingTitle + "\n\n")
 	b.WriteString("Machines (generated from yonder's records; live state: `yonder ls`, details: `yonder show <machine>`):\n")
 	users := map[string]bool{}
-	for _, m := range ms {
-		users[m.SSHUser] = true
+	for _, m := range keep {
+		if u := cleanUser(m.SSHUser); u != "" {
+			users[u] = true
+		}
 	}
-	for _, m := range ms {
-		b.WriteString(machineLine(m, self, len(users) > 1) + "\n")
+	for _, m := range keep {
+		b.WriteString(machineLine(m, self, len(users) > 1, detail) + "\n")
 	}
-	if len(users) == 1 && ms[0].SSHUser != "" {
-		fmt.Fprintf(&b, "All reached as user `%s` over Tailscale. ", ms[0].SSHUser)
+	if detail > detailFull {
+		b.WriteString("This list is shortened to fit the briefing's budget; `yonder ls` and `yonder show <machine>` have the rest.\n")
+	}
+	if len(users) == 1 {
+		for u := range users {
+			fmt.Fprintf(&b, "All reached as user `%s` over Tailscale. ", u)
+		}
 	}
 	b.WriteString("Run with `yonder run <machine> -- <cmd>`, copy with `yonder cp`, long jobs with `--detach` and `yonder jobs`. Exit 75 means the machine is offline or asleep: say so and stop.\n")
 	return b.String()
 }
 
-func machineLine(m registry.Machine, self string, user bool) string {
+// the roles `yonder set` takes; anything else in a record is left out
+var knownRoles = []string{"laptop", "desktop", "server", "gpu", "other"}
+
+func machineLine(m registry.Machine, self string, user bool, detail int) string {
 	head := "`" + m.Name + "`"
 	var tags []string
-	if m.Role != "" {
+	if contains(knownRoles, m.Role) {
 		tags = append(tags, m.Role)
 	}
 	if m.Name == self {
@@ -123,22 +167,30 @@ func machineLine(m registry.Machine, self string, user bool) string {
 		head += " " + strings.Join(tags, ", ")
 	}
 	parts := []string{head}
-	addr := m.TailscaleIP
-	if user && m.SSHUser != "" {
-		addr = m.SSHUser + "@" + addr
+	addr := ""
+	if ip := net.ParseIP(m.TailscaleIP); ip != nil {
+		addr = ip.String()
+	}
+	if u := cleanUser(m.SSHUser); user && u != "" && addr != "" {
+		addr = u + "@" + addr
 	}
 	if addr != "" {
 		parts = append(parts, addr)
 	}
+	if detail == detailMinimal {
+		return "- " + strings.Join(parts, " · ")
+	}
 	f := m.Facts
-	osText := strings.TrimSpace(orStr(f.OSVersion, m.OS) + " " + orStr(f.Arch, m.Arch))
-	if osText != "" {
-		parts = append(parts, osText)
+	if detail < detailHardware {
+		osText := strings.TrimSpace(clean(orStr(f.OSVersion, m.OS), 40) + " " + clean(orStr(f.Arch, m.Arch), 12))
+		if osText != "" {
+			parts = append(parts, osText)
+		}
+		if hw := hardwareText(f); hw != "" {
+			parts = append(parts, hw)
+		}
 	}
-	if hw := hardwareText(f); hw != "" {
-		parts = append(parts, hw)
-	}
-	if ms := servedText(f.Models); ms != "" {
+	if ms := servedText(f.Models, detail > detailFull); ms != "" {
 		parts = append(parts, ms)
 	}
 	if w := availability(m); w != "" {
@@ -158,12 +210,12 @@ func orStr(s, d string) string {
 // is said once.
 func hardwareText(f registry.Facts) string {
 	var parts []string
-	cpu := registry.ShortCPU(f.CPU)
+	cpu := clean(registry.ShortCPU(clean(f.CPU, 120)), 40)
 	if cpu != "" {
 		parts = append(parts, cpu)
 	}
 	for _, g := range f.GPUs {
-		n := registry.ShortGPU(g.Name)
+		n := clean(registry.ShortGPU(clean(g.Name, 120)), 40)
 		switch {
 		case n == "" || n == cpu:
 		case g.Unified || g.MemoryGB < 2:
@@ -182,19 +234,20 @@ func hardwareText(f registry.Facts) string {
 
 const maxModels = 4
 
-// servedText lists the models a server answered for at discovery time.
-func servedText(ms []registry.Model) string {
+// servedText lists the models a server answered for at discovery time, or
+// only how many when short.
+func servedText(ms []registry.Model, short bool) string {
 	var s []string
 	for _, m := range ms {
 		if !m.Serving {
 			continue
 		}
-		t := m.Name
+		t := clean(m.Name, 60)
 		var tags []string
-		if m.Runtime != "" {
-			tags = append(tags, m.Runtime)
+		if r := clean(m.Runtime, 16); r != "" {
+			tags = append(tags, r)
 		}
-		if m.Port > 0 {
+		if m.Port > 0 && m.Port < 65536 {
 			tags = append(tags, fmt.Sprintf(":%d", m.Port))
 		}
 		if len(tags) > 0 {
@@ -202,8 +255,13 @@ func servedText(ms []registry.Model) string {
 		}
 		s = append(s, t)
 	}
-	if len(s) == 0 {
+	switch {
+	case len(s) == 0:
 		return ""
+	case short && len(s) == 1:
+		return "serves 1 model"
+	case short:
+		return fmt.Sprintf("serves %d models", len(s))
 	}
 	more := ""
 	if len(s) > maxModels {
@@ -211,6 +269,55 @@ func servedText(ms []registry.Model) string {
 		s = s[:maxModels]
 	}
 	return "serves " + strings.Join(s, ", ") + more
+}
+
+// clean makes a record's text safe for the block: one line, no control,
+// format (bidi, zero-width) or line-separator characters, no backticks,
+// single spaces, at most max runes. records come from other machines.
+func clean(s string, max int) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case unsafeRune(r) || r == '`':
+			b.WriteRune(' ')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	out := strings.Join(strings.Fields(b.String()), " ")
+	if rs := []rune(out); len(rs) > max {
+		out = strings.TrimSpace(string(rs[:max-1])) + "…"
+	}
+	return out
+}
+
+// unsafeRune: what never goes into a rendered line or a model name: control
+// characters (escape included), format characters (bidi, zero-width) and the
+// unicode line and paragraph separators.
+func unsafeRune(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' || r == utf8.RuneError
+}
+
+var userRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,32}$`)
+
+// cleanUser is an ssh user name, or "" when the record's isn't one.
+func cleanUser(u string) string {
+	if userRe.MatchString(u) {
+		return u
+	}
+	return ""
+}
+
+// checkGenerated refuses a machine list that holds a block marker or a
+// placeholder: cleaned records shouldn't, so one that does is not rendered.
+func checkGenerated(text string) error {
+	switch {
+	case strings.Contains(text, markerPrefix):
+		return errors.New("the machine list would hold yonder's block marker (" + markerPrefix + "...), from a machine record; it is left out until the record is fixed (yonder refresh <machine>)")
+	case strings.Contains(text, "{{model:"):
+		return errors.New("the machine list would hold a {{model:...}} placeholder, from a machine record; it is left out until the record is fixed (yonder refresh <machine>)")
+	}
+	return nil
 }
 
 // availability is one word from the role and notes: always-on, sleeps,
@@ -239,12 +346,17 @@ type BriefingUsage struct {
 	Cap       int    `json:"cap"`
 	HandBytes int    `json:"hand_bytes"`
 	HandCap   int    `json:"hand_cap"`
+	Shortened bool   `json:"shortened"`       // the machine list was cut down to fit its share
 	Error     string `json:"error,omitempty"` // why it doesn't render
 }
 
 func (u BriefingUsage) String() string {
-	return fmt.Sprintf("briefing %s / %s (warn at %s), hand-written %s / %s",
+	s := fmt.Sprintf("briefing %s / %s (warn at %s), hand-written %s / %s",
 		kb(u.Bytes), kb(u.Cap), kb(u.Warn), kb(u.HandBytes), kb(u.HandCap))
+	if u.Shortened {
+		s += ", machine list shortened to fit"
+	}
+	return s
 }
 
 func kb(n int) string { return fmt.Sprintf("%.1f KB", float64(n)/1024) }
@@ -265,21 +377,36 @@ func (l *Linker) briefingSource() ([]byte, bool) {
 
 // briefing renders the briefing for one harness: the machine list, then
 // briefing.md. over a cap it renders nothing and says why; it never cuts.
+//
+// the shares: the hand-written part has its own 2 KB cap, and the machine
+// list gets the rest of the 4 KB, so at least 2 KB. the list steps down to
+// fit its share (models to a count, then no hardware, then name, role and
+// address), so a fleet that grows or starts serving models doesn't need an
+// edit. only a list too long even at its shortest goes over.
 func (l *Linker) briefing(key string) (string, BriefingUsage, error) {
 	u := BriefingUsage{Warn: BriefingWarn, Cap: BriefingCap, HandCap: HandCap}
-	gen := GeneratedBriefing(l.machines(), l.Self)
 	var hand string
 	var secs []BriefingSection
 	data, ok := l.briefingSource()
 	if ok {
 		secs, hand = parseBriefing(data)
 		var err error
-		if err = l.tierError(key); err == nil {
+		if err = l.tierError(key, textsBriefing); err == nil {
 			hand, err = l.resolve(hand, key)
 		}
 		if err != nil {
 			return "", u, err
 		}
+	}
+	u.HandBytes = len(hand)
+	if u.HandBytes > HandCap {
+		return "", u, fmt.Errorf("%s; %s", handCapReason(u.HandBytes, secs), trimHint)
+	}
+	share := BriefingCap - len(hand) - 2 // the blank line between, and the last newline
+	gen, detail := fitGenerated(l.machines(), l.Self, share)
+	u.Shortened = detail > detailFull
+	if err := checkGenerated(gen); err != nil {
+		return "", u, err
 	}
 	if gen == "" && hand == "" {
 		return "", u, nil
@@ -289,12 +416,9 @@ func (l *Linker) briefing(key string) (string, BriefingUsage, error) {
 	}
 	text := strings.TrimRight(gen+"\n"+hand, "\n") + "\n"
 	text = strings.TrimLeft(text, "\n")
-	u.Bytes, u.HandBytes = len(text), len(hand)
-	switch {
-	case u.HandBytes > HandCap:
-		return "", u, fmt.Errorf("%s; %s", handCapReason(u.HandBytes, secs), trimHint)
-	case u.Bytes > BriefingCap:
-		return "", u, fmt.Errorf("the briefing is %s, over its %s cap (machine list %s, hand-written %s%s); %s", kb(u.Bytes), kb(BriefingCap), kb(len(gen)), kb(u.HandBytes), largest(secs), trimHint)
+	u.Bytes = len(text)
+	if u.Bytes > BriefingCap {
+		return "", u, fmt.Errorf("the briefing is %s, over its %s cap even with the machine list at its shortest (machine list %s, hand-written %s%s); the instructions render without it until it fits; trim agents/%s, or remove machines that are gone", kb(u.Bytes), kb(BriefingCap), kb(len(gen)), kb(u.HandBytes), largest(secs), BriefingFile)
 	}
 	if ok {
 		// a block marker or a key in it: it can't sync, so it isn't rendered either
@@ -310,7 +434,7 @@ func handCapReason(n int, secs []BriefingSection) string {
 	return fmt.Sprintf("the hand-written briefing (agents/%s) is %s, over its %s cap%s", BriefingFile, kb(n), kb(HandCap), largest(secs))
 }
 
-const trimHint = "nothing was rendered, and nothing was cut; move detail into a doc or a skill and leave a one-line pointer"
+const trimHint = "the instructions render without the briefing, and nothing was cut; move detail into a doc or a skill and leave a one-line pointer"
 
 // largest names the three biggest sections, for the over-cap error.
 func largest(secs []BriefingSection) string {

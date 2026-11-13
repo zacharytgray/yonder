@@ -187,10 +187,13 @@ func TestBriefingLocal(t *testing.T) {
 
 	write(filepath.Join(store, "briefing.md"), "## Big\n"+strings.Repeat("- a line of routing detail nobody needs\n", 60))
 	r := f.run("", "sync")
-	if r.code != 1 || !strings.Contains(r.stdout, "FAIL agents: ~/.claude/CLAUDE.md keeps its old text") || !strings.Contains(r.stdout, "over its 2.0 KB cap") {
+	if r.code != 1 || !strings.Contains(r.stdout, "FAIL agents: ~/.claude/CLAUDE.md has no briefing") || !strings.Contains(r.stdout, "over its 2.0 KB cap") {
 		t.Fatalf("over cap: %+v", r)
 	}
-	if after, _ := os.ReadFile(filepath.Join(home, ".claude/CLAUDE.md")); string(after) != string(got) {
-		t.Fatalf("nothing is cut or rewritten:\n%s", after)
+	if after, _ := os.ReadFile(filepath.Join(home, ".claude/CLAUDE.md")); !strings.HasPrefix(string(after), "my rules\n") || strings.Contains(string(after), "Yonder briefing") || strings.Contains(string(after), "nobody needs") {
+		t.Fatalf("the rest renders without the briefing, and nothing is cut into it:\n%s", after)
+	}
+	if r := f.run("", "doctor"); r.code != 1 || !strings.Contains(r.stdout, "over its 2.0 KB cap") {
+		t.Fatalf("doctor: %+v", r)
 	}
 }

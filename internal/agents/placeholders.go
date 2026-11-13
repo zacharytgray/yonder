@@ -84,7 +84,7 @@ func parseRender(data []byte) (renderTable, map[string]bool, error) {
 				return nil, nil, fmt.Errorf("agents/%s: [%s] %s is not a tier name (a-z, 0-9, -)", RenderFile, h, k)
 			case !ok:
 				return nil, nil, fmt.Errorf("agents/%s: [%s] %s must be a string", RenderFile, h, k)
-			case s == "" || len(s) > 100 || strings.ContainsAny(s, "\n\r") || strings.Contains(s, "{{") || strings.Contains(s, markerPrefix):
+			case s == "" || len(s) > 100 || strings.ContainsFunc(s, unsafeRune) || strings.Contains(s, "{{") || strings.Contains(s, markerPrefix):
 				return nil, nil, fmt.Errorf("agents/%s: [%s] %s must be one short line of plain text", RenderFile, h, k)
 			}
 			t[h][k] = s
@@ -146,16 +146,26 @@ func (l *Linker) resolve(text, key string) (string, error) {
 	}), nil
 }
 
-// tierTexts is every store text rendered for a harness: the briefing, then
+// which texts a tier check covers
+const (
+	textsAll          = iota
+	textsBriefing     // briefing.md only
+	textsInstructions // the instruction files only
+)
+
+// tierTexts is the store texts rendered for a harness: the briefing, then
 // its instruction files, by store path.
-func (l *Linker) tierTexts(key string) ([]string, map[string]string) {
+func (l *Linker) tierTexts(key string, which int) ([]string, map[string]string) {
 	var order []string
 	texts := map[string]string{}
-	if data, ok := l.briefingSource(); ok {
+	if data, ok := l.briefingSource(); ok && which != textsInstructions {
 		order = append(order, BriefingFile)
 		texts[BriefingFile] = string(data)
 	}
 	for _, f := range l.instructionFiles(key) {
+		if which == textsBriefing {
+			break
+		}
 		data, _ := os.ReadFile(f)
 		rel, _ := filepath.Rel(l.StoreDir, f)
 		rel = filepath.ToSlash(rel)
@@ -167,8 +177,8 @@ func (l *Linker) tierTexts(key string) ([]string, map[string]string) {
 
 // missingTiers is the tiers the harness's texts use with no name in the
 // table, and the files that use them.
-func (l *Linker) missingTiers(key string, t renderTable) (missing, files []string) {
-	order, texts := l.tierTexts(key)
+func (l *Linker) missingTiers(key string, t renderTable, which int) (missing, files []string) {
+	order, texts := l.tierTexts(key, which)
 	for _, rel := range order {
 		used := false
 		for _, k := range Placeholders(texts[rel]) {
@@ -189,12 +199,20 @@ func (l *Linker) missingTiers(key string, t renderTable) (missing, files []strin
 
 // tierError refuses a harness's render when a tier it uses has no name for
 // it, naming every missing tier, the files and the fix.
-func (l *Linker) tierError(key string) error {
+func (l *Linker) tierError(key string, which int) error {
+	order, texts := l.tierTexts(key, which)
+	used := false
+	for _, rel := range order {
+		used = used || len(Placeholders(texts[rel])) > 0
+	}
+	if !used {
+		return nil // a broken render.toml matters only to text that uses it
+	}
 	t, err := l.renderTable()
 	if err != nil {
 		return err
 	}
-	missing, files := l.missingTiers(key, t)
+	missing, files := l.missingTiers(key, t, which)
 	if len(missing) == 0 {
 		return nil
 	}
@@ -260,7 +278,7 @@ func (l *Linker) Unresolved() []string {
 		if !keys[key] {
 			continue
 		}
-		if missing, _ := l.missingTiers(key, t); len(missing) > 0 {
+		if missing, _ := l.missingTiers(key, t, textsAll); len(missing) > 0 {
 			sort.Strings(missing)
 			out = append(out, key+": "+strings.Join(missing, ", "))
 		}

@@ -144,11 +144,15 @@ func (a *app) syncCommand(only string, machines []string, o syncOpts) error {
 // can't be rendered now (a briefing over its cap, an unknown placeholder).
 // such a file keeps what it had.
 func (a *app) renderable(self string) bool {
-	bl := agents.NewLinker(self, nil).Blocked()
+	l := agents.NewLinker(self, nil)
+	bl, nb := l.Blocked(), l.NoBriefing()
 	for _, p := range sortedKeys(bl) {
 		fmt.Fprintf(a.out, "FAIL agents: %s keeps its old text: %v\n", agents.Tilde(p, agents.Home()), bl[p])
 	}
-	return len(bl) == 0
+	for _, p := range sortedKeys(nb) {
+		fmt.Fprintf(a.out, "FAIL agents: %s has no briefing: %v\n", agents.Tilde(p, agents.Home()), nb[p])
+	}
+	return len(bl)+len(nb) == 0
 }
 
 func (a *app) resolve(name, self, rel, keep string) error {

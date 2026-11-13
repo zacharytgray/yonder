@@ -1167,13 +1167,32 @@ and after every registry sync on either side (`ApplyLayer` relinks where linked)
 note or fact change alters the list. A store with no `briefing.md` still gets the list.
 
 **Budget.** Every session loads all of it. The rendered briefing has a hard cap of 4 KB with a
-warning at 3 KB; the hand-written part a cap of 2 KB. Over a cap nothing is cut: link renders
-nothing for that file and leaves it as it was, the error names the size, the cap and the three
-largest sections, and says to move detail into a doc or a skill with a one-line pointer. A
-`briefing.md` over 2 KB is refused by the store check too, so it doesn't sync (no `allow` waives
-it). `yonder sync` prints a FAIL line for each file that keeps its old text and exits 1.
+warning at 3 KB. The shares: the hand-written part has its own cap of 2 KB, and the machine list
+gets the rest of the 4 KB, so at least 2 KB. The list grows with the fleet and with served models,
+without anyone editing anything, so it steps down to fit its share rather than fail: first each
+machine's served models become a count ("serves 4 models"), then the OS and hardware go, then
+each line is only name, role and address. A shortened list says so and points at `yonder ls` and
+`yonder show <machine>`; `agents status` and `doctor` add "machine list shortened to fit".
+
+Over a cap nothing is cut into the briefing. A `briefing.md` over 2 KB is refused by the store
+check, so it doesn't sync (no `allow` waives it). When the briefing can't render (the hand-written
+part over its cap, a list too long even at its shortest, a bad record, a tier with no name in
+`briefing.md`), the instructions render without it, so one bad briefing never freezes the rest
+of the text on every machine. The failure stays loud: link returns an error naming each file
+that has no briefing, the size, the cap and the three largest sections; `yonder sync` prints
+`FAIL agents: <file> has no briefing: ...` and exits 1; `doctor` FAILs. A problem in the
+instruction files themselves (a tier with no name there) still leaves that file as it was.
 `agents status` and `doctor` show the usage, like `briefing 2.0 KB / 4.0 KB (warn at 3.0 KB),
 hand-written 1.2 KB / 2.0 KB`.
+
+**Records are cleaned.** The list is built from records that arrive from other machines through
+`_sync`, so every field is cleaned at render time: one line, no control, escape, format (bidi,
+zero-width) or line-separator characters, no backticks, single spaces, clipped (OS 40, CPU and
+GPU 40, a model 60, a runtime 16 characters). The role is used only when it is one of `laptop`,
+`desktop`, `server`, `gpu`, `other`; the ssh user only when it is a plain user name; the address
+only when it parses as an IP; a machine whose name isn't valid is left out. A list that still
+holds yonder's marker (`<!-- yonder:`) or a `{{model:` placeholder is refused, so the briefing
+is left out until the record is fixed (`yonder refresh <machine>`).
 
 **Upkeep.** Nobody has to remember to keep it true. `doctor` WARNs, and `agents briefing review`
 lists:
@@ -1217,7 +1236,9 @@ fast = "Quill"
 Only that exact syntax is replaced (`{{model:` then a tier of a-z, 0-9 and `-`, then `}}`); `{{
 model:top }}`, `{{model:Top}}` and the word "top" stay as they are. It works in
 `instructions*.md`, machine overlays included, and in `briefing.md`. The tables are `[claude]`,
-`[codex]`, `[pi]` and `[hermes]` (the overlay keys); each value is one short line. One more table,
+`[codex]`, `[pi]` and `[hermes]` (the overlay keys); each value is one short line, at most 100
+bytes, with no control, escape, format or line-separator characters, no `{{` and no marker. A
+broken table matters only to text that uses a placeholder. One more table,
 `[shared]`, holds opt-ins: `hermes = true` gives Hermes the shared instructions too (see Wiring
 the harnesses); it takes only `hermes` and a true or false. A table that breaks these rules is
 refused by the store check, so it doesn't sync.

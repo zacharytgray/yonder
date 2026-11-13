@@ -119,6 +119,9 @@ instructions, skills, subagents and hooks, and syncs between machines:
   `yonder set <machine> --role R --notes TEXT`, never by hand. The rest is `briefing.md` in the
   store. Keep it short (2 KB). Write paths as `<machine>:<path>`, or `~/...` for every machine.
   When the user confirms a section is still true, set its `reviewed: YYYY-MM-DD` line to today.
+- If `yonder sync` says a file "has no briefing", the rest of the instructions are current and
+  only the briefing was left out. Tell the user the reason it gives: trim `briefing.md` with them,
+  or `yonder refresh` the machine whose record it names.
 - `yonder agents briefing review` lists what is stale or repeated and suggests a trimmed draft.
   Go through it with the user and edit `briefing.md` together. Never delete text on your own.
 - To name a model tier in shared text, write `{{model:<tier>}}`, like `{{model:top}}`. Each

@@ -191,17 +191,11 @@ func (a *app) checkPaths(self string, refs []agents.PathRef) ([]agents.Finding, 
 
 // pathsExist runs one [ -e ] per path on m. a ~/ path is under that machine's home.
 func (a *app) pathsExist(m registry.Machine, self string, refs []agents.PathRef, idx []int) ([]bool, error) {
-	var script strings.Builder
-	fmt.Fprintf(&script, "printf '%%s\\n' %s\n", transport.Quote(agents.ReplyStart))
+	var paths []string
 	for _, i := range idx {
-		p := refs[i].Path
-		arg := transport.Quote(p)
-		if rest, ok := strings.CutPrefix(p, "~/"); ok {
-			arg = `"$HOME"/` + transport.Quote(rest)
-		}
-		fmt.Fprintf(&script, "if [ -e %s ]; then echo y; else echo n; fi\n", arg)
+		paths = append(paths, refs[i].Path)
 	}
-	out, err := a.readOn(m, self, script.String())
+	out, err := a.readOn(m, self, pathsScript(paths))
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +209,21 @@ func (a *app) pathsExist(m registry.Machine, self string, refs []agents.PathRef,
 		res[k] = l == "y"
 	}
 	return res, nil
+}
+
+// pathsScript prints y or n per path, after the reply line. each path is one
+// quoted word, so nothing in it reaches the shell as code.
+func pathsScript(paths []string) string {
+	var script strings.Builder
+	fmt.Fprintf(&script, "printf '%%s\\n' %s\n", transport.Quote(agents.ReplyStart))
+	for _, p := range paths {
+		arg := transport.Quote(p)
+		if rest, ok := strings.CutPrefix(p, "~/"); ok {
+			arg = `"$HOME"/` + transport.Quote(rest)
+		}
+		fmt.Fprintf(&script, "if [ -e %s ]; then echo y; else echo n; fi\n", arg)
+	}
+	return script.String()
 }
 
 // readOn runs a read-only shell script on m through _exec, within 20s.
