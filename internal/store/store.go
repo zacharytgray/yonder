@@ -139,15 +139,12 @@ type State struct {
 	Allow   map[string]string    `json:"allow,omitempty"` // path -> the hash whose secret check is waived
 	Peers   map[string]time.Time `json:"peers,omitempty"` // last good sync with each machine
 	Notices []Notice             `json:"notices,omitempty"`
-	// when this machine recorded each delete marker it holds. a marker lasts
-	// DeleteTTL from the later of this and its origin time, so one relayed
-	// late is kept as long as one made here.
-	Marked map[string]time.Time `json:"marked,omitempty"`
-	// files held back from a machine: peer -> path -> since when. set when a
-	// pair that hadn't synced within DeleteTTL meets and only this side has
-	// the file; it holds until the file changes, the peer learns the path, or
-	// --stale-ok
-	Held map[string]map[string]time.Time `json:"held,omitempty"`
+	// files held back: path -> since when. set when a pair that hadn't synced
+	// within DeleteTTL meets and only this side has the file. such a file may
+	// be one the fleet deleted and forgot, so it is held from every machine
+	// that doesn't know the path, until it changes here, a machine turns out
+	// to know it, or --stale-ok
+	Held map[string]time.Time `json:"held_files,omitempty"`
 }
 
 // Store is one synced folder on this machine.
@@ -263,11 +260,8 @@ func (s *Store) State() (*State, error) {
 	if st.Peers == nil {
 		st.Peers = map[string]time.Time{}
 	}
-	if st.Marked == nil {
-		st.Marked = map[string]time.Time{}
-	}
 	if st.Held == nil {
-		st.Held = map[string]map[string]time.Time{}
+		st.Held = map[string]time.Time{}
 	}
 	if s.StaleOK {
 		clear(st.Held)

@@ -231,14 +231,12 @@ func ServeRecv(s *Store, in io.Reader, out io.Writer, from string) error {
 	sort.Strings(paths)
 	var changed []string
 	for _, p := range b.Hold {
-		if f, ok := s.st.Files[p]; ok && !f.Deleted && from != "" && ValidRel(p) == nil {
-			s.hold(from, p)
+		if f, ok := s.st.Files[p]; ok && !f.Deleted && ValidRel(p) == nil {
+			s.hold(p)
 		}
 	}
 	for _, p := range paths {
-		if from != "" {
-			delete(s.st.Held[from], p) // the sender knows it
-		}
+		delete(s.st.Held, p) // the sender knows it
 		what, err := s.apply(p, b.Files[p], b.Data[p], from, false)
 		var re refusedError
 		switch {

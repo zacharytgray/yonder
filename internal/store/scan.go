@@ -239,16 +239,14 @@ func (s *Store) Scan() (changed []string, refused []Refusal, err error) {
 			Origin: Origin{Machine: s.Self, Harness: s.Harness, Time: t},
 		}
 		next.Allowed = st.Allow[rel] == d.hash
-		delete(st.Marked, rel)
 		st.Files[rel] = next
 		changed = append(changed, rel)
 		s.logChange(rel, "edit", next, "")
 	}
 	for rel, cur := range st.Files {
 		if cur.Deleted {
-			if markedAt := laterOf(cur.Origin.Time, st.Marked[rel]); now.Sub(markedAt) > DeleteTTL {
+			if now.Sub(cur.Origin.Time) > DeleteTTL {
 				delete(st.Files, rel)
-				delete(st.Marked, rel)
 			}
 			continue
 		}
@@ -262,7 +260,6 @@ func (s *Store) Scan() (changed []string, refused []Refusal, err error) {
 			s.dropPending(rel, "deleted here")
 		}
 		next := FileState{Version: cur.Version.Bump(s.Self), Deleted: true, Origin: Origin{Machine: s.Self, Harness: s.Harness, Time: now}}
-		st.Marked[rel] = now
 		st.Files[rel] = next
 		changed = append(changed, rel)
 		s.logChange(rel, "delete", next, "")
@@ -305,8 +302,8 @@ func (s *Store) manifest(refused []Refusal, caller string) Manifest {
 	}
 	m.LastWith = s.st.Peers[caller]
 	m.LastAny = s.lastAny(caller)
-	if held := s.st.Held[caller]; len(held) > 0 {
-		// flag what this machine holds back from the caller; it skips them
+	if held := s.st.Held; len(held) > 0 {
+		// flag what this machine holds back; a caller that doesn't know the path skips it
 		m.Files = map[string]FileState{}
 		for p, f := range s.st.Files {
 			if t, ok := held[p]; ok && !f.Deleted && !f.Origin.Time.After(t) {

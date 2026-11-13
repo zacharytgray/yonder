@@ -563,3 +563,62 @@ func TestFirstMeetingWithAReturningMachineHoldsItsOldFiles(t *testing.T) {
 		t.Fatal("the --stale-ok hint says it reaches every machine")
 	}
 }
+
+func TestDeleteMarkersExpireInAnActiveFleet(t *testing.T) {
+	a, b := newMachine(t, "alpha"), newMachine(t, "bravo")
+	t0 := a.now
+	a.write("gone.md", "x\n", t0)
+	a.write("keep.md", "k\n", t0)
+	a.sync(b)
+	must(t, os.Remove(filepath.Join(a.s.Dir, "gone.md")))
+	a.locked(func() {})
+	has := func(m *machine) (ok bool) {
+		m.locked(func() { _, ok = m.s.st.Files["gone.md"] })
+		return ok
+	}
+	// bravo hears of the delete late, then the two keep syncing every 85 days
+	at(t0.Add(85*24*time.Hour), a, b)
+	a.sync(b)
+	if !has(b) {
+		t.Fatal("bravo should hold the marker")
+	}
+	for d := 170; d <= 765; d += 85 {
+		at(t0.Add(time.Duration(d)*24*time.Hour), a, b)
+		a.sync(b)
+		if has(a) || has(b) {
+			t.Fatalf("day %d: the marker should be gone 90 days after the delete", d)
+		}
+	}
+
+	// a marker dated ahead of this clock counts from now, so it still expires
+	c := newMachine(t, "charlie")
+	f := FileState{Version: Vector{"alpha": 2}, Deleted: true, Origin: Origin{Machine: "alpha", Time: c.now.Add(365 * 24 * time.Hour)}}
+	push(t, c, Bundle{Store: "notes", From: "alpha", Files: map[string]FileState{"far.md": f}})
+	at(c.now.Add(91*24*time.Hour), c)
+	c.locked(func() {
+		if _, ok := c.s.st.Files["far.md"]; ok {
+			t.Fatal("a future-dated marker must expire too")
+		}
+	})
+}
+
+func TestNewMachineMeetingAnIdleFleetCountsHeldFiles(t *testing.T) {
+	hub, laptop, newbox := newMachine(t, "hub"), newMachine(t, "laptop"), newMachine(t, "newbox")
+	t0 := hub.now
+	for _, n := range []string{"instructions.md", "skills/x/SKILL.md", "skills/y/SKILL.md"} {
+		hub.write(n, n, t0)
+	}
+	hub.sync(laptop)
+	at(t0.Add(50*24*time.Hour), hub, laptop, newbox)
+	hub.write("recent.md", "recent\n", hub.now)
+	at(t0.Add(100*24*time.Hour), hub, laptop, newbox)
+	r := hub.sync(newbox) // laptop has been off since day 0; newbox was just added
+	if r.Held != 3 || newbox.read("recent.md") != "recent\n" || newbox.read("instructions.md") != "<missing>" {
+		t.Fatalf("the old files are held, and counted; newer ones go: %+v", r)
+	}
+	hub.s.StaleOK = true
+	hub.sync(newbox)
+	if newbox.read("instructions.md") != "instructions.md" {
+		t.Fatal("--stale-ok sends them")
+	}
+}

@@ -42,6 +42,7 @@ type Report struct {
 	Skipped     []Skip     `json:"skipped"`
 	PeerRefused []Refusal  `json:"peer_refused"` // files the peer won't sync, or wouldn't take
 	DryRun      bool       `json:"dry_run"`
+	Held        int        `json:"held"` // files held back with this peer (also in Skipped)
 
 	holdThere []string // paths the peer has that it should hold for this machine
 }
@@ -265,7 +266,7 @@ func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time, flagged map[
 	// is unchanged since it last met, or when it was held at an earlier
 	// meeting and hasn't changed since: this side's record for a file it
 	// has, the peer's flag for one the peer has
-	mine := s.st.Held[rm.Machine]
+	mine := s.st.Held
 	stale := func(f FileState) bool { return !heldUntil.IsZero() && !f.Origin.Time.After(heldUntil) }
 	holdMine := func(path string, f FileState) bool {
 		if s.StaleOK {
@@ -275,7 +276,7 @@ func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time, flagged map[
 			return true
 		}
 		if stale(f) {
-			s.hold(rm.Machine, path)
+			s.hold(path)
 			return true
 		}
 		return false
@@ -316,6 +317,7 @@ func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time, flagged map[
 				continue
 			}
 			if holdMine(path, l) {
+				rep.Held++
 				rep.Skipped = append(rep.Skipped, Skip{Path: path, Why: staleWhy(rm.Machine)})
 				continue
 			}
@@ -331,6 +333,7 @@ func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time, flagged map[
 			if !s.StaleOK && (flagged[path] || stale(r)) {
 				// the peer holds it for this machine from now on
 				rep.holdThere = append(rep.holdThere, path)
+				rep.Held++
 				rep.Skipped = append(rep.Skipped, Skip{Path: path, Why: staleWhy(rm.Machine)})
 				continue
 			}
@@ -405,13 +408,10 @@ func stale(last, now time.Time) bool {
 	return !last.IsZero() && now.Sub(last) > DeleteTTL
 }
 
-// hold records that path is held back from peer, as of now.
-func (s *Store) hold(peer, path string) {
-	if s.st.Held[peer] == nil {
-		s.st.Held[peer] = map[string]time.Time{}
-	}
-	if _, ok := s.st.Held[peer][path]; !ok {
-		s.st.Held[peer][path] = s.now()
+// hold records that path is held back, as of now.
+func (s *Store) hold(path string) {
+	if _, ok := s.st.Held[path]; !ok {
+		s.st.Held[path] = s.now()
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 func (s *Store) livePath(rel string) string { return filepath.Join(s.Dir, filepath.FromSlash(rel)) }
@@ -161,11 +162,15 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string, loca
 		return "", errEdited
 	}
 	if next.Deleted {
+		// a marker expires DeleteTTL after its origin time on every machine;
+		// one dated ahead of this clock counts from now, so it still expires
+		if limit := s.now().Add(5 * time.Minute); next.Origin.Time.After(limit) {
+			next.Origin.Time = s.now()
+		}
 		_, _, exists := s.live(rel)
 		if !known && !exists {
 			// a marker for a file never held here: keep it quietly
 			s.st.Files[rel] = next
-			s.st.Marked[rel] = s.now()
 			return "", nil
 		}
 		if exists {
@@ -178,7 +183,6 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string, loca
 			s.dropPending(rel, "deleted by a later change")
 		}
 		s.st.Files[rel] = next
-		s.st.Marked[rel] = s.now()
 		s.logChange(rel, "delete", next, from)
 		return "deleted", nil
 	}
@@ -240,7 +244,6 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string, loca
 		delete(s.st.Pending, rel)
 	}
 	s.st.Files[rel] = next
-	delete(s.st.Marked, rel)
 	s.logChange(rel, "edit", next, from)
 	return "updated", nil
 }
