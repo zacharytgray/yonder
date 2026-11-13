@@ -82,6 +82,7 @@ func (a *app) doctor() doctor.Report {
 	checks := doctor.Run(e)
 	if cfg.Self != "" && a.store.LayerOn(registry.LayerAgents) {
 		checks = append(checks, agentsChecks(cfg.Self)...)
+		checks = append(checks, a.briefingChecks(cfg.Self)...)
 	}
 	if cfgErr != nil {
 		checks = append([]doctor.Check{{Group: "this machine", Name: "config", Status: doctor.Fail,

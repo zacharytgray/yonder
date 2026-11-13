@@ -96,14 +96,16 @@ func newAgentsLinkCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "link [--harness h]... [--dry-run] [--replace-links]",
 		Short: "Wire the agents store into this machine's harnesses",
-		Long: `Wire the agents store into each harness found here (or the ones named):
+		Long: `Wire the agents store into each harness found here (or the ones named). The
+instructions start with the briefing about your machines (yonder agents briefing):
   claude-code  the instructions rendered into a marked block in ~/.claude/CLAUDE.md (your
                own text stays), and one link per skill in ~/.claude/skills, per file in
                ~/.claude/agents, commands and hooks
   codex        ~/.codex/AGENTS.md rendered from the store (a marked block if the file is
                your own), skills in ~/.agents/skills, files/codex/* linked into ~/.codex
   pi           ~/.pi/agent/AGENTS.md the same way, skills in ~/.agents/skills
-  hermes       files/hermes/* only; it prints how to add the skills folder yourself
+  hermes       a marked block in ~/.hermes/SOUL.md (once hermes has made it), and
+               files/hermes/*; it prints how to add the skills folder yourself
 Settings files are never edited. Anything in the way is backed up first and put back by
 ` + "`yonder agents unlink`" + `. A symlink in the way (an instructions file or a skills folder
 that links elsewhere) is refused unless --replace-links. The instructions are a copy, not

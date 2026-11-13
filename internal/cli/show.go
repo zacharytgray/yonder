@@ -68,10 +68,10 @@ func newShowCmd() *cobra.Command {
 			}
 			row("cpu", cpu)
 			if f.MemoryGB > 0 {
-				row("memory", gbText(f.MemoryGB))
+				row("memory", registry.GBText(f.MemoryGB))
 			}
 			if f.DiskTotalGB > 0 || f.DiskFreeGB > 0 {
-				row("disk", fmt.Sprintf("%s free of %s", gbText(f.DiskFreeGB), gbText(f.DiskTotalGB)))
+				row("disk", fmt.Sprintf("%s free of %s", registry.GBText(f.DiskFreeGB), registry.GBText(f.DiskTotalGB)))
 			}
 			if f.Laptop {
 				row("form", "laptop")
@@ -105,11 +105,11 @@ func gpuText(g registry.GPU) string {
 	t := g.Name
 	switch {
 	case g.Unified:
-		t += " " + gbText(g.MemoryGB) + " (unified)"
+		t += " " + registry.GBText(g.MemoryGB) + " (unified)"
 	case g.MemoryGB > 0 && g.MemoryUsedGB > 0:
-		t += fmt.Sprintf(" %s (%s used, %.0f%% busy)", gbText(g.MemoryGB), gbText(g.MemoryUsedGB), g.UtilPercent)
+		t += fmt.Sprintf(" %s (%s used, %.0f%% busy)", registry.GBText(g.MemoryGB), registry.GBText(g.MemoryUsedGB), g.UtilPercent)
 	case g.MemoryGB > 0:
-		t += " " + gbText(g.MemoryGB)
+		t += " " + registry.GBText(g.MemoryGB)
 	}
 	return t
 }
@@ -117,7 +117,7 @@ func gpuText(g registry.GPU) string {
 func modelText(m registry.Model) string {
 	t := m.Name
 	if m.SizeGB > 0 {
-		t += " " + gbText(m.SizeGB)
+		t += " " + registry.GBText(m.SizeGB)
 	}
 	var tags []string
 	if m.Runtime != "" {

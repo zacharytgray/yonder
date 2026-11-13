@@ -137,3 +137,60 @@ func TestAgentsStoreLocal(t *testing.T) {
 		t.Fatalf("CLAUDE.md after unlink: %q", b)
 	}
 }
+
+// TestBriefingLocal: the briefing rendered into a harness, its review, doctor
+// and status, and a sync refusing an over-cap briefing without cutting it.
+func TestBriefingLocal(t *testing.T) {
+	f := newFleet(t, "testdata/fleet.json")
+	f.must("init", "--yes", "--no-skill", "--layers", "agents")
+	home := filepath.Join(f.home, "yonder", "home")
+	store := filepath.Join(f.home, "yonder", "data", "agents")
+	write := func(p, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(home, "repos"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join(store, "briefing.md"), "reviewed: 2026-11-01\n## Locations\n- repos in `~/repos/<repo>`, notes in `~/notes`\n")
+	write(filepath.Join(home, ".claude/CLAUDE.md"), "my rules\n")
+	f.must("agents", "link", "--harness", "claude-code")
+	got, _ := os.ReadFile(filepath.Join(home, ".claude/CLAUDE.md"))
+	if !strings.Contains(string(got), "## Yonder briefing") || !strings.Contains(string(got), "this machine") || !strings.Contains(string(got), "## Locations") {
+		t.Fatalf("block:\n%s", got)
+	}
+
+	var rv struct {
+		Usage    struct{ Bytes, Cap int }
+		Findings []struct{ Kind, Detail string }
+	}
+	if err := json.Unmarshal([]byte(f.must("agents", "briefing", "review", "--json").stdout), &rv); err != nil {
+		t.Fatal(err)
+	}
+	if rv.Usage.Cap != 4096 || rv.Usage.Bytes == 0 || len(rv.Findings) != 1 || rv.Findings[0].Kind != "path" || !strings.Contains(rv.Findings[0].Detail, "`~/notes` doesn't exist") {
+		t.Fatalf("review: %+v", rv)
+	}
+	if r := f.must("doctor"); !strings.Contains(r.stdout, "briefing 0.") || !strings.Contains(r.stdout, "`~/notes` doesn't exist") {
+		t.Fatalf("doctor: %s", r.stdout)
+	}
+	if r := f.must("agents", "status", "--json"); !strings.Contains(r.stdout, `"hand_cap": 2048`) {
+		t.Fatalf("status: %s", r.stdout)
+	}
+	if r := f.must("agents", "briefing", "show"); !strings.HasPrefix(r.stdout, "## Yonder briefing") {
+		t.Fatalf("show: %s", r.stdout)
+	}
+
+	write(filepath.Join(store, "briefing.md"), "## Big\n"+strings.Repeat("- a line of routing detail nobody needs\n", 60))
+	r := f.run("", "sync")
+	if r.code != 1 || !strings.Contains(r.stdout, "FAIL agents: ~/.claude/CLAUDE.md keeps its old text") || !strings.Contains(r.stdout, "over its 2.0 KB cap") {
+		t.Fatalf("over cap: %+v", r)
+	}
+	if after, _ := os.ReadFile(filepath.Join(home, ".claude/CLAUDE.md")); string(after) != string(got) {
+		t.Fatalf("nothing is cut or rewritten:\n%s", after)
+	}
+}

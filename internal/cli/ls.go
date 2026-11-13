@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -190,54 +189,26 @@ func hardware(f registry.Facts) string {
 	return strings.Join(parts, ", ")
 }
 
-var (
-	parenRe = regexp.MustCompile(`\((R|TM|tm|r)\)`)
-	cpuTail = regexp.MustCompile(`\s+(CPU|Processor)\b.*$|\s+@.*$|\s+\d+-Core.*$`)
-)
-
-// shortCPU trims marketing noise: "Intel(R) Core(TM) i7-8700B CPU @ 3.20GHz" -> "Intel Core i7-8700B".
-func shortCPU(s string) string {
-	s = parenRe.ReplaceAllString(s, "")
-	s = cpuTail.ReplaceAllString(s, "")
-	s = strings.TrimPrefix(s, "Apple ")
-	return strings.Join(strings.Fields(s), " ")
-}
-
-// shortGPU drops vendor prefixes: "NVIDIA GeForce RTX 4090" -> "RTX 4090".
-func shortGPU(s string) string {
-	for _, p := range []string{"NVIDIA GeForce ", "NVIDIA ", "AMD Radeon ", "AMD ", "Apple "} {
-		s = strings.TrimPrefix(s, p)
-	}
-	return s
-}
-
-func gbText(n float64) string {
-	if n == float64(int64(n)) {
-		return fmt.Sprintf("%d GB", int64(n))
-	}
-	return fmt.Sprintf("%.1f GB", n)
-}
-
 // summary is the short hardware line for the ls table, e.g. "M3 Pro · 36 GB"
 // (apple silicon), "RTX 4090 24 GB · 64 GB" (discrete gpu) or "Intel Core i7 · 64 GB".
 func summary(f registry.Facts) string {
 	var parts []string
 	switch {
 	case len(f.GPUs) > 0 && f.GPUs[0].Unified:
-		parts = append(parts, shortGPU(f.GPUs[0].Name))
+		parts = append(parts, registry.ShortGPU(f.GPUs[0].Name))
 	case len(f.GPUs) > 0 && f.GPUs[0].MemoryGB >= 2: // skip tiny integrated gpus
-		g := shortGPU(f.GPUs[0].Name) + " " + gbText(f.GPUs[0].MemoryGB)
+		g := registry.ShortGPU(f.GPUs[0].Name) + " " + registry.GBText(f.GPUs[0].MemoryGB)
 		if n := len(f.GPUs); n > 1 {
 			g = fmt.Sprintf("%d× %s", n, g)
 		}
 		parts = append(parts, g)
 	case f.CPU != "":
-		parts = append(parts, shortCPU(f.CPU))
+		parts = append(parts, registry.ShortCPU(f.CPU))
 	case f.CPUCores > 0:
 		parts = append(parts, fmt.Sprintf("%d cores", f.CPUCores))
 	}
 	if f.MemoryGB > 0 {
-		parts = append(parts, gbText(f.MemoryGB))
+		parts = append(parts, registry.GBText(f.MemoryGB))
 	}
 	return strings.Join(parts, " · ")
 }

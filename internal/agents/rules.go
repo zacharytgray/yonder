@@ -171,7 +171,13 @@ func Check(rel string, data []byte) *store.Refusal {
 		return &store.Refusal{Reason: "the name " + rel + " is a harness's own settings, auth or instructions file, which yonder never syncs",
 			Fix: "keep it out of the store; put instructions in instructions.md", Final: true}
 	}
-	if isInstructions(rel) && bytes.Contains(data, []byte(markerPrefix)) {
+	if isBriefing(rel) && data != nil {
+		if secs, hand := parseBriefing(data); len(hand) > HandCap {
+			return &store.Refusal{Reason: handCapReason(len(hand), secs), Final: true,
+				Fix: "move detail into a doc or a skill and leave a one-line pointer; it neither syncs nor renders until it fits"}
+		}
+	}
+	if (isInstructions(rel) || isBriefing(rel)) && bytes.Contains(data, []byte(markerPrefix)) {
 		return &store.Refusal{Reason: "it holds yonder's own marker (" + markerPrefix + "...), which would break the block it is rendered into",
 			Fix: "take that text out", Final: true}
 	}
@@ -246,16 +252,39 @@ func highEntropy(s []byte) bool {
 	return h >= 4.5
 }
 
-var homePath = regexp.MustCompile(`(/Users|/home)/[A-Za-z0-9._-]+/`)
+// machinePrefix: a path written as <machine>:/path names that machine's file
+var machinePrefix = regexp.MustCompile(`[a-z0-9][a-z0-9-]*:$`)
 
-// HomePaths finds absolute home paths in an instructions file, which point
-// at one machine's home and break on the others. "~/" works everywhere.
-func HomePaths(data []byte) []int {
+// HomePaths finds paths under this machine's own home in an instructions
+// file: they break on machines whose home differs, and ~/ works everywhere.
+// another machine's home, or one written as <machine>:/path, is fine, since
+// the briefing names those on purpose.
+func HomePaths(data []byte, home string) []int {
+	home = strings.TrimRight(home, "/")
+	if home == "" || home == "." {
+		return nil
+	}
 	var lines []int
-	for i, l := range bytes.Split(data, []byte("\n")) {
-		if homePath.Match(l) {
-			lines = append(lines, i+1)
+	for i, l := range strings.Split(string(data), "\n") {
+		for off := 0; ; {
+			j := strings.Index(l[off:], home+"/")
+			if j < 0 {
+				if strings.HasSuffix(l, home) && !machinePrefix.MatchString(l[:len(l)-len(home)]) {
+					lines = append(lines, i+1)
+				}
+				break
+			}
+			j += off
+			if !machinePrefix.MatchString(l[:j]) && (j == 0 || !isPathChar(l[j-1])) {
+				lines = append(lines, i+1)
+				break
+			}
+			off = j + len(home) + 1
 		}
 	}
 	return lines
+}
+
+func isPathChar(c byte) bool {
+	return c == '/' || c == '.' || c == '_' || c == '-' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }

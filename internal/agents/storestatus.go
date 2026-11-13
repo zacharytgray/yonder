@@ -2,6 +2,7 @@ package agents
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ type StoreStatus struct {
 	Large     []string             `json:"large_instructions"` // rendered instructions over 25 KB
 	Stale     []string             `json:"stale_peers"`        // machines last synced longer ago than deletes are kept
 	Held      string               `json:"held"`               // why the next sync would stop here: a missing folder or a mass delete
+	Briefing  BriefingUsage        `json:"briefing"`           // the rendered briefing against its budget
 }
 
 // StoreReport reads the store's state without changing anything.
@@ -53,9 +55,9 @@ func StoreReport(self string) (StoreStatus, error) {
 		}
 		r.Files++
 		r.Bytes += f.Size
-		if isInstructions(rel) {
+		if isInstructions(rel) || isBriefing(rel) {
 			if data, ok := s.Live(rel); ok {
-				if lines := HomePaths(data); len(lines) > 0 {
+				if lines := HomePaths(data, OwnHome()); len(lines) > 0 {
 					r.HomePaths = append(r.HomePaths, fmt.Sprintf("%s (line %s)", rel, joinInts(lines)))
 				}
 			}
@@ -95,10 +97,21 @@ func StoreReport(self string) (StoreStatus, error) {
 	}
 	r.Problems = append(r.Problems, l.Problems()...)
 	r.Large = append(r.Large, l.LargeTexts()...)
+	r.Briefing = l.BriefingUsage()
 	sort.Strings(r.Pending)
 	sort.Strings(r.Conflicts)
 	sort.Strings(r.HomePaths)
 	return r, nil
+}
+
+// isBriefing: the hand-written briefing, at the top of the store only
+func isBriefing(rel string) bool { return strings.EqualFold(rel, BriefingFile) }
+
+// OwnHome is this machine's real home, for the home-path check. it reads no
+// files, so tests under YONDER_HOME may call it.
+func OwnHome() string {
+	h, _ := os.UserHomeDir()
+	return h
 }
 
 func isInstructions(rel string) bool {

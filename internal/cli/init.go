@@ -179,7 +179,6 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	}
 
 	a.syncFleet(self)
-	a.applyLayers(self)
 	if len(added) > 0 {
 		a.offerMesh(self, "", addOpts{interactive: interactive, allowShared: allowShared, noMesh: noMesh})
 	}

@@ -144,7 +144,6 @@ func (a *app) setLayers(names []string, on bool) error {
 		changed = append(changed, n)
 	}
 	reached := a.syncFleet(self)
-	a.applyLayers(self)
 	if on {
 		a.syncStoresQuiet(self)
 	}

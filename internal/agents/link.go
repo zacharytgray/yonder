@@ -29,6 +29,7 @@ type wiring struct {
 	skills       string // folder under ~ that gets one link per skill; "" for none
 	files        string // folder under ~ that files/<key>/* link into
 	claudeDirs   bool   // also claude/agents, claude/commands and hooks
+	mustExist    bool   // write the block only into a file the harness made itself
 	note         string
 }
 
@@ -36,7 +37,10 @@ var wirings = map[string]wiring{
 	"claude-code": {key: "claude", instructions: ".claude/CLAUDE.md", skills: ".claude/skills", files: ".claude", claudeDirs: true},
 	"codex":       {key: "codex", instructions: ".codex/AGENTS.md", wholeFile: true, skills: ".agents/skills", files: ".codex"},
 	"pi":          {key: "pi", instructions: ".pi/agent/AGENTS.md", wholeFile: true, skills: ".agents/skills", files: ".pi/agent"},
-	"hermes": {key: "hermes", files: ".hermes",
+	// hermes loads ~/.hermes/SOUL.md in every session, wherever it runs; its
+	// project files (AGENTS.md and the like) come from the working folder only.
+	// it seeds a default SOUL.md when there is none, so yonder never creates it
+	"hermes": {key: "hermes", instructions: ".hermes/SOUL.md", mustExist: true, files: ".hermes",
 		note: "hermes: yonder leaves its config alone; to give it the shared skills, add %s to skills.external_dirs in ~/.hermes/config.yaml"},
 }
 
@@ -76,6 +80,7 @@ type Linker struct {
 	DryRun   bool
 	Replace  bool // replace symlinks in the way (the old target is kept for unlink)
 	Out      io.Writer
+	Registry *registry.Store // the machine records the briefing lists; nil lists none
 }
 
 // NewLinker is the linker at the standard paths.
@@ -83,6 +88,7 @@ func NewLinker(self string, out io.Writer) *Linker {
 	return &Linker{
 		Home: Home(), StoreDir: filepath.Join(registry.DataDir(), StoreName),
 		StateDir: filepath.Join(registry.StateDir(), "agents"), Self: self, Out: out,
+		Registry: registry.Open(),
 	}
 }
 
@@ -189,10 +195,18 @@ func (l *Linker) instructionFiles(key string) []string {
 	return out
 }
 
-// renderText is the shared text, the harness overlay and the machine's two,
-// joined with blank lines. empty when the store has none.
-func (l *Linker) renderText(key string) string {
+// renderText is the briefing, then the shared text, the harness overlay and
+// the machine's two, joined with blank lines. empty when the store has none
+// and there are no records. an error means it can't render as it is.
+func (l *Linker) renderText(key string) (string, error) {
 	var parts []string
+	b, _, err := l.briefing(key)
+	if err != nil {
+		return "", err
+	}
+	if b != "" {
+		parts = append(parts, strings.TrimSpace(b))
+	}
 	for _, f := range l.instructionFiles(key) {
 		data, err := os.ReadFile(f)
 		if err != nil {
@@ -208,9 +222,9 @@ func (l *Linker) renderText(key string) string {
 		}
 	}
 	if len(parts) == 0 {
-		return ""
+		return "", nil
 	}
-	return strings.Join(parts, "\n\n") + "\n"
+	return strings.Join(parts, "\n\n") + "\n", nil
 }
 
 // BlockWarn is the rendered text size doctor warns past. there is no hard
@@ -223,9 +237,18 @@ const (
 	renderMark = "<!-- yonder: rendered by `yonder agents link` from the agents store; edit the store, not this file -->"
 )
 
-func (l *Linker) wants(harnesses []string) ([]want, []string) {
+// plan is what link should make, notes to print, and the instruction files
+// it can't render now (left as they are, with the reason).
+type plan struct {
+	wants   []want
+	notes   []string
+	blocked map[string]error
+}
+
+func (l *Linker) wants(harnesses []string) plan {
 	var out []want
 	var notes []string
+	blocked := map[string]error{}
 	seen := map[string]bool{}
 	add := func(w want) {
 		if !seen[w.path] {
@@ -241,12 +264,21 @@ func (l *Linker) wants(harnesses []string) ([]want, []string) {
 		if w.instructions != "" {
 			// the text itself, never an @import: claude code asks once per project
 			// before importing a file outside it, which a headless session can't answer
-			if text := l.renderText(w.key); text != "" {
+			p := filepath.Join(l.Home, w.instructions)
+			text, err := l.renderText(w.key)
+			_, statErr := os.Lstat(p)
+			switch {
+			case err != nil:
+				blocked[p] = err
+			case text == "":
+			case w.mustExist && statErr != nil:
+				notes = append(notes, fmt.Sprintf("%s: %s doesn't exist yet; run %s once so it writes its own, then `yonder agents link`", h, l.tilde(p), h))
+			default:
 				kind := kindBlock
 				if w.wholeFile {
 					kind = kindRender
 				}
-				add(want{path: filepath.Join(l.Home, w.instructions), kind: kind, content: text})
+				add(want{path: p, kind: kind, content: text})
 			}
 		}
 		if w.skills != "" {
@@ -272,7 +304,7 @@ func (l *Linker) wants(harnesses []string) ([]want, []string) {
 			notes = append(notes, fmt.Sprintf(w.note, filepath.Join(l.StoreDir, "skills")))
 		}
 	}
-	return out, notes
+	return plan{out, notes, blocked}
 }
 
 // Link wires the store into the harnesses: the instructions rendered into a
@@ -296,14 +328,19 @@ func (l *Linker) link(harnesses []string) error {
 		}
 		harnesses = st.Harnesses
 	}
-	wants, notes := l.wants(harnesses)
+	explicit := harnesses != nil
+	p := l.wants(harnesses)
 	wanted := map[string]want{}
-	for _, w := range wants {
+	for _, w := range p.wants {
 		wanted[w.path] = w
 	}
 	// drop what is no longer wanted, links before folders
 	var keep []Entry
 	for _, e := range sortForRemoval(st.Entries) {
+		if _, ok := p.blocked[e.Path]; ok {
+			keep = append(keep, e) // can't render now: the file keeps what it had
+			continue
+		}
 		w, ok := wanted[e.Path]
 		if ok && (w.kind == e.Kind || (e.Kind == kindBlock && w.kind == kindRender)) && (e.Kind != kindLink || w.target == e.Target) {
 			keep = append(keep, e)
@@ -322,7 +359,10 @@ func (l *Linker) link(harnesses []string) error {
 	st.Entries = keep
 	st.Harnesses = harnesses
 	var failed []string
-	for _, w := range wants {
+	for _, path := range sortedPaths(p.blocked) {
+		failed = append(failed, fmt.Sprintf("%s: %v", l.tilde(path), p.blocked[path]))
+	}
+	for _, w := range p.wants {
 		es, err := l.make(w, &st)
 		if err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %v", l.tilde(w.path), err))
@@ -330,8 +370,10 @@ func (l *Linker) link(harnesses []string) error {
 		}
 		st.Entries = es
 	}
-	for _, n := range notes {
-		l.printf("%s", n)
+	if explicit {
+		for _, n := range p.notes {
+			l.printf("%s", n)
+		}
 	}
 	if err := l.save(st); err != nil {
 		return err
@@ -340,6 +382,15 @@ func (l *Linker) link(harnesses []string) error {
 		return fmt.Errorf("could not link %s", strings.Join(failed, "; "))
 	}
 	return nil
+}
+
+func sortedPaths(m map[string]error) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func sortForRemoval(es []Entry) []Entry {
@@ -441,7 +492,7 @@ func (l *Linker) carry(dir, target string, st *LinkState) {
 	if !filepath.IsAbs(target) {
 		target = filepath.Join(filepath.Dir(dir), target)
 	}
-	wants, _ := l.wants(st.Harnesses)
+	wants := l.wants(st.Harnesses).wants
 	es, err := os.ReadDir(target)
 	if err != nil {
 		l.printf("warning: could not read %s (%v); the harness no longer sees what it held", target, err)
@@ -893,7 +944,8 @@ func (l *Linker) Linked() bool {
 }
 
 // ApplyLayer does what the agents layer's setting asks here: off unlinks and
-// pauses; on links again where it was paused.
+// pauses; on links again where it was paused, and renders again where linked,
+// since a registry sync may have changed the briefing.
 func ApplyLayer(on bool, self string, out io.Writer) error {
 	l := NewLinker(self, out)
 	return l.locked(func() error {
@@ -910,6 +962,9 @@ func ApplyLayer(on bool, self string, out io.Writer) error {
 				return err
 			}
 			return l.link(st.Harnesses)
+		case on && len(st.Harnesses) > 0:
+			// the records may have changed, and the briefing lists them
+			return l.link(nil)
 		}
 		return nil
 	})
@@ -964,15 +1019,24 @@ func upToDate(data, kind, content string) bool {
 	return err == nil && next == data
 }
 
+// Blocked is the instruction files linked here that can't render now, with
+// why (a briefing over its cap, an unknown placeholder). they keep what they had.
+func (l *Linker) Blocked() map[string]error {
+	st, err := l.State()
+	if err != nil || st.Paused || len(st.Harnesses) == 0 {
+		return nil
+	}
+	return l.wants(st.Harnesses).blocked
+}
+
 // LargeTexts names the rendered instructions past BlockWarn, with their size.
 func (l *Linker) LargeTexts() []string {
 	st, err := l.State()
 	if err != nil || st.Paused {
 		return nil
 	}
-	ws, _ := l.wants(st.Harnesses)
 	var out []string
-	for _, w := range ws {
+	for _, w := range l.wants(st.Harnesses).wants {
 		if (w.kind == kindBlock || w.kind == kindRender) && len(w.content) > BlockWarn {
 			out = append(out, fmt.Sprintf("%s gets %d KB of instructions", l.tilde(w.path), len(w.content)>>10))
 		}
@@ -988,9 +1052,13 @@ func (l *Linker) Problems() []string {
 	}
 	var out []string
 	wanted := map[string]want{}
-	if ws, _ := l.wants(st.Harnesses); !st.Paused {
-		for _, w := range ws {
+	if !st.Paused {
+		p := l.wants(st.Harnesses)
+		for _, w := range p.wants {
 			wanted[w.path] = w
+		}
+		for _, path := range sortedPaths(p.blocked) {
+			out = append(out, l.tilde(path)+" can't be rendered: "+p.blocked[path].Error())
 		}
 	}
 	for _, e := range st.Entries {
