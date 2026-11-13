@@ -199,6 +199,9 @@ func (l *Linker) instructionFiles(key string) []string {
 // the machine's two, joined with blank lines. empty when the store has none
 // and there are no records. an error means it can't render as it is.
 func (l *Linker) renderText(key string) (string, error) {
+	if err := l.tierError(key); err != nil {
+		return "", err
+	}
 	var parts []string
 	b, _, err := l.briefing(key)
 	if err != nil {
@@ -217,7 +220,11 @@ func (l *Linker) renderText(key string) (string, error) {
 		if r := Check(filepath.ToSlash(rel), data); r != nil && r.Final {
 			continue
 		}
-		if t := strings.TrimSpace(string(data)); t != "" {
+		t, err := l.resolve(strings.TrimSpace(string(data)), key)
+		if err != nil {
+			return "", err
+		}
+		if t != "" {
 			parts = append(parts, t)
 		}
 	}

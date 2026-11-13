@@ -273,6 +273,13 @@ func (l *Linker) briefing(key string) (string, BriefingUsage, error) {
 	data, ok := l.briefingSource()
 	if ok {
 		secs, hand = parseBriefing(data)
+		var err error
+		if err = l.tierError(key); err == nil {
+			hand, err = l.resolve(hand, key)
+		}
+		if err != nil {
+			return "", u, err
+		}
 	}
 	if gen == "" && hand == "" {
 		return "", u, nil

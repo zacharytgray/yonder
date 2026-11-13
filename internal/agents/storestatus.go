@@ -13,24 +13,25 @@ import (
 
 // StoreStatus is the agents store on this machine, in `agents status --json`.
 type StoreStatus struct {
-	LayerOn   bool                 `json:"layer_on"`
-	Dir       string               `json:"dir"`
-	Files     int                  `json:"files"`
-	Bytes     int64                `json:"bytes"`
-	Review    string               `json:"review"`  // [sync] review here
-	Linked    []string             `json:"linked"`  // harnesses link wired in
-	Paused    bool                 `json:"paused"`  // unlinked because the layer is off
-	Pending   []string             `json:"pending"` // incoming changes waiting for accept
-	Conflicts []string             `json:"conflicts"`
-	Refused   []store.Refusal      `json:"refused"`
-	LastSync  map[string]time.Time `json:"last_sync"`
-	Notices   []store.Notice       `json:"notices"`    // from the last 7 days
-	HomePaths []string             `json:"home_paths"` // instruction files that name an absolute home path
-	Problems  []string             `json:"link_problems"`
-	Large     []string             `json:"large_instructions"` // rendered instructions over 25 KB
-	Stale     []string             `json:"stale_peers"`        // machines last synced longer ago than deletes are kept
-	Held      string               `json:"held"`               // why the next sync would stop here: a missing folder or a mass delete
-	Briefing  BriefingUsage        `json:"briefing"`           // the rendered briefing against its budget
+	LayerOn    bool                 `json:"layer_on"`
+	Dir        string               `json:"dir"`
+	Files      int                  `json:"files"`
+	Bytes      int64                `json:"bytes"`
+	Review     string               `json:"review"`  // [sync] review here
+	Linked     []string             `json:"linked"`  // harnesses link wired in
+	Paused     bool                 `json:"paused"`  // unlinked because the layer is off
+	Pending    []string             `json:"pending"` // incoming changes waiting for accept
+	Conflicts  []string             `json:"conflicts"`
+	Refused    []store.Refusal      `json:"refused"`
+	LastSync   map[string]time.Time `json:"last_sync"`
+	Notices    []store.Notice       `json:"notices"`    // from the last 7 days
+	HomePaths  []string             `json:"home_paths"` // instruction files that name an absolute home path
+	Problems   []string             `json:"link_problems"`
+	Large      []string             `json:"large_instructions"` // rendered instructions over 25 KB
+	Stale      []string             `json:"stale_peers"`        // machines last synced longer ago than deletes are kept
+	Held       string               `json:"held"`               // why the next sync would stop here: a missing folder or a mass delete
+	Briefing   BriefingUsage        `json:"briefing"`           // the rendered briefing against its budget
+	Unresolved []string             `json:"unresolved"`         // {{model:...}} tiers a harness has no name for, "codex: top"
 }
 
 // StoreReport reads the store's state without changing anything.
@@ -98,6 +99,7 @@ func StoreReport(self string) (StoreStatus, error) {
 	r.Problems = append(r.Problems, l.Problems()...)
 	r.Large = append(r.Large, l.LargeTexts()...)
 	r.Briefing = l.BriefingUsage()
+	r.Unresolved = append([]string{}, l.Unresolved()...)
 	sort.Strings(r.Pending)
 	sort.Strings(r.Conflicts)
 	sort.Strings(r.HomePaths)

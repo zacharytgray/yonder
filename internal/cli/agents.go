@@ -35,6 +35,7 @@ Yonder never edits a harness's settings file.
 
 Store layout:
   briefing.md                  the hand-written part of the briefing about your machines
+  render.toml                  each harness's model names for {{model:<tier>}} in the text
   instructions.md              shared instructions for every harness
   instructions.<h>.md          extra text for one harness (claude, codex, pi, hermes)
   skills/<name>/               one folder per skill
@@ -285,6 +286,9 @@ func printStoreStatus(a *app, s agents.StoreStatus, home string) {
 	fmt.Fprintf(a.out, "  %s\n", s.Briefing)
 	if s.Briefing.Error != "" {
 		fmt.Fprintf(a.out, "  FAIL %s\n", s.Briefing.Error)
+	}
+	for _, u := range s.Unresolved {
+		fmt.Fprintf(a.out, "  unresolved {{model:...}}: %s (agents/%s)\n", u, agents.RenderFile)
 	}
 	for _, m := range sortedKeys(s.LastSync) {
 		fmt.Fprintf(a.out, "  last sync with %s: %s\n", m, ago(s.LastSync[m]))

@@ -224,6 +224,10 @@ func agentsChecks(self string) []doctor.Check {
 		add("stale", doctor.Warn, "last synced with "+m+" ago, longer than deletes are remembered; files only one of you has are held back until checked",
 			"yonder sync <machine> to catch up; `--stale-ok` syncs the held-back files too")
 	}
+	for _, u := range r.Unresolved {
+		add("placeholder", doctor.Warn, "{{model:...}} with no name for "+u+"; that harness's instructions don't render",
+			"add the names under that harness's table in agents/"+agents.RenderFile+", like [codex] top = \"...\"")
+	}
 	for _, p := range r.Large {
 		add("size", doctor.Warn, p+", over 25 KB; every session loads all of it",
 			"move rarely needed text into a skill, or into instructions.<harness>.md for the one harness that needs it")

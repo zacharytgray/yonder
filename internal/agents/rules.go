@@ -171,6 +171,11 @@ func Check(rel string, data []byte) *store.Refusal {
 		return &store.Refusal{Reason: "the name " + rel + " is a harness's own settings, auth or instructions file, which yonder never syncs",
 			Fix: "keep it out of the store; put instructions in instructions.md", Final: true}
 	}
+	if strings.EqualFold(rel, RenderFile) && data != nil {
+		if _, err := parseRenderTable(data); err != nil {
+			return &store.Refusal{Reason: err.Error(), Fix: "fix the table; each harness's tiers go under [claude], [codex], [pi] or [hermes]", Final: true}
+		}
+	}
 	if isBriefing(rel) && data != nil {
 		if secs, hand := parseBriefing(data); len(hand) > HandCap {
 			return &store.Refusal{Reason: handCapReason(len(hand), secs), Final: true,

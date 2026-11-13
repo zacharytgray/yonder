@@ -1013,6 +1013,7 @@ The agents layer syncs `~/.local/share/yonder/agents`:
 
 ```
 briefing.md                   the hand-written part of the briefing (see The briefing)
+render.toml                   each harness's name for each model tier (see Model names per harness)
 instructions.md               shared, harness-neutral
 instructions.<key>.md         an optional overlay for one harness: claude, codex, pi or hermes
 skills/<name>/...             one folder per skill
@@ -1196,6 +1197,41 @@ lists:
 lines taken out. The rest needs a person or an agent with one, so it stays a finding. Yonder never
 writes the draft; `--draft` prints it for an agent or the user to edit.
 
+### Model names per harness
+
+Rules that name models don't fit every harness: Claude Code's tiers and Codex's are named
+differently, and a find-and-replace would also change the same words in prose. So the store's
+text names a tier, `{{model:<tier>}}`, and each harness gets its own name for it from
+`agents/render.toml`, which syncs like any store file:
+
+```toml
+[claude]
+top = "Atlas"
+fast = "Pebble"
+
+[codex]
+top = "Zephyr"
+fast = "Quill"
+```
+
+Only that exact syntax is replaced (`{{model:` then a tier of a-z, 0-9 and `-`, then `}}`); `{{
+model:top }}`, `{{model:Top}}` and the word "top" stay as they are. It works in
+`instructions*.md`, machine overlays included, and in `briefing.md`. The tables are `[claude]`,
+`[codex]`, `[pi]` and `[hermes]` (the overlay keys); each value is one short line. A table that
+breaks these rules is refused by the store check, so it doesn't sync.
+
+A tier a harness has no name for, whether no table defines it or only other harnesses' do,
+refuses that harness's render: its file keeps what it had, and the error names every missing tier,
+the files that use them and the line to add (`add fast = "..." under [codex] in
+agents/render.toml`). Other harnesses still render. `agents status` (`unresolved`, like `"codex:
+deep, fast"`) and `doctor` (a WARN each) list the missing ones for the harnesses linked here and
+every harness with a table.
+
+When to use which: a placeholder when a rule is the same for every harness and only the model's
+name differs ("plan with {{model:top}}, scout with {{model:fast}}"). An overlay,
+`instructions.<key>.md`, when the rule itself differs: a harness that has no subagents, a
+setting only one of them has, a step that works differently there.
+
 ### Importing
 
 `yonder agents import <path> [--kind k]... [--harness h] [--machine m] [--replace] [--dry-run]`
@@ -1263,7 +1299,7 @@ nothing.
   `notices` (deletes that lost to an edit, 7 days), `home_paths`, `link_problems`,
   `large_instructions` (rendered instructions over 25 KB), `stale_peers`, `held` (why the next
   sync would stop here) and `briefing` (`bytes`, `warn`, `cap`, `hand_bytes`, `hand_cap`, and
-  `error` when it can't render).
+  `error` when it can't render) and `unresolved` (see Model names per harness).
 
 `import`, `link`, `accept`, `restore` and `allow` need the layer on; `log`, `diff`, `status` and
 `unlink` work either way.
@@ -1288,7 +1324,8 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   machine's home, per link entry that no longer matches or block with no end marker (fix `yonder agents
   link`), per harness whose rendered instructions are over 25 KB, and per machine last synced
   more than 90 days ago (files only one side has are held back); a `briefing` line with its usage
-  (WARN past 3 KB, FAIL over a cap) and a WARN per briefing finding (see The briefing); a FAIL when the next sync would
+  (WARN past 3 KB, FAIL over a cap) and a WARN per briefing finding (see The briefing); a WARN per
+  harness with a `{{model:...}}` tier it has no name for; a FAIL when the next sync would
   stop here: the store folder is missing while files are on record, or a mass delete (fix: put
   them back, or `yonder sync --allow-deletes`).
 - Each fleet machine, in parallel: in tailscale status; online (offline is a WARN with last seen
