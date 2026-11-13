@@ -1183,7 +1183,7 @@ lists:
   stat). A path is cut before its first placeholder segment (`~/repos/<repo>` checks `~/repos`).
   An offline machine is "unchecked", not a failure.
 - a machine name that isn't in the registry, or that was removed: in `<machine>:` paths, in
-  `yonder run|show|jobs|set|refresh|add|mesh|sync <machine>`, and a removed machine's name in
+  `yonder run|show|jobs|set|refresh|mesh <machine>` (not `add`, whose machine is new, or `sync`, whose first word may be a store), and a removed machine's name in
   backticks.
 - text that contradicts the records: an address no machine has or that belongs to another
   machine on the line, a role claimed for a machine ("`gpu-box` is the server", "`gpu-box`

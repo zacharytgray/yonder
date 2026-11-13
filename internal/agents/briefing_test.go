@@ -232,6 +232,10 @@ func TestCheckBriefing(t *testing.T) {
 			t.Errorf("missing finding %q in %+v", w, fs)
 		}
 	}
+	// a store name after sync, and a machine about to be added, are not machine names
+	if fs := CheckBriefing([]byte("reviewed: 2026-11-01\n- `yonder sync agents`, `yonder add new-box`\n"), ms, nil, now); len(fs) != 0 {
+		t.Fatalf("false positives: %+v", fs)
+	}
 	// no date anywhere
 	fs = CheckBriefing([]byte("## Routing\n- a\n"), ms, nil, now)
 	if len(fs) != 1 || !strings.Contains(fs[0].Detail, "has no reviewed: date") {

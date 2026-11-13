@@ -30,7 +30,7 @@ type PathRef struct {
 var (
 	codeSpan    = regexp.MustCompile("`([^`\n]+)`")
 	machinePath = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*):((?:~/|/)\S*)$`)
-	yonderArg   = regexp.MustCompile(`\byonder\s+(?:run|show|jobs|set|refresh|add|mesh|sync)\s+(?:--?[a-z-]+\s+)*([a-z0-9][a-z0-9-]*)\b`)
+	yonderArg   = regexp.MustCompile(`\byonder\s+(?:run|show|jobs|set|refresh|mesh)\s+(?:--?[a-z-]+\s+)*([a-z0-9][a-z0-9-]*)\b`)
 	ipv4        = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 	roles       = `laptop|desktop|server|gpu`
 )
