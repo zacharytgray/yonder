@@ -1211,6 +1211,41 @@ settings names above are skipped with a note. An instructions file that holds yo
 (a linked `CLAUDE.md`) gives only the text outside it; a file yonder rendered is skipped. A store file that differs is left alone unless `--replace` (the old one goes to history).
 Every file passes the secret check first; a refused one is a FAIL line and exit 1.
 
+### Machines whose instructions differ
+
+Before the agents layer, each machine has its own `~/.claude/CLAUDE.md` and `AGENTS.md`, and
+they drift apart. Yonder never merges prose or picks one: an agent does it with the user.
+
+`yonder agents gather [--json]` reads each online machine's own instructions files
+(`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`; Hermes's `SOUL.md` is its
+persona and is left out). This machine's are read directly; every other machine's through one
+read-only `_exec` that prints each file that exists (files over 256 KB are skipped). Yonder's
+block is taken out and a rendered file counts as empty, so only the user's own text is
+compared. Each file is split into sections: a heading and what follows it, up to the next
+heading of any level; text with no heading above it splits into paragraphs. Sections match by
+heading (lower case, a second `## Notes` in one file is `## notes #2`), paragraphs by their
+text. Each section is then:
+
+- `same`: one version, on every machine that has instructions.
+- `differs`: two or more versions, between machines or between one machine's files.
+- `some`: one version, on more than one machine but not all.
+- `only`: on one machine only.
+
+`--json`: `{"machines":[{"name","files":[{"path","harness","bytes","yonder","rendered"}],"error"}],
+"sections":[{"key","heading","status","machines","versions":[{"machines","files","text"}]}],
+"summary":{"same","differs","some","only"}}`. A machine offline or not set up is listed with an
+`error` and no files.
+
+The yonder skill has the reconcile procedure for the agent: sort each section into shared,
+machine-only or conflicting; ask the user about each conflict; show the result as a diff; after
+approval, write `instructions.md` and `machines/<m>/instructions.md` with `agents import` (no new
+apply step is needed: `import --kind instructions --machine <m>` writes an overlay); then trim
+what moved out of each machine's own file, backing each up first.
+
+When `enable agents`, or `init` with the layer on and machines added, finds that two or more
+machines have instructions that don't all agree, it says so and names the procedure. It writes
+nothing.
+
 ### The other commands
 
 - `agents log [path] [-n N] [--json]`: the changes this machine recorded, oldest first: time,

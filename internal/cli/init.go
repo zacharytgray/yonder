@@ -185,6 +185,9 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	if !noSkill {
 		a.installSkillOn(self, added, interactive)
 	}
+	if a.store.LayerOn(registry.LayerAgents) && len(added) > 0 {
+		a.warnDiverged(self)
+	}
 	if len(failed) > 0 {
 		return fmt.Errorf("could not add %s; fix the errors above and run `yonder add <machine>`", strings.Join(failed, ", "))
 	}
