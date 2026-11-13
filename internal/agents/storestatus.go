@@ -2,7 +2,6 @@ package agents
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -28,8 +27,8 @@ type StoreStatus struct {
 	HomePaths []string             `json:"home_paths"` // instruction files that name an absolute home path
 	Problems  []string             `json:"link_problems"`
 	Large     []string             `json:"large_instructions"` // rendered instructions over 25 KB
-	HeldBack  []string             `json:"held_back"`          // kept from others after a long absence
-	Missing   bool                 `json:"missing"`            // the store folder is gone, with files on record
+	Stale     []string             `json:"stale_peers"`        // machines last synced longer ago than deletes are kept
+	Held      string               `json:"held"`               // why the next sync would stop here: a missing folder or a mass delete
 }
 
 // StoreReport reads the store's state without changing anything.
@@ -37,7 +36,7 @@ func StoreReport(self string) (StoreStatus, error) {
 	r := StoreStatus{
 		LayerOn: registry.Open().LayerOn(registry.LayerAgents), Review: ReviewMode(),
 		Linked: []string{}, Pending: []string{}, Conflicts: []string{}, Refused: []store.Refusal{},
-		LastSync: map[string]time.Time{}, Notices: []store.Notice{}, HomePaths: []string{}, Problems: []string{}, Large: []string{}, HeldBack: []string{},
+		LastSync: map[string]time.Time{}, Notices: []store.Notice{}, HomePaths: []string{}, Problems: []string{}, Large: []string{}, Stale: []string{},
 	}
 	s, err := store.Open(StoreName, self)
 	if err != nil {
@@ -65,13 +64,13 @@ func StoreReport(self string) (StoreStatus, error) {
 	for p := range st.Pending {
 		r.Pending = append(r.Pending, p)
 	}
-	for p := range st.Suspect {
-		r.HeldBack = append(r.HeldBack, p)
+	for m, t := range st.Peers {
+		if time.Since(t) > store.DeleteTTL {
+			r.Stale = append(r.Stale, fmt.Sprintf("%s (%d days)", m, int(time.Since(t).Hours()/24)))
+		}
 	}
-	sort.Strings(r.HeldBack)
-	if _, err := os.Stat(s.Dir); err != nil && r.Files > 0 {
-		r.Missing = true
-	}
+	sort.Strings(r.Stale)
+	r.Held, _ = s.Held()
 	cs, _ := s.Conflicts()
 	for base := range cs {
 		r.Conflicts = append(r.Conflicts, base)

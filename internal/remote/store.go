@@ -15,12 +15,16 @@ import (
 const (
 	ExitStoreOff  = 3 // the store's layer is off here
 	ExitStoreBusy = 4 // another yonder holds the store's lock here
+	ExitStoreHeld = 5 // a scan here would delete most of the store, so it stopped
 )
 
 func storeErr(name string, err error, errw io.Writer) int {
 	fmt.Fprintf(errw, "yonder %s: %v\n", name, err)
 	if errors.Is(err, store.ErrBusy) {
 		return ExitStoreBusy
+	}
+	if errors.Is(err, store.ErrMassDelete) {
+		return ExitStoreHeld
 	}
 	return 1
 }
@@ -68,11 +72,11 @@ func openStore(ctx context.Context, name string, args []string, errw io.Writer) 
 
 // StoreOffer is `yonder _store-offer <store>`: scan, then print the manifest.
 func StoreOffer(ctx context.Context, args []string, _ io.Reader, out, errw io.Writer) int {
-	s, _, code := openStore(ctx, "_store-offer", args, errw)
+	s, sender, code := openStore(ctx, "_store-offer", args, errw)
 	if s == nil {
 		return code
 	}
-	if err := store.ServeOffer(s, out); err != nil {
+	if err := store.ServeOffer(s, out, sender); err != nil {
 		return storeErr("_store-offer", err, errw)
 	}
 	return 0

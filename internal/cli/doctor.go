@@ -215,13 +215,13 @@ func agentsChecks(self string) []doctor.Check {
 	for _, p := range r.Problems {
 		add("link", doctor.Warn, p, "yonder agents link")
 	}
-	if r.Missing {
-		add("store", doctor.Fail, r.Dir+" is missing, but "+fmt.Sprint(r.Files)+" files are on record; sync stops rather than delete them everywhere",
-			"put the folder back, or run `yonder sync --allow-deletes` to delete them on purpose")
+	if r.Held != "" {
+		add("store", doctor.Fail, r.Held+"; sync is held here rather than delete them on every machine",
+			"put them back, or run `yonder sync --allow-deletes` here to delete them on purpose")
 	}
-	if n := len(r.HeldBack); n > 0 {
-		add("held back", doctor.Warn, fmt.Sprintf("%d files are held back: this machine was away longer than deletes are remembered, and they go only to machines that still know them (%s)", n, strings.Join(r.HeldBack, ", ")),
-			"check them; `yonder sync --stale-ok` sends them anyway")
+	for _, m := range r.Stale {
+		add("stale", doctor.Warn, "last synced with "+m+" ago, longer than deletes are remembered; files only one of you has are held back until checked",
+			"yonder sync <machine> to catch up; `--stale-ok` syncs the held-back files too")
 	}
 	for _, p := range r.Large {
 		add("size", doctor.Warn, p+", over 25 KB; every session loads all of it",

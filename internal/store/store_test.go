@@ -86,13 +86,16 @@ func (m *machine) locked(fn func()) {
 	must(m.t, m.s.Save())
 }
 
-// peer runs the target side of another machine in process.
-type peer struct{ m *machine }
+// peer runs the target side of another machine in process, as caller sees it.
+type peer struct {
+	m      *machine
+	caller string
+}
 
 func (p peer) Name() string { return p.m.s.Self }
 func (p peer) Offer() (Manifest, error) {
 	var out bytes.Buffer
-	if err := ServeOffer(p.m.s, &out); err != nil {
+	if err := ServeOffer(p.m.s, &out, p.caller); err != nil {
 		return Manifest{}, err
 	}
 	var mf Manifest
@@ -128,7 +131,7 @@ func (m *machine) sync(other *machine) Report {
 	if _, _, err := m.s.Scan(); err != nil {
 		m.t.Fatal(err)
 	}
-	r, err := m.s.SyncWith(peer{other}, false)
+	r, err := m.s.SyncWith(peer{other, m.s.Self}, false)
 	if err != nil {
 		m.t.Fatalf("sync %s -> %s: %v", m.s.Self, other.s.Self, err)
 	}
@@ -392,7 +395,7 @@ func TestRefusals(t *testing.T) {
 	bad := Bundle{Store: "notes", From: "laptop", Files: map[string]FileState{
 		"x.md": {Hash: hashOf([]byte("-----BEGIN PRIVATE KEY")), Version: Vector{"laptop": 1}, Origin: Origin{Machine: "laptop"}},
 	}, Data: map[string][]byte{"x.md": []byte("-----BEGIN PRIVATE KEY")}}
-	res, err := peer{b}.Push(bad)
+	res, err := peer{b, "laptop"}.Push(bad)
 	if err != nil || len(res.Refused) != 1 || b.read("x.md") != "<missing>" {
 		t.Fatalf("receiver check: %+v %v", res, err)
 	}

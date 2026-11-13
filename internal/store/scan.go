@@ -147,10 +147,51 @@ var errNoRoot = errors.New("no store folder")
 // moved or broken folder than a choice, so it stops until asked.
 var ErrMassDelete = errors.New("mass delete")
 
-// massDelete is the guard: every tracked file (of two or more), or more than
-// half of ten or more.
+// massDelete is the guard: two or more deletes that are more than half of
+// what is tracked. one file gone from a tiny store is just a delete.
 func massDelete(deletes, tracked int) bool {
-	return (tracked >= 2 && deletes == tracked) || (tracked >= 10 && deletes*2 > tracked)
+	return deletes >= 2 && deletes*2 > tracked
+}
+
+// countDeletes is how many tracked files a scan of files would delete.
+func (s *Store) countDeletes(files map[string]disk, refused []Refusal) (deletes, tracked int) {
+	refusedSet := map[string]bool{}
+	for _, r := range refused {
+		refusedSet[r.Path] = true
+	}
+	for rel, cur := range s.st.Files {
+		if cur.Deleted {
+			continue
+		}
+		if p, ok := s.st.Pending[rel]; ok && !p.LiveExists {
+			continue
+		}
+		tracked++
+		if _, ok := files[rel]; !ok && !refusedSet[rel] {
+			deletes++
+		}
+	}
+	return deletes, tracked
+}
+
+// Held reports why the next scan would stop, or "": a missing store folder
+// or a mass delete. it changes nothing.
+func (s *Store) Held() (string, error) {
+	if _, err := s.State(); err != nil {
+		return "", err
+	}
+	files, refused, err := s.readDisk()
+	if err != nil && !errors.Is(err, errNoRoot) {
+		return "", err
+	}
+	deletes, tracked := s.countDeletes(files, refused)
+	switch {
+	case errors.Is(err, errNoRoot) && tracked > 0:
+		return fmt.Sprintf("the store folder %s is missing, but %d files were in it", s.Dir, tracked), nil
+	case massDelete(deletes, tracked):
+		return fmt.Sprintf("%d of the %d files in the store are gone from %s", deletes, tracked, s.Dir), nil
+	}
+	return "", nil
 }
 
 // Scan finds changes made here since the last scan and bumps this machine's
@@ -170,19 +211,7 @@ func (s *Store) Scan() (changed []string, refused []Refusal, err error) {
 		refusedSet[r.Path] = true
 	}
 	// count deletes before changing anything, so the guard can stop the scan whole
-	tracked, deletes := 0, 0
-	for rel, cur := range st.Files {
-		if cur.Deleted {
-			continue
-		}
-		if p, ok := st.Pending[rel]; ok && !p.LiveExists {
-			continue
-		}
-		tracked++
-		if _, ok := files[rel]; !ok && !refusedSet[rel] {
-			deletes++
-		}
-	}
+	deletes, tracked := s.countDeletes(files, refused)
 	if errors.Is(err, errNoRoot) && tracked > 0 && !s.AllowDeletes {
 		return nil, nil, fmt.Errorf("the %s store folder %s is missing, but %d files were in it; put it back, or delete them on purpose with `yonder sync --allow-deletes`: %w", s.Kind.Name, s.Dir, tracked, ErrMassDelete)
 	}
@@ -210,15 +239,16 @@ func (s *Store) Scan() (changed []string, refused []Refusal, err error) {
 			Origin: Origin{Machine: s.Self, Harness: s.Harness, Time: t},
 		}
 		next.Allowed = st.Allow[rel] == d.hash
-		delete(st.Suspect, rel) // a fresh edit is no resurrection
+		delete(st.Marked, rel)
 		st.Files[rel] = next
 		changed = append(changed, rel)
 		s.logChange(rel, "edit", next, "")
 	}
 	for rel, cur := range st.Files {
 		if cur.Deleted {
-			if now.Sub(cur.Origin.Time) > DeleteTTL {
+			if markedAt := laterOf(cur.Origin.Time, st.Marked[rel]); now.Sub(markedAt) > DeleteTTL {
 				delete(st.Files, rel)
+				delete(st.Marked, rel)
 			}
 			continue
 		}
@@ -232,6 +262,7 @@ func (s *Store) Scan() (changed []string, refused []Refusal, err error) {
 			s.dropPending(rel, "deleted here")
 		}
 		next := FileState{Version: cur.Version.Bump(s.Self), Deleted: true, Origin: Origin{Machine: s.Self, Harness: s.Harness, Time: now}}
+		st.Marked[rel] = now
 		st.Files[rel] = next
 		changed = append(changed, rel)
 		s.logChange(rel, "delete", next, "")
@@ -259,21 +290,36 @@ type Manifest struct {
 	Machine string               `json:"machine"`
 	Files   map[string]FileState `json:"files"`
 	Refused []Refusal            `json:"refused,omitempty"`
+	// when this machine last synced with the caller, as it recorded it
+	LastWith time.Time `json:"last_with,omitzero"`
 }
 
-// manifest leaves out files held back after a long absence, so a caller
-// never takes one as new; a caller that knows the path sends its version.
-func (s *Store) manifest(refused []Refusal) Manifest {
-	files := s.st.Files
-	if len(s.st.Suspect) > 0 && !s.StaleOK {
-		files = map[string]FileState{}
+// manifest is what this machine holds, with its own record of its last
+// sync with the caller.
+func (s *Store) manifest(refused []Refusal, caller string) Manifest {
+	m := Manifest{V: ProtocolVersion, Store: s.Kind.Name, Machine: s.Self, Files: s.st.Files, Refused: refused}
+	if caller == "" {
+		return m
+	}
+	m.LastWith = s.st.Peers[caller]
+	if held := s.st.Held[caller]; len(held) > 0 {
+		// flag what this machine holds back from the caller; it skips them
+		m.Files = map[string]FileState{}
 		for p, f := range s.st.Files {
-			if !s.st.Suspect[p] {
-				files[p] = f
+			if t, ok := held[p]; ok && !f.Deleted && !f.Origin.Time.After(t) {
+				f.Held = true
 			}
+			m.Files[p] = f
 		}
 	}
-	return Manifest{V: ProtocolVersion, Store: s.Kind.Name, Machine: s.Self, Files: files, Refused: refused}
+	return m
+}
+
+func laterOf(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
 
 // LogEntry is one change this machine recorded: its own, or one it received.

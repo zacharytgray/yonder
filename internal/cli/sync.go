@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -47,10 +48,10 @@ the other goes beside it as <name>.conflict-<machine>-<yyyymmdd>.<ext>. Settle o
 --resolve <path> --keep mine|theirs|<machine>, or delete the copy. Replaced and deleted
 versions are kept (` + "`yonder agents restore`" + `). Files that can't sync are FAIL lines.
 
-A scan that would delete every file in a store (of two or more), or more than half of ten
-or more, stops: a moved or missing folder looks like that. --allow-deletes goes ahead. A
-machine away longer than 90 days may bring back files deleted meanwhile, so new files from
-it are skipped unless --stale-ok.
+A scan that would delete two or more files that are more than half of a store stops: a
+moved or missing folder looks like that. --allow-deletes goes ahead. Two machines that
+haven't synced with each other for over 90 days hold back the old files only one of them
+has, since the other may have deleted them meanwhile; --stale-ok syncs them.
 
 There is no daemon. --background starts the sync and returns at once, for a
 session-start hook. --dry-run shows what would move and changes nothing here (the
@@ -78,7 +79,7 @@ other machines still record their own edits).`,
 	cmd.Flags().StringVar(&o.resolve, "resolve", "", "settle the conflict at this store path")
 	cmd.Flags().StringVar(&o.keep, "keep", "", "with --resolve: mine, theirs, or a machine name")
 	cmd.Flags().BoolVar(&o.deletes, "allow-deletes", false, "let this sync delete most or all of a store here (it stops otherwise)")
-	cmd.Flags().BoolVar(&o.staleOK, "stale-ok", false, "take files from a machine that was away longer than deletes are remembered")
+	cmd.Flags().BoolVar(&o.staleOK, "stale-ok", false, "sync files held back between machines that last synced more than 90 days ago")
 	return cmd
 }
 
@@ -248,6 +249,7 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 			if err != nil {
 				var off storeOffError
 				var busy storeBusyError
+				var held storeHeldError
 				switch {
 				case errors.As(err, &off):
 					if !o.quiet {
@@ -255,6 +257,8 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 					}
 				case errors.As(err, &busy):
 					fmt.Fprintf(a.out, "%s: %s skipped: it is busy syncing; it catches up at the next sync\n", name, m.Name)
+				case errors.As(err, &held):
+					fmt.Fprintf(a.out, "%s: %s held: mass delete on %s (%s); check there, then `yonder sync --allow-deletes` there if it was meant\n", name, m.Name, m.Name, held.msg)
 				default:
 					fmt.Fprintf(a.out, "%s: %s failed: %v\n", name, m.Name, err)
 					ok = false
@@ -394,6 +398,10 @@ type storeBusyError struct{ msg string }
 
 func (e storeBusyError) Error() string { return e.msg }
 
+type storeHeldError struct{ msg string }
+
+func (e storeHeldError) Error() string { return e.msg }
+
 func (p *sshPeer) Name() string { return p.m.Name }
 
 func (p *sshPeer) call(cmd string, stdin []byte, out *bytes.Buffer) error {
@@ -415,6 +423,8 @@ func (p *sshPeer) call(cmd string, stdin []byte, out *bytes.Buffer) error {
 		return storeOffError{msg}
 	case code == remote.ExitStoreBusy:
 		return storeBusyError{msg}
+	case code == remote.ExitStoreHeld:
+		return storeHeldError{heldWhy(msg)}
 	case code == ExitUsage && strings.Contains(msg, "unknown"):
 		return fmt.Errorf("%s is too old for store sync; upgrade yonder there", p.m.Name)
 	}
@@ -455,4 +465,17 @@ func (p *sshPeer) Push(b store.Bundle) (store.PushResult, error) {
 		return r, fmt.Errorf("bad _store-recv reply: %w", err)
 	}
 	return r, nil
+}
+
+var heldCounts = regexp.MustCompile(`(\d+) of the (\d+) files`)
+
+// heldWhy is what a peer's mass-delete error found, without its fix.
+func heldWhy(msg string) string {
+	if m := heldCounts.FindStringSubmatch(msg); m != nil {
+		return m[1] + " of its " + m[2] + " files are gone"
+	}
+	if strings.Contains(msg, "is missing") {
+		return "its store folder is missing"
+	}
+	return lastLine(msg)
 }

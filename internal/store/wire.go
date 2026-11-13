@@ -18,6 +18,8 @@ type Bundle struct {
 	From  string               `json:"from"`
 	Files map[string]FileState `json:"files"`
 	Data  map[string][]byte    `json:"-"`
+	// paths the receiver has, and should hold back from the sender (State.Held)
+	Hold []string `json:"hold,omitempty"`
 }
 
 const bundleMeta = ".yonder-store.json"
@@ -148,7 +150,7 @@ type fetchRequest struct {
 }
 
 // ServeOffer is the target side of an offer: scan, then print the manifest.
-func ServeOffer(s *Store, out io.Writer) error {
+func ServeOffer(s *Store, out io.Writer, from string) error {
 	if err := s.Lock(PeerLockWait); err != nil {
 		return err
 	}
@@ -163,7 +165,7 @@ func ServeOffer(s *Store, out io.Writer) error {
 	if len(changed) > 0 && s.Kind.AfterChange != nil {
 		s.Kind.AfterChange(s, changed)
 	}
-	return json.NewEncoder(out).Encode(s.manifest(refused))
+	return json.NewEncoder(out).Encode(s.manifest(refused, from))
 }
 
 // ServeSend writes a bundle of the asked-for paths as they are now.
@@ -226,8 +228,15 @@ func ServeRecv(s *Store, in io.Reader, out io.Writer, from string) error {
 	}
 	sort.Strings(paths)
 	var changed []string
+	for _, p := range b.Hold {
+		if f, ok := s.st.Files[p]; ok && !f.Deleted && from != "" && ValidRel(p) == nil {
+			s.hold(from, p)
+		}
+	}
 	for _, p := range paths {
-		delete(s.st.Suspect, p) // the sender knows it, so it is no resurrection
+		if from != "" {
+			delete(s.st.Held[from], p) // the sender knows it
+		}
 		what, err := s.apply(p, b.Files[p], b.Data[p], from, false)
 		var re refusedError
 		switch {

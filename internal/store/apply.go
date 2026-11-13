@@ -171,6 +171,7 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string, loca
 			s.dropPending(rel, "deleted by a later change")
 		}
 		s.st.Files[rel] = next
+		s.st.Marked[rel] = s.now()
 		s.logChange(rel, "delete", next, from)
 		return "deleted", nil
 	}
@@ -232,6 +233,7 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string, loca
 		delete(s.st.Pending, rel)
 	}
 	s.st.Files[rel] = next
+	delete(s.st.Marked, rel)
 	s.logChange(rel, "edit", next, from)
 	return "updated", nil
 }

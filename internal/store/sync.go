@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"time"
 )
 
 // Peer is the other side of a sync: the hidden commands on another machine.
@@ -41,6 +42,8 @@ type Report struct {
 	Skipped     []Skip     `json:"skipped"`
 	PeerRefused []Refusal  `json:"peer_refused"` // files the peer won't sync, or wouldn't take
 	DryRun      bool       `json:"dry_run"`
+
+	holdThere []string // paths the peer has that it should hold for this machine
 }
 
 // Changed reports whether anything moved either way.
@@ -76,7 +79,14 @@ func (s *Store) SyncWith(p Peer, dry bool) (Report, error) {
 		return rep, fmt.Errorf("%s answered for store %q", p.Name(), rm.Store)
 	}
 	rep.PeerRefused = rm.Refused
-	steps := s.plan(rm, &rep)
+	// a pair that hasn't synced within DeleteTTL may each hold files the
+	// other deleted and has forgotten. a file only one side has, unchanged
+	// since the pair last met, waits; anything newer can't be one of those
+	var heldUntil time.Time
+	if last := laterOf(st.Peers[p.Name()], rm.LastWith); !s.StaleOK && stale(last, s.now()) {
+		heldUntil = last
+	}
+	steps := s.plan(rm, &rep, heldUntil)
 
 	if dry {
 		for _, x := range steps {
@@ -142,7 +152,14 @@ func (s *Store) SyncWith(p Peer, dry bool) (Report, error) {
 				failedCopy[x.copyOf] = "it changed here during the sync"
 				continue
 			}
-			local := !x.needThere && !x.fromPeer // the content is this machine's own
+			// the content is this machine's own, unless it is a change that
+			// still waits for review here: that came from another machine
+			source := x.path
+			if x.copyOf != "" {
+				source = x.copyOf
+			}
+			_, waiting := s.st.Pending[source]
+			local := !x.needThere && !x.fromPeer && !waiting
 			what, err := s.apply(x.path, *x.here, data, p.Name(), local)
 			var re refusedError
 			switch {
@@ -178,7 +195,8 @@ func (s *Store) SyncWith(p Peer, dry bool) (Report, error) {
 			}
 		}
 	}
-	if len(push.Files) > 0 {
+	push.Hold = rep.holdThere
+	if len(push.Files) > 0 || len(push.Hold) > 0 {
 		res, err := p.Push(push)
 		if err != nil {
 			_ = s.Save() // keep what was applied here
@@ -223,7 +241,26 @@ func dedupe(in []string) []string {
 }
 
 // plan compares the two manifests path by path.
-func (s *Store) plan(rm Manifest, rep *Report) []step {
+func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time) []step {
+	// a file only one side has is held when the pair is stale and the file
+	// is unchanged since it last met, or when it was held at an earlier
+	// meeting and hasn't changed since: this side's record for a file it
+	// has, the peer's flag for one the peer has
+	mine := s.st.Held[rm.Machine]
+	stale := func(f FileState) bool { return !heldUntil.IsZero() && !f.Origin.Time.After(heldUntil) }
+	holdMine := func(path string, f FileState) bool {
+		if s.StaleOK {
+			return false
+		}
+		if t, ok := mine[path]; ok && !f.Origin.Time.After(t) {
+			return true
+		}
+		if stale(f) {
+			s.hold(rm.Machine, path)
+			return true
+		}
+		return false
+	}
 	local := s.st.Files
 	paths := map[string]bool{}
 	for p := range local {
@@ -249,17 +286,16 @@ func (s *Store) plan(rm Manifest, rep *Report) []step {
 	for _, path := range sorted {
 		l, lok := local[path]
 		r, rok := rm.Files[path]
-		if rok {
-			delete(s.st.Suspect, path) // the peer knows it, so it is no resurrection
+		if lok && rok {
+			delete(mine, path) // both know it now
 		}
 		switch {
 		case !rok:
 			if l.Deleted {
 				continue
 			}
-			// back from a long absence: the peer may have deleted this long ago
-			if s.st.Suspect[path] && !s.StaleOK {
-				rep.Skipped = append(rep.Skipped, Skip{Path: path, Why: staleWhy})
+			if holdMine(path, l) {
+				rep.Skipped = append(rep.Skipped, Skip{Path: path, Why: staleWhy(rm.Machine)})
 				continue
 			}
 			steps = append(steps, step{path: path, there: ptr(l)})
@@ -268,6 +304,13 @@ func (s *Store) plan(rm Manifest, rep *Report) []step {
 			if r.Deleted {
 				continue
 			}
+			if !s.StaleOK && (r.Held || stale(r)) {
+				// the peer holds it for this machine from now on
+				rep.holdThere = append(rep.holdThere, path)
+				rep.Skipped = append(rep.Skipped, Skip{Path: path, Why: staleWhy(rm.Machine)})
+				continue
+			}
+			r.Held = false
 			steps = append(steps, step{path: path, here: ptr(r), needThere: true})
 			continue
 		}
@@ -333,4 +376,22 @@ func (s *Store) plan(rm Manifest, rep *Report) []step {
 
 func ptr(f FileState) *FileState { return &f }
 
-const staleWhy = "this machine was away longer than deletes are remembered, and the other machine doesn't know this file, so it may have been deleted meanwhile; `yonder sync --stale-ok` here sends it anyway"
+// stale: a pair last synced longer ago than delete markers are kept. a pair
+// that never synced is new, not stale.
+func stale(last, now time.Time) bool {
+	return !last.IsZero() && now.Sub(last) > DeleteTTL
+}
+
+// hold records that path is held back from peer, as of now.
+func (s *Store) hold(peer, path string) {
+	if s.st.Held[peer] == nil {
+		s.st.Held[peer] = map[string]time.Time{}
+	}
+	if _, ok := s.st.Held[peer][path]; !ok {
+		s.st.Held[peer][path] = s.now()
+	}
+}
+
+func staleWhy(peer string) string {
+	return "held back: this machine and " + peer + " last synced longer ago than deletes are remembered, and only one of them has this file, so the other may have deleted it; `yonder sync " + peer + " --stale-ok` syncs it anyway"
+}

@@ -147,3 +147,47 @@ func TestBusyPeerIsSkipped(t *testing.T) {
 		t.Fatalf("output: %s", out)
 	}
 }
+
+func TestHeldPeerIsReportedAsHeld(t *testing.T) {
+	a, _, out := twoHomes(t)
+	fake := a.ssh.(*fakeSSH)
+	orig := fake.yonder
+	fake.yonder = func(tg transport.Target, args []string, stdio transport.IO) (int, error) {
+		if args[0] == "_store-offer" {
+			_, _ = stdio.Stderr.Write([]byte("yonder _store-offer: this scan would delete 8 of the 9 files in the agents store (/x); if the folder moved or broke, put it back; if you meant it, run `yonder sync --allow-deletes`: mass delete\n"))
+			return remote.ExitStoreHeld, nil
+		}
+		return orig(tg, args, stdio)
+	}
+	a.syncStore("testnotes", "laptop", nil, syncOpts{})
+	if !strings.Contains(out.String(), "gpu-box held: mass delete on gpu-box (8 of its 9 files are gone)") {
+		t.Fatalf("output: %s", out)
+	}
+}
+
+func TestDoctorReportsAHeldStore(t *testing.T) {
+	a, _, _ := twoHomes(t)
+	here := filepath.Join(os.Getenv("YONDER_HOME"), "data", "agents")
+	for _, n := range []string{"a", "b", "c"} {
+		writeAt(t, filepath.Join(here, "skills", n, "SKILL.md"), n+"\n")
+	}
+	if !a.syncStore("agents", "laptop", nil, syncOpts{}) {
+		t.Fatal("first sync")
+	}
+	must := func(err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.RemoveAll(filepath.Join(here, "skills", "a")))
+	must(os.RemoveAll(filepath.Join(here, "skills", "b")))
+	var found bool
+	for _, c := range agentsChecks("laptop") {
+		if c.Name == "store" && c.Status == "fail" && strings.Contains(c.Detail, "2 of the 3 files") && strings.Contains(c.Fix, "--allow-deletes") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("doctor should report the held store: %+v", agentsChecks("laptop"))
+	}
+}

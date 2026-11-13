@@ -105,6 +105,7 @@ type FileState struct {
 	Deleted bool   `json:"deleted,omitempty"`
 	Origin  Origin `json:"origin"`
 	Allowed bool   `json:"allowed,omitempty"` // the secret check was waived for this content
+	Held    bool   `json:"held,omitempty"`    // in an offer: held back from the caller (see State.Held)
 }
 
 func (f FileState) sameContent(o FileState) bool {
@@ -138,10 +139,15 @@ type State struct {
 	Allow   map[string]string    `json:"allow,omitempty"` // path -> the hash whose secret check is waived
 	Peers   map[string]time.Time `json:"peers,omitempty"` // last good sync with each machine
 	Notices []Notice             `json:"notices,omitempty"`
-	// files held when this machine came back after more than DeleteTTL away.
-	// the others may have deleted them and forgotten, so they are only sent
-	// to a machine that knows the path, until edited here or --stale-ok.
-	Suspect map[string]bool `json:"suspect,omitempty"`
+	// when this machine recorded each delete marker it holds. a marker lasts
+	// DeleteTTL from the later of this and its origin time, so one relayed
+	// late is kept as long as one made here.
+	Marked map[string]time.Time `json:"marked,omitempty"`
+	// files held back from a machine: peer -> path -> since when. set when a
+	// pair that hadn't synced within DeleteTTL meets and only this side has
+	// the file; it holds until the file changes, the peer learns the path, or
+	// --stale-ok
+	Held map[string]map[string]time.Time `json:"held,omitempty"`
 }
 
 // Store is one synced folder on this machine.
@@ -154,7 +160,8 @@ type Store struct {
 	Now      func() time.Time
 	// AllowDeletes lets a scan delete most of the store (see massDelete)
 	AllowDeletes bool
-	// StaleOK sends files held back after a long absence (State.Suspect)
+	// StaleOK syncs files only one side knows even with a peer this machine
+	// hasn't synced with for longer than DeleteTTL
 	StaleOK bool
 
 	st   *State
@@ -256,24 +263,14 @@ func (s *Store) State() (*State, error) {
 	if st.Peers == nil {
 		st.Peers = map[string]time.Time{}
 	}
-	var last time.Time
-	for _, t := range st.Peers {
-		if t.After(last) {
-			last = t
-		}
+	if st.Marked == nil {
+		st.Marked = map[string]time.Time{}
 	}
-	if st.Suspect == nil {
-		st.Suspect = map[string]bool{}
-	}
-	if !last.IsZero() && s.now().Sub(last) > DeleteTTL && len(st.Suspect) == 0 {
-		for p, f := range st.Files {
-			if !f.Deleted && !f.Origin.Time.After(last) {
-				st.Suspect[p] = true
-			}
-		}
+	if st.Held == nil {
+		st.Held = map[string]map[string]time.Time{}
 	}
 	if s.StaleOK {
-		clear(st.Suspect)
+		clear(st.Held)
 	}
 	s.st = st
 	return st, nil

@@ -21,7 +21,7 @@ func (m *machine) trySync(other *machine) (Report, error) {
 		return Report{}, err
 	}
 	must(m.t, m.s.Save())
-	return m.s.SyncWith(peer{other}, false)
+	return m.s.SyncWith(peer{other, m.s.Self}, false)
 }
 
 // push sends a hand-made bundle to m, the way _store-recv gets one.
@@ -79,6 +79,11 @@ func TestScanStopsOnMassDelete(t *testing.T) {
 	for i := range 6 {
 		must(t, os.RemoveAll(filepath.Join(a.s.Dir, "skills", "s"+string(rune('a'+i)))))
 	}
+	held, err := a.s.Held()
+	if err != nil || !strings.Contains(held, "6 of the 10 files") {
+		t.Fatalf("doctor's check sees it: %q %v", held, err)
+	}
+	a.s.Unlock()
 	if _, err := a.trySync(b); !errors.Is(err, ErrMassDelete) || !strings.Contains(err.Error(), "6 of the 10") {
 		t.Fatalf("deleting more than half should stop: %v", err)
 	}
@@ -92,8 +97,30 @@ func TestScanStopsOnMassDelete(t *testing.T) {
 	if b.read("skills/sa/SKILL.md") != "<missing>" || b.read("skills/sj/SKILL.md") != "x\n" {
 		t.Fatal("--allow-deletes should go ahead")
 	}
-	if !massDelete(1, 1) == massDelete(1, 1) || massDelete(1, 1) || !massDelete(2, 2) || massDelete(4, 9) || !massDelete(6, 10) {
-		t.Fatal("guard rule: all of two or more, or more than half of ten or more")
+	for _, c := range []struct {
+		deletes, tracked int
+		trips            bool
+	}{{1, 1, false}, {1, 2, false}, {2, 2, true}, {2, 3, true}, {4, 9, false}, {5, 9, true}, {8, 9, true}, {5, 10, false}, {6, 10, true}} {
+		if massDelete(c.deletes, c.tracked) != c.trips {
+			t.Errorf("guard for %d of %d: want %v", c.deletes, c.tracked, c.trips)
+		}
+	}
+}
+
+func TestMassDeleteGuardCatchesSmallStores(t *testing.T) {
+	a, b := newMachine(t, "alpha"), newMachine(t, "bravo")
+	for i := range 9 {
+		a.write("skills/s"+string(rune('a'+i))+"/SKILL.md", "x\n", a.now)
+	}
+	a.sync(b)
+	for i := range 8 {
+		must(t, os.RemoveAll(filepath.Join(a.s.Dir, "skills", "s"+string(rune('a'+i)))))
+	}
+	if _, err := a.trySync(b); !errors.Is(err, ErrMassDelete) {
+		t.Fatalf("8 of 9 gone must stop: %v", err)
+	}
+	if b.read("skills/sa/SKILL.md") != "x\n" {
+		t.Fatal("nothing spreads")
 	}
 }
 
@@ -215,16 +242,25 @@ func TestReviewIgnoresClaimedOrigin(t *testing.T) {
 	}
 }
 
+// at sets every machine's clock.
+func at(t time.Time, ms ...*machine) {
+	for _, m := range ms {
+		m.now = t
+	}
+}
+
 func TestStaleMachineCannotBringBackDeletedFiles(t *testing.T) {
-	a, b := newMachine(t, "laptop"), newMachine(t, "gpu-box")
+	a, b, d := newMachine(t, "laptop"), newMachine(t, "gpu-box"), newMachine(t, "server")
 	t0 := a.now
 	a.write("old.md", "old\n", t0)
 	a.sync(b)
-	// laptop deletes old.md, and keeps syncing with another machine
+	// laptop deletes old.md and keeps syncing with server; gpu-box sleeps
 	must(t, os.Remove(filepath.Join(a.s.Dir, "old.md")))
-	a.locked(func() { a.s.st.Peers["server"] = t0.Add(100 * 24 * time.Hour) })
-	// 100 days on, gpu-box wakes; laptop's delete marker has expired
-	a.now, b.now = t0.Add(100*24*time.Hour), t0.Add(100*24*time.Hour)
+	for day := 0; day <= 100; day += 30 {
+		at(t0.Add(time.Duration(day)*24*time.Hour), a, d)
+		a.sync(d)
+	}
+	at(t0.Add(100*24*time.Hour), a, b, d)
 	a.write("new.md", "new\n", a.now)
 	a.locked(func() {
 		if _, ok := a.s.st.Files["old.md"]; ok {
@@ -232,18 +268,157 @@ func TestStaleMachineCannotBringBackDeletedFiles(t *testing.T) {
 		}
 	})
 
-	a.sync(b) // laptop syncs with the returning machine
-	if a.read("old.md") != "<missing>" || b.read("new.md") != "new\n" {
-		t.Fatalf("laptop must not take old.md back; gpu-box still takes what is new")
+	r := a.sync(b) // laptop syncs with the returning machine
+	if a.read("old.md") != "<missing>" || b.read("new.md") != "new\n" || !strings.Contains(skipped(r), "held back") {
+		t.Fatalf("laptop must not take old.md back, and gpu-box still takes what is new: %+v", r)
 	}
-	r := b.sync(a) // the returning machine syncs
-	if a.read("old.md") != "<missing>" || !strings.Contains(skipped(r), "away longer than deletes are remembered") {
-		t.Fatalf("its push must not bring old.md back: %+v", r)
+	for range 2 { // and not on any later sync, either way round
+		if r := b.sync(a); a.read("old.md") != "<missing>" || !strings.Contains(skipped(r), "held back") {
+			t.Fatalf("gpu-box's push must not bring old.md back: %+v", r)
+		}
+		a.sync(b)
+		if a.read("old.md") != "<missing>" {
+			t.Fatal("nor laptop's pull")
+		}
+	}
+	// an edit on gpu-box is no resurrection, so it goes
+	at(a.now.Add(time.Hour), a, b)
+	b.write("old.md", "old, edited\n", b.now)
+	b.sync(a)
+	if a.read("old.md") != "old, edited\n" {
+		t.Fatalf("an edit made after the pair met is taken: %q", a.read("old.md"))
+	}
+}
+
+func TestStaleOKSyncsHeldFiles(t *testing.T) {
+	a, b := newMachine(t, "laptop"), newMachine(t, "gpu-box")
+	t0 := a.now
+	b.write("old.md", "old\n", t0)
+	a.sync(b)
+	must(t, os.Remove(filepath.Join(a.s.Dir, "old.md")))
+	a.write("keep.md", "x\n", t0)
+	a.locked(func() {}) // laptop records the delete; gpu-box never hears of it
+	at(t0.Add(200*24*time.Hour), a, b)
+	a.locked(func() {}) // the marker expires
+	b.sync(a)
+	if a.read("old.md") != "<missing>" {
+		t.Fatal("held back")
 	}
 	b.s.StaleOK = true
 	b.sync(a)
 	if a.read("old.md") != "old\n" {
-		t.Fatal("--stale-ok sends it")
+		t.Fatal("--stale-ok syncs it")
+	}
+}
+
+func TestIdleFleetStillSyncsANewMachine(t *testing.T) {
+	a, b, c := newMachine(t, "alpha"), newMachine(t, "bravo"), newMachine(t, "charlie")
+	t0 := a.now
+	a.write("instructions.md", "rules\n", t0)
+	a.write("skills/x/SKILL.md", "x\n", t0)
+	a.sync(b)
+	at(t0.Add(100*24*time.Hour), a, b, c)
+	for _, r := range []Report{a.sync(b), b.sync(a)} {
+		if len(r.Skipped) != 0 {
+			t.Fatalf("a pair that holds the same files holds nothing back: %+v", r)
+		}
+	}
+	at(t0.Add(101*24*time.Hour), a, b, c)
+	if r := a.sync(c); len(r.Skipped) != 0 || c.read("instructions.md") != "rules\n" {
+		t.Fatalf("a new machine gets everything: %+v", r)
+	}
+	if r := c.sync(b); len(r.Skipped) != 0 {
+		t.Fatalf("and nothing is held between it and the others: %+v", r)
+	}
+}
+
+func TestMachinesAwayTogetherCannotBringBackADelete(t *testing.T) {
+	a, b, c, d := newMachine(t, "alpha"), newMachine(t, "bravo"), newMachine(t, "charlie"), newMachine(t, "delta")
+	t0 := a.now
+	a.write("old.md", "old\n", t0)
+	a.write("keep.md", "keep\n", t0)
+	a.sync(b)
+	a.sync(c)
+	must(t, os.Remove(filepath.Join(a.s.Dir, "old.md")))
+	a.sync(d) // alpha records the delete and stays in touch with delta
+	for day := 30; day <= 90; day += 30 {
+		at(t0.Add(time.Duration(day)*24*time.Hour), a, b, c, d)
+		b.sync(c) // bravo and charlie keep each other fresh, away from alpha
+		a.sync(d)
+	}
+	at(t0.Add(100*24*time.Hour), a, b, c, d)
+	a.locked(func() {})
+	if r := b.sync(a); a.read("old.md") != "<missing>" || !strings.Contains(skipped(r), "held back") {
+		t.Fatalf("bravo must not bring old.md back to alpha: %+v", r)
+	}
+	if r := a.sync(c); a.read("old.md") != "<missing>" || !strings.Contains(skipped(r), "held back") {
+		t.Fatalf("nor charlie: %+v", r)
+	}
+}
+
+func TestFreshMachinePushesItsDeleteToAStalePeer(t *testing.T) {
+	a, b := newMachine(t, "alpha"), newMachine(t, "bravo")
+	t0 := a.now
+	a.write("old.md", "old\n", t0)
+	a.sync(b)
+	at(t0.Add(95*24*time.Hour), a, b)
+	must(t, os.Remove(filepath.Join(a.s.Dir, "old.md")))
+	a.sync(b) // the pair is stale, but both know the path
+	if b.read("old.md") != "<missing>" {
+		t.Fatal("a delete marker both sides can match goes through")
+	}
+}
+
+func TestWaitingChangeStaysWaitingWhenItWinsAConflict(t *testing.T) {
+	v, a, c := newMachine(t, "victim"), newMachine(t, "alpha"), newMachine(t, "charlie")
+	t0 := v.now
+	v.write("hooks/x.sh", "old safe hook\n", t0)
+	v.sync(a)
+	v.sync(c)
+	c.write("hooks/x.sh", "unreviewed from charlie\n", t0.Add(2*time.Minute))
+	c.sync(v) // waits for review on victim
+	a.write("hooks/x.sh", "alpha edit, older\n", t0.Add(time.Minute))
+	r := v.sync(a) // victim is the caller; charlie's waiting version wins
+	if len(r.Conflicts) != 1 {
+		t.Fatalf("conflict: %+v", r)
+	}
+	if v.read("hooks/x.sh") != "old safe hook\n" {
+		t.Fatalf("the waiting change must not go live: %q", v.read("hooks/x.sh"))
+	}
+	if !waits(t, v, "hooks/x.sh") {
+		t.Fatal("it still waits")
+	}
+}
+
+func waits(t *testing.T, m *machine, rel string) bool {
+	t.Helper()
+	items, err := m.s.PendingList()
+	must(t, err)
+	m.s.Unlock()
+	for _, it := range items {
+		if it.Path == rel {
+			return true
+		}
+	}
+	return false
+}
+
+func TestWaitingChangeStaysWaitingWhenItBeatsADelete(t *testing.T) {
+	v, a, c := newMachine(t, "victim"), newMachine(t, "alpha"), newMachine(t, "charlie")
+	t0 := v.now
+	v.write("hooks/x.sh", "old safe hook\n", t0)
+	v.sync(a)
+	v.sync(c)
+	c.write("hooks/x.sh", "unreviewed from charlie\n", t0.Add(2*time.Minute))
+	c.sync(v)
+	a.locked(func() { must(t, a.s.Accept("hooks/x.sh")) }) // live on alpha, which then deletes it
+	must(t, os.Remove(filepath.Join(a.s.Dir, "hooks/x.sh")))
+	r := v.sync(a) // the waiting edit beats alpha's delete
+	if len(r.DeleteLost) != 1 || v.read("hooks/x.sh") != "old safe hook\n" {
+		t.Fatalf("the waiting change must not go live: %+v %q", r, v.read("hooks/x.sh"))
+	}
+	if !waits(t, v, "hooks/x.sh") {
+		t.Fatal("it still waits")
 	}
 }
 
