@@ -51,7 +51,8 @@ versions are kept (` + "`yonder agents restore`" + `). Files that can't sync are
 A scan that would delete two or more files that are more than half of a store stops: a
 moved or missing folder looks like that. --allow-deletes goes ahead. Two machines that
 haven't synced with each other for over 90 days hold back the old files only one of them
-has, since the other may have deleted them meanwhile; --stale-ok syncs them.
+has, since the other may have deleted them meanwhile; --stale-ok syncs them, and clears every
+hold this machine keeps, for every machine.
 
 There is no daemon. --background starts the sync and returns at once, for a
 session-start hook. --dry-run shows what would move and changes nothing here (the
@@ -79,7 +80,7 @@ other machines still record their own edits).`,
 	cmd.Flags().StringVar(&o.resolve, "resolve", "", "settle the conflict at this store path")
 	cmd.Flags().StringVar(&o.keep, "keep", "", "with --resolve: mine, theirs, or a machine name")
 	cmd.Flags().BoolVar(&o.deletes, "allow-deletes", false, "let this sync delete most or all of a store here (it stops otherwise)")
-	cmd.Flags().BoolVar(&o.staleOK, "stale-ok", false, "sync files held back between machines that last synced more than 90 days ago")
+	cmd.Flags().BoolVar(&o.staleOK, "stale-ok", false, "sync held-back files and clear every hold this machine keeps, for all machines")
 	return cmd
 }
 

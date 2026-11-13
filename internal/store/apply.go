@@ -161,7 +161,14 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string, loca
 		return "", errEdited
 	}
 	if next.Deleted {
-		if _, _, exists := s.live(rel); exists {
+		_, _, exists := s.live(rel)
+		if !known && !exists {
+			// a marker for a file never held here: keep it quietly
+			s.st.Files[rel] = next
+			s.st.Marked[rel] = s.now()
+			return "", nil
+		}
+		if exists {
 			s.keepLive(rel, "deleted by a change from "+orSelf(next.Origin.Machine))
 			if err := s.removeLive(rel); err != nil {
 				return "", err

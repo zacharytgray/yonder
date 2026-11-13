@@ -290,8 +290,10 @@ type Manifest struct {
 	Machine string               `json:"machine"`
 	Files   map[string]FileState `json:"files"`
 	Refused []Refusal            `json:"refused,omitempty"`
-	// when this machine last synced with the caller, as it recorded it
+	// when this machine last synced with the caller, as it recorded it, and
+	// with any other machine
 	LastWith time.Time `json:"last_with,omitzero"`
+	LastAny  time.Time `json:"last_any,omitzero"`
 }
 
 // manifest is what this machine holds, with its own record of its last
@@ -302,6 +304,7 @@ func (s *Store) manifest(refused []Refusal, caller string) Manifest {
 		return m
 	}
 	m.LastWith = s.st.Peers[caller]
+	m.LastAny = s.lastAny(caller)
 	if held := s.st.Held[caller]; len(held) > 0 {
 		// flag what this machine holds back from the caller; it skips them
 		m.Files = map[string]FileState{}

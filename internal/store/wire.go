@@ -88,10 +88,12 @@ func ReadBundle(r io.Reader) (Bundle, error) {
 	if len(b.Files) > 2*MaxFiles {
 		return Bundle{}, fmt.Errorf("bundle lists %d files, over the limit", len(b.Files))
 	}
-	for p := range b.Files {
+	for p, f := range b.Files {
 		if err := ValidRel(p); err != nil {
 			return Bundle{}, err
 		}
+		f.Held = false // only this machine's own staleness logic sets it
+		b.Files[p] = f
 	}
 	b.Data = map[string][]byte{}
 	var total int64

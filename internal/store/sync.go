@@ -58,6 +58,7 @@ type step struct {
 	needThere bool       // the content for here comes from the peer
 	copyOf    string     // for a conflict copy: the path it came from
 	fromPeer  bool       // the content for a conflict copy comes from the peer
+	quiet     bool       // only a delete marker the other side never had: not reported
 }
 
 // SyncWith syncs this store with one peer. callers hold the lock and have
@@ -79,17 +80,35 @@ func (s *Store) SyncWith(p Peer, dry bool) (Report, error) {
 		return rep, fmt.Errorf("%s answered for store %q", p.Name(), rm.Store)
 	}
 	rep.PeerRefused = rm.Refused
+	// held is a flag on the wire only: read it, then drop it from every
+	// state taken from the offer, so it is never saved or passed on
+	flagged := map[string]bool{}
+	for path, f := range rm.Files {
+		if f.Held {
+			flagged[path] = true
+			f.Held = false
+			rm.Files[path] = f
+		}
+	}
 	// a pair that hasn't synced within DeleteTTL may each hold files the
 	// other deleted and has forgotten. a file only one side has, unchanged
-	// since the pair last met, waits; anything newer can't be one of those
+	// since the pair last met, waits; anything newer can't be one of those.
+	// at a first meeting, each side's last sync with anyone stands in
 	var heldUntil time.Time
-	if last := laterOf(st.Peers[p.Name()], rm.LastWith); !s.StaleOK && stale(last, s.now()) {
+	last := laterOf(st.Peers[p.Name()], rm.LastWith)
+	if last.IsZero() {
+		last = earlierOf(s.lastAny(p.Name()), rm.LastAny)
+	}
+	if !s.StaleOK && stale(last, s.now()) {
 		heldUntil = last
 	}
-	steps := s.plan(rm, &rep, heldUntil)
+	steps := s.plan(rm, &rep, heldUntil, flagged)
 
 	if dry {
 		for _, x := range steps {
+			if x.quiet {
+				continue
+			}
 			if x.here != nil {
 				rep.Got = append(rep.Got, Change{Path: x.path, State: *x.here, Action: action(*x.here)})
 			}
@@ -241,7 +260,7 @@ func dedupe(in []string) []string {
 }
 
 // plan compares the two manifests path by path.
-func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time) []step {
+func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time, flagged map[string]bool) []step {
 	// a file only one side has is held when the pair is stale and the file
 	// is unchanged since it last met, or when it was held at an earlier
 	// meeting and hasn't changed since: this side's record for a file it
@@ -292,6 +311,8 @@ func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time) []step {
 		switch {
 		case !rok:
 			if l.Deleted {
+				// the peer takes the marker too, quietly
+				steps = append(steps, step{path: path, there: ptr(l), quiet: true})
 				continue
 			}
 			if holdMine(path, l) {
@@ -302,15 +323,17 @@ func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time) []step {
 			continue
 		case !lok:
 			if r.Deleted {
+				// take the marker: this machine then turns away the file it
+				// deleted, from a machine that hasn't heard
+				steps = append(steps, step{path: path, here: ptr(r), quiet: true})
 				continue
 			}
-			if !s.StaleOK && (r.Held || stale(r)) {
+			if !s.StaleOK && (flagged[path] || stale(r)) {
 				// the peer holds it for this machine from now on
 				rep.holdThere = append(rep.holdThere, path)
 				rep.Skipped = append(rep.Skipped, Skip{Path: path, Why: staleWhy(rm.Machine)})
 				continue
 			}
-			r.Held = false
 			steps = append(steps, step{path: path, here: ptr(r), needThere: true})
 			continue
 		}
@@ -393,5 +416,27 @@ func (s *Store) hold(peer, path string) {
 }
 
 func staleWhy(peer string) string {
-	return "held back: this machine and " + peer + " last synced longer ago than deletes are remembered, and only one of them has this file, so the other may have deleted it; `yonder sync " + peer + " --stale-ok` syncs it anyway"
+	return "held back: this machine and " + peer + " last synced longer ago than deletes are remembered, and only one of them has this file, so the other may have deleted it; `yonder sync --stale-ok` syncs it anyway, and clears every hold this machine keeps, for all machines"
+}
+
+// lastAny is this machine's last sync with any machine but except.
+func (s *Store) lastAny(except string) time.Time {
+	var last time.Time
+	for m, t := range s.st.Peers {
+		if m != except && t.After(last) {
+			last = t
+		}
+	}
+	return last
+}
+
+// earlierOf is the earlier of two times, ignoring a zero one.
+func earlierOf(a, b time.Time) time.Time {
+	switch {
+	case a.IsZero():
+		return b
+	case b.IsZero() || a.Before(b):
+		return a
+	}
+	return b
 }

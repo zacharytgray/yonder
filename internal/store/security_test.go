@@ -464,3 +464,102 @@ func TestReceiveStaysInsideTheStoreFolder(t *testing.T) {
 		t.Fatalf("victim changed: %q", got)
 	}
 }
+
+// flagging is a peer whose offer flags every file held, as a holder does
+type flagging struct{ peer }
+
+func (f flagging) Offer() (Manifest, error) {
+	m, err := f.peer.Offer()
+	for p, st := range m.Files {
+		st.Held = true
+		m.Files[p] = st
+	}
+	return m, err
+}
+
+func TestHeldFlagNeverPersists(t *testing.T) {
+	a, b, e := newMachine(t, "alpha"), newMachine(t, "bravo"), newMachine(t, "echo")
+	a.write("f.md", "v1\n", a.now)
+	a.sync(b)
+	b.write("f.md", "v2 from bravo\n", b.now.Add(time.Minute))
+	// bravo's offer flags f.md, which alpha knows: the newer version goes,
+	// and the flag stays on the wire
+	a.locked(func() {
+		r, err := a.s.SyncWith(flagging{peer{b, "alpha"}}, false)
+		must(t, err)
+		if len(r.Got) != 1 {
+			t.Fatalf("both know the path: %+v", r)
+		}
+	})
+	a.locked(func() {
+		for path, f := range a.s.st.Files {
+			if f.Held {
+				t.Fatalf("%s: the held flag must never be saved", path)
+			}
+		}
+	})
+	if a.read("f.md") != "v2 from bravo\n" {
+		t.Fatalf("alpha takes the newer version: %q", a.read("f.md"))
+	}
+	e.sync(a)
+	if got := e.read("f.md"); got != "v2 from bravo\n" {
+		t.Fatalf("a new machine gets it from alpha: %q", got)
+	}
+	// a bundle can't carry it in either
+	var buf bytes.Buffer
+	f := file("x", "bravo", b.now)
+	f.Held = true
+	must(t, WriteBundle(&buf, Bundle{Store: "notes", Files: map[string]FileState{"x.md": f}, Data: map[string][]byte{"x.md": []byte("x")}}))
+	got, err := ReadBundle(&buf)
+	if err != nil || got.Files["x.md"].Held {
+		t.Fatalf("ReadBundle drops the flag: %+v %v", got.Files, err)
+	}
+}
+
+func TestJoinedMachineDoesNotRelayADelete(t *testing.T) {
+	a, b, c := newMachine(t, "alpha"), newMachine(t, "bravo"), newMachine(t, "charlie")
+	t0 := a.now
+	a.write("old.md", "old\n", t0)
+	a.write("keep.md", "keep\n", t0)
+	a.sync(b)
+	at(t0.Add(24*time.Hour), a, b, c)
+	must(t, os.Remove(filepath.Join(a.s.Dir, "old.md"))) // alpha deletes on day 1
+	a.locked(func() {})
+	at(t0.Add(50*24*time.Hour), a, b, c)
+	a.sync(c) // charlie joins on day 50, and takes alpha's delete marker
+	c.locked(func() {
+		if f, ok := c.s.st.Files["old.md"]; !ok || !f.Deleted {
+			t.Fatalf("a joining machine takes the markers it is offered: %+v", c.s.st.Files["old.md"])
+		}
+	})
+	at(t0.Add(100*24*time.Hour), a, b, c)
+	a.sync(c) // alpha forgets the delete
+	b.sync(a) // bravo returns on day 100
+	b.sync(c) // first meeting
+	c.sync(a)
+	for _, m := range []*machine{a, c} {
+		if m.read("old.md") != "<missing>" {
+			t.Fatalf("%s: old.md came back", m.s.Self)
+		}
+	}
+}
+
+func TestFirstMeetingWithAReturningMachineHoldsItsOldFiles(t *testing.T) {
+	a, b, c := newMachine(t, "alpha"), newMachine(t, "bravo"), newMachine(t, "charlie")
+	t0 := a.now
+	a.write("old.md", "old\n", t0)
+	a.sync(b)
+	at(t0.Add(24*time.Hour), a, b, c)
+	must(t, os.Remove(filepath.Join(a.s.Dir, "old.md")))
+	a.locked(func() {})
+	at(t0.Add(100*24*time.Hour), a, b, c)
+	a.locked(func() {}) // alpha's marker expires before charlie ever meets it
+	a.write("new.md", "new\n", a.now)
+	a.sync(c)
+	if r := b.sync(c); c.read("old.md") != "<missing>" || !strings.Contains(skipped(r), "held back") {
+		t.Fatalf("bravo, away since day 0, must not hand old.md to charlie: %+v", r)
+	}
+	if !strings.Contains(staleWhy("charlie"), "clears every hold this machine keeps, for all machines") {
+		t.Fatal("the --stale-ok hint says it reaches every machine")
+	}
+}
