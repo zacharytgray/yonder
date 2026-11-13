@@ -179,12 +179,14 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	}
 
 	a.syncFleet(self)
-	a.applyLayers(self)
 	if len(added) > 0 {
 		a.offerMesh(self, "", addOpts{interactive: interactive, allowShared: allowShared, noMesh: noMesh})
 	}
 	if !noSkill {
 		a.installSkillOn(self, added, interactive)
+	}
+	if a.store.LayerOn(registry.LayerAgents) && len(added) > 0 {
+		a.warnDiverged(self)
 	}
 	if len(failed) > 0 {
 		return fmt.Errorf("could not add %s; fix the errors above and run `yonder add <machine>`", strings.Join(failed, ", "))

@@ -44,6 +44,7 @@ func (a *app) onlinePeers(self string) ([]registry.Machine, error) {
 // returns the machines it reached.
 func (a *app) syncFleet(self string) (reached []string) {
 	defer a.stripLostHere()
+	defer a.applyLayers(self) // the layers may have changed, and the briefing lists the records
 	peers, err := a.onlinePeers(self)
 	if err != nil {
 		a.warnf("sync skipped: %v", err)

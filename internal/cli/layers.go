@@ -144,7 +144,6 @@ func (a *app) setLayers(names []string, on bool) error {
 		changed = append(changed, n)
 	}
 	reached := a.syncFleet(self)
-	a.applyLayers(self)
 	if on {
 		a.syncStoresQuiet(self)
 	}
@@ -159,6 +158,9 @@ func (a *app) setLayers(names []string, on bool) error {
 	for _, n := range changed {
 		fmt.Fprintf(a.out, "%s: %s for the whole fleet\n", n, word)
 		fmt.Fprintln(a.out, "  "+layerNext(n, on))
+		if n == registry.LayerAgents && on {
+			a.warnDiverged(self)
+		}
 	}
 	fmt.Fprintln(a.out, where)
 	return nil

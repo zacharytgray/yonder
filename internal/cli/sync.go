@@ -116,7 +116,6 @@ func (a *app) syncCommand(only string, machines []string, o syncOpts) error {
 	}
 	if !o.dryRun {
 		a.syncFleet(self)
-		a.applyLayers(self)
 	}
 	stores := a.storesOn()
 	if only != "" {
@@ -132,10 +131,28 @@ func (a *app) syncCommand(only string, machines []string, o syncOpts) error {
 			failed = true
 		}
 	}
+	if slices.Contains(stores, agents.StoreName) && !a.renderable(self) {
+		failed = true
+	}
 	if failed {
 		return quietExit(ExitError)
 	}
 	return nil
+}
+
+// renderable prints a FAIL line for each instructions file linked here that
+// can't be rendered now (a briefing over its cap, an unknown placeholder).
+// such a file keeps what it had.
+func (a *app) renderable(self string) bool {
+	l := agents.NewLinker(self, nil)
+	bl, nb := l.Blocked(), l.NoBriefing()
+	for _, p := range sortedKeys(bl) {
+		fmt.Fprintf(a.out, "FAIL agents: %s keeps its old text: %v\n", agents.Tilde(p, agents.Home()), bl[p])
+	}
+	for _, p := range sortedKeys(nb) {
+		fmt.Fprintf(a.out, "FAIL agents: %s has no briefing: %v\n", agents.Tilde(p, agents.Home()), nb[p])
+	}
+	return len(bl)+len(nb) == 0
 }
 
 func (a *app) resolve(name, self, rel, keep string) error {

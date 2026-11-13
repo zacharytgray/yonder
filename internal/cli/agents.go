@@ -34,6 +34,8 @@ log, diff and restore show and undo changes, accept reviews incoming hooks.
 Yonder never edits a harness's settings file.
 
 Store layout:
+  briefing.md                  the hand-written part of the briefing about your machines
+  render.toml                  each harness's model names for {{model:<tier>}} in the text
   instructions.md              shared instructions for every harness
   instructions.<h>.md          extra text for one harness (claude, codex, pi, hermes)
   skills/<name>/               one folder per skill
@@ -46,7 +48,8 @@ Store layout:
 	}
 	cmd.AddCommand(newAgentsInstallCmd(), newAgentsUninstallCmd(), newAgentsStatusCmd(),
 		newAgentsImportCmd(), newAgentsLinkCmd(), newAgentsUnlinkCmd(), newAgentsLogCmd(),
-		newAgentsDiffCmd(), newAgentsAcceptCmd(), newAgentsRestoreCmd(), newAgentsAllowCmd())
+		newAgentsDiffCmd(), newAgentsAcceptCmd(), newAgentsRestoreCmd(), newAgentsAllowCmd(),
+		newAgentsBriefingCmd(), newAgentsGatherCmd())
 	return cmd
 }
 
@@ -280,6 +283,13 @@ func printStoreStatus(a *app, s agents.StoreStatus, home string) {
 		fmt.Fprintln(a.out, "  linked: not here (yonder agents link)")
 	}
 	fmt.Fprintf(a.out, "  review: %s\n", s.Review)
+	fmt.Fprintf(a.out, "  %s\n", s.Briefing)
+	if s.Briefing.Error != "" {
+		fmt.Fprintf(a.out, "  FAIL %s\n", s.Briefing.Error)
+	}
+	for _, u := range s.Unresolved {
+		fmt.Fprintf(a.out, "  unresolved {{model:...}}: %s (agents/%s)\n", u, agents.RenderFile)
+	}
 	for _, m := range sortedKeys(s.LastSync) {
 		fmt.Fprintf(a.out, "  last sync with %s: %s\n", m, ago(s.LastSync[m]))
 	}

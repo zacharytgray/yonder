@@ -1012,6 +1012,8 @@ reviews goes to pending/ too, since history also holds changes that were never a
 The agents layer syncs `~/.local/share/yonder/agents`:
 
 ```
+briefing.md                   the hand-written part of the briefing (see The briefing)
+render.toml                   each harness's name for each model tier (see Model names per harness), and [shared] opt-ins
 instructions.md               shared, harness-neutral
 instructions.<key>.md         an optional overlay for one harness: claude, codex, pi or hermes
 skills/<name>/...             one folder per skill
@@ -1048,8 +1050,9 @@ catches common formats, not everything. `yonder agents allow <path>` waives the 
 that file's current content (the state carries it, so receivers take it too); a later change is
 checked again. A refusal by name (and the marker one) can't be waived. Yonder itself never copies a harness's settings,
 auth or credential files into the store: `import` takes only the kinds below. An instructions file
-that names an absolute home path (`/Users/<x>/`, `/home/<x>/`) is a doctor WARN, since it points
-at one machine's home; `~/` works everywhere.
+or `briefing.md` that names a path under this machine's own home (`$HOME/...`) is a doctor WARN,
+since that path breaks where the home differs; `~/` works everywhere. Another machine's home, or a
+path written as `<machine>:/path`, is fine: the briefing names those on purpose.
 
 ### Review
 
@@ -1069,10 +1072,10 @@ harness found here (the same detection as the skill install), or the ones named:
 
 | Harness | Instructions | Skills | Other |
 |---|---|---|---|
-| Claude Code | A marked block in `~/.claude/CLAUDE.md` holding the text of `instructions.md`, `instructions.claude.md` and the machine's two, where they exist, joined with blank lines. The user's own text stays. | One link per skill in `~/.claude/skills/<name>`. | One link per file in `~/.claude/agents/`, `~/.claude/commands/` and `~/.claude/hooks/`; `files/claude/*` into `~/.claude/`. |
+| Claude Code | A marked block in `~/.claude/CLAUDE.md` holding the briefing, then the text of `instructions.md`, `instructions.claude.md` and the machine's two, where they exist, joined with blank lines. The user's own text stays. | One link per skill in `~/.claude/skills/<name>`. | One link per file in `~/.claude/agents/`, `~/.claude/commands/` and `~/.claude/hooks/`; `files/claude/*` into `~/.claude/`. |
 | Codex | `~/.codex/AGENTS.md` rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/`. |
 | Pi | Same as Codex, into `~/.pi/agent/AGENTS.md`. | `~/.agents/skills` (shared with Codex). | `files/pi/*` into `~/.pi/agent/`. |
-| Hermes | Not wired. | Not wired: link prints that the store's skills folder can be added to `skills.external_dirs` in its config. | `files/hermes/*` into `~/.hermes/`. |
+| Hermes | A marked block in `~/.hermes/SOUL.md`, only when that file exists, holding the briefing and `instructions.hermes.md` (and the machine's), not the shared `instructions.md`. Hermes is a messaging gateway with its own persona, so coding-agent rules stay out of it unless `[shared] hermes = true` in `agents/render.toml` (then the shared text and the machine's come after the briefing, as for the others). Hermes loads SOUL.md from its home in every session, whatever the working folder; its AGENTS.md, CLAUDE.md and `.hermes.md` come from the working folder only, so none of those is global. It seeds a default SOUL.md when there is none, so yonder never creates it; link says to run Hermes once first. Its fleet lines outside the block are the user's to drop; doctor flags any that repeat the briefing. | Not wired: link prints that the store's skills folder can be added to `skills.external_dirs` in its config. | `files/hermes/*` into `~/.hermes/`. |
 
 The text is copied in, never `@`-imported. Claude Code asks once per project before it imports a
 file outside the project, and keeps the import off if declined; a headless session can't answer,
@@ -1129,6 +1132,129 @@ restores, so there is no `--restore` flag: removing the links without putting th
 would leave a harness with neither. `doctor` warns for an entry that no longer matches
 (a link changed, a block deleted by hand, rendered text behind the store).
 
+### The briefing
+
+Every agent should know the user's machines without asking. The briefing is that: a short
+operational map, rendered in full as the first part of yonder's block in every harness's
+instructions file. It is not memory. Personal and project facts stay in each harness's own
+memory; the briefing holds only facts about the machines and how to use them.
+
+It has two parts. The machine list is generated from the records and never hand-written: per
+machine its name, role, address, OS and architecture, CPU, GPU and RAM, the models a server
+answered for at discovery, and one availability word from the role and notes (`always-on`,
+`sleeps`, `intermittent`, `travels`). This machine is marked. The rest is `agents/briefing.md`,
+hand-written: routing (which work goes where), where things live, how secrets are used by name.
+Online state is left out on purpose; `yonder ls` answers it live.
+
+```
+## Yonder briefing
+
+Machines (generated from yonder's records; live state: `yonder ls`, details: `yonder show <machine>`):
+- `gpu-box` gpu · 100.64.0.2 · Ubuntu 24.04.1 LTS amd64 · AMD Ryzen 9 7950X, RTX 4090 24 GB, 64 GB RAM · serves llama3:8b (ollama :11434) · sleeps
+- `laptop` laptop, this machine · 100.64.0.1 · macOS 15.1 arm64 · M3 Pro, 36 GB RAM · travels
+All reached as user `me` over Tailscale. Run with `yonder run <machine> -- <cmd>`, ...
+
+## Routing
+- Heavy jobs go to `gpu-box`; models are in `gpu-box:~/models`.
+```
+
+In `briefing.md`, a `reviewed: YYYY-MM-DD` line under a heading dates that section; one before
+the first heading dates the whole file. Those lines don't render. Paths are written as
+`` `<machine>:<path>` `` for one machine or `` `~/...` `` for every machine, so they can be checked.
+
+**Rendering.** `agents link` renders it, and so does every relink: after a sync changes the store,
+and after every registry sync on either side (`ApplyLayer` relinks where linked), since a role,
+note or fact change alters the list. A store with no `briefing.md` still gets the list.
+
+**Budget.** Every session loads all of it. The rendered briefing has a hard cap of 4 KB with a
+warning at 3 KB. The shares: the hand-written part has its own cap of 2 KB, and the machine list
+gets the rest of the 4 KB, so at least 2 KB. The list grows with the fleet and with served models,
+without anyone editing anything, so it steps down to fit its share rather than fail: first each
+machine's served models become a count ("serves 4 models"), then the OS and hardware go, then
+each line is only name, role and address. A shortened list says so and points at `yonder ls` and
+`yonder show <machine>`; `agents status` and `doctor` add "machine list shortened to fit".
+
+Over a cap nothing is cut into the briefing. A `briefing.md` over 2 KB is refused by the store
+check, so it doesn't sync (no `allow` waives it). When the briefing can't render (the hand-written
+part over its cap, a list too long even at its shortest, a bad record, a tier with no name in
+`briefing.md`), the instructions render without it, so one bad briefing never freezes the rest
+of the text on every machine. The failure stays loud: link returns an error naming each file
+that has no briefing, the size, the cap and the three largest sections; `yonder sync` prints
+`FAIL agents: <file> has no briefing: ...` and exits 1; `doctor` FAILs. A problem in the
+instruction files themselves (a tier with no name there) still leaves that file as it was.
+`agents status` and `doctor` show the usage, like `briefing 2.0 KB / 4.0 KB (warn at 3.0 KB),
+hand-written 1.2 KB / 2.0 KB`.
+
+**Records are cleaned.** The list is built from records that arrive from other machines through
+`_sync`, so every field is cleaned at render time: one line, no control, escape, format (bidi,
+zero-width) or line-separator characters, no backticks, single spaces, clipped (OS 40, CPU and
+GPU 40, a model 60, a runtime 16 characters). The role is used only when it is one of `laptop`,
+`desktop`, `server`, `gpu`, `other`; the ssh user only when it is a plain user name; the address
+only when it parses as an IP; a machine whose name isn't valid is left out. A list that still
+holds yonder's marker (`<!-- yonder:`) or a `{{model:` placeholder is refused, so the briefing
+is left out until the record is fixed (`yonder refresh <machine>`).
+
+**Upkeep.** Nobody has to remember to keep it true. `doctor` WARNs, and `agents briefing review`
+lists:
+
+- a path that doesn't exist on its machine: `<machine>:<path>` there, `~/...` on every set-up
+  machine. Each machine is checked with one read-only `_exec` (`[ -e ]` only; this machine with a
+  stat). A path is cut before its first placeholder segment (`~/repos/<repo>` checks `~/repos`).
+  An offline machine is "unchecked", not a failure.
+- a machine name that isn't in the registry, or that was removed: in `<machine>:` paths, in
+  `yonder run|show|jobs|set|refresh|mesh <machine>` (not `add`, whose machine is new, or `sync`, whose first word may be a store), and a removed machine's name in
+  backticks.
+- text that contradicts the records: an address no machine has or that belongs to another
+  machine on the line, a role claimed for a machine ("`gpu-box` is the server", "`gpu-box`
+  (server)", "the server, gpu-box") that differs from its record, and an address or a whole line
+  that repeats the generated list.
+- a section with no `reviewed:` date, or one older than 90 days.
+- a line of the briefing that the user's own text repeats outside the block in the same
+  instructions file. The user's copy can go; the briefing loads there anyway.
+
+`review` then prints a suggested draft of `briefing.md` as a diff: the repeated addresses and
+lines taken out. The rest needs a person or an agent with one, so it stays a finding. Yonder never
+writes the draft; `--draft` prints it for an agent or the user to edit.
+
+### Model names per harness
+
+Rules that name models don't fit every harness: Claude Code's tiers and Codex's are named
+differently, and a find-and-replace would also change the same words in prose. So the store's
+text names a tier, `{{model:<tier>}}`, and each harness gets its own name for it from
+`agents/render.toml`, which syncs like any store file:
+
+```toml
+[claude]
+top = "Atlas"
+fast = "Pebble"
+
+[codex]
+top = "Zephyr"
+fast = "Quill"
+```
+
+Only that exact syntax is replaced (`{{model:` then a tier of a-z, 0-9 and `-`, then `}}`); `{{
+model:top }}`, `{{model:Top}}` and the word "top" stay as they are. It works in
+`instructions*.md`, machine overlays included, and in `briefing.md`. The tables are `[claude]`,
+`[codex]`, `[pi]` and `[hermes]` (the overlay keys); each value is one short line, at most 100
+bytes, with no control, escape, format or line-separator characters, no `{{` and no marker. A
+broken table matters only to text that uses a placeholder. One more table,
+`[shared]`, holds opt-ins: `hermes = true` gives Hermes the shared instructions too (see Wiring
+the harnesses); it takes only `hermes` and a true or false. A table that breaks these rules is
+refused by the store check, so it doesn't sync.
+
+A tier a harness has no name for, whether no table defines it or only other harnesses' do,
+refuses that harness's render: its file keeps what it had, and the error names every missing tier,
+the files that use them and the line to add (`add fast = "..." under [codex] in
+agents/render.toml`). Other harnesses still render. `agents status` (`unresolved`, like `"codex:
+deep, fast"`) and `doctor` (a WARN each) list the missing ones for the harnesses linked here and
+every harness with a table.
+
+When to use which: a placeholder when a rule is the same for every harness and only the model's
+name differs ("plan with {{model:top}}, scout with {{model:fast}}"). An overlay,
+`instructions.<key>.md`, when the rule itself differs: a harness that has no subagents, a
+setting only one of them has, a step that works differently there.
+
 ### Importing
 
 `yonder agents import <path> [--kind k]... [--harness h] [--machine m] [--replace] [--dry-run]`
@@ -1144,6 +1270,41 @@ settings names above are skipped with a note. An instructions file that holds yo
 (a linked `CLAUDE.md`) gives only the text outside it; a file yonder rendered is skipped. A store file that differs is left alone unless `--replace` (the old one goes to history).
 Every file passes the secret check first; a refused one is a FAIL line and exit 1.
 
+### Machines whose instructions differ
+
+Before the agents layer, each machine has its own `~/.claude/CLAUDE.md` and `AGENTS.md`, and
+they drift apart. Yonder never merges prose or picks one: an agent does it with the user.
+
+`yonder agents gather [--json]` reads each online machine's own instructions files
+(`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`; Hermes's `SOUL.md` is its
+persona and is left out). This machine's are read directly; every other machine's through one
+read-only `_exec` that prints each file that exists (files over 256 KB are skipped). Yonder's
+block is taken out and a rendered file counts as empty, so only the user's own text is
+compared. Each file is split into sections: a heading and what follows it, up to the next
+heading of any level; text with no heading above it splits into paragraphs. Sections match by
+heading (lower case, a second `## Notes` in one file is `## notes #2`), paragraphs by their
+text. Each section is then:
+
+- `same`: one version, on every machine that has instructions.
+- `differs`: two or more versions, between machines or between one machine's files.
+- `some`: one version, on more than one machine but not all.
+- `only`: on one machine only.
+
+`--json`: `{"machines":[{"name","files":[{"path","harness","bytes","yonder","rendered"}],"error"}],
+"sections":[{"key","heading","status","machines","versions":[{"machines","files","text"}]}],
+"summary":{"same","differs","some","only"}}`. A machine offline or not set up is listed with an
+`error` and no files.
+
+The yonder skill has the reconcile procedure for the agent: sort each section into shared,
+machine-only or conflicting; ask the user about each conflict; show the result as a diff; after
+approval, write `instructions.md` and `machines/<m>/instructions.md` with `agents import` (no new
+apply step is needed: `import --kind instructions --machine <m>` writes an overlay); then trim
+what moved out of each machine's own file, backing each up first.
+
+When `enable agents`, or `init` with the layer on and machines added, finds that two or more
+machines have instructions that don't all agree, it says so and names the procedure. It writes
+nothing.
+
 ### The other commands
 
 - `agents log [path] [-n N] [--json]`: the changes this machine recorded, oldest first: time,
@@ -1153,11 +1314,15 @@ Every file passes the secret check first; a refused one is a FAIL line and exit 
   replaced (or kept version N); for a waiting change, between live and incoming.
 - `agents restore <path> [--version N | --list]`: put a kept version back; it syncs like an edit.
   For a reviewed path it waits for `accept` here first.
+- `agents briefing show [--harness h]` prints the briefing as that harness gets it, with its size
+  on stderr. `agents briefing review [--json] [--draft]` prints the findings and a suggested draft
+  (see The briefing).
 - `agents status [--json]` adds `"store"` to the skill report: `layer_on`, `dir`, `files`, `bytes`,
   `review`, `linked`, `paused`, `pending`, `conflicts`, `refused`, `last_sync` (per machine),
   `notices` (deletes that lost to an edit, 7 days), `home_paths`, `link_problems`,
-  `large_instructions` (rendered instructions over 25 KB), `stale_peers` and `held` (why the next
-  sync would stop here).
+  `large_instructions` (rendered instructions over 25 KB), `stale_peers`, `held` (why the next
+  sync would stop here) and `briefing` (`bytes`, `warn`, `cap`, `hand_bytes`, `hand_cap`, and
+  `error` when it can't render) and `unresolved` (see Model names per harness).
 
 `import`, `link`, `accept`, `restore` and `allow` need the layer on; `log`, `diff`, `status` and
 `unlink` work either way.
@@ -1178,10 +1343,12 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
 - The agents store, when its layer is on: a PASS with the file count and the last sync per
   machine; a FAIL per file that can't sync; a WARN per conflict (fix `yonder sync --resolve <path>
   --keep mine|theirs|<machine>`), per change waiting for review (fix `yonder agents accept`), per
-  delete that lost to an edit in the last 7 days, per instructions file naming an absolute home
-  path, per link entry that no longer matches or block with no end marker (fix `yonder agents
+  delete that lost to an edit in the last 7 days, per instructions file naming a path under this
+  machine's home, per link entry that no longer matches or block with no end marker (fix `yonder agents
   link`), per harness whose rendered instructions are over 25 KB, and per machine last synced
-  more than 90 days ago (files only one side has are held back); a FAIL when the next sync would
+  more than 90 days ago (files only one side has are held back); a `briefing` line with its usage
+  (WARN past 3 KB, FAIL over a cap) and a WARN per briefing finding (see The briefing); a WARN per
+  harness with a `{{model:...}}` tier it has no name for; a FAIL when the next sync would
   stop here: the store folder is missing while files are on record, or a mass delete (fix: put
   them back, or `yonder sync --allow-deletes`).
 - Each fleet machine, in parallel: in tailscale status; online (offline is a WARN with last seen

@@ -53,7 +53,6 @@ and sync the registry everywhere. A pending machine with no pinned key is only r
 				}
 			}
 			a.syncFleet(self)
-			a.applyLayers(self)
 			a.syncStoresQuiet(self)
 			if len(args) == 1 && lastErr != nil {
 				return &exitError{code: ExitCode(lastErr)}

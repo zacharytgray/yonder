@@ -274,6 +274,7 @@ func TestFleetOverSSH(t *testing.T) {
 	}
 
 	agentsOverSSH(t, f, a, b)
+	briefingOverSSH(t, f, a, b)
 
 	// node-c: a record pointing at node-a's port with node-b's host key must be refused (pinning)
 	machines := filepath.Join(f.home, "yonder", "config", "machines")
@@ -467,4 +468,65 @@ func agentsOverSSH(t *testing.T, f *fleet, a, b node) {
 		t.Fatalf("node-b should have the layer off: %s", st)
 	}
 	f.must("enable", "agents")
+}
+
+// briefingOverSSH: gather compares the two containers' own CLAUDE.md files,
+// enable says they differ, and a container renders the briefing listing the
+// whole fleet.
+func briefingOverSSH(t *testing.T, f *fleet, a, b node) {
+	t.Helper()
+	const y = `"$(command -v yonder || echo ~/.local/bin/yonder)"`
+	own := func(n node, content string) {
+		t.Helper()
+		f.must("run", n.name, "--", "mkdir -p ~/.claude && printf '%s' '"+content+"' > ~/.claude/CLAUDE.md")
+	}
+	own(a, "# Style\nbe brief\n\n# Models\nuse the big one\n\n# GPU\nnode-a only\n")
+	own(b, "# Style\nbe brief\n\n# Models\nuse the small one\n")
+	var g struct {
+		Machines []struct{ Name, Error string }
+		Sections []struct {
+			Key, Status string
+			Machines    []string
+			Versions    []struct{ Machines []string }
+		}
+	}
+	if err := json.Unmarshal([]byte(f.must("agents", "gather", "--json").stdout), &g); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, s := range g.Sections {
+		got[s.Key] = s.Status
+	}
+	if got["# style"] != "same" || got["# models"] != "differs" || got["# gpu"] != "only" || len(got) != 3 {
+		t.Fatalf("gather: %+v", g)
+	}
+	if r := f.must("agents", "gather"); !strings.Contains(r.stdout, "node-a+") && !strings.Contains(r.stdout, "node-a vs node-b") {
+		t.Fatalf("gather text: %s", r.stdout)
+	}
+	f.must("disable", "agents")
+	if r := f.must("enable", "agents"); !strings.Contains(r.stdout, "instructions differ; yonder won't pick one") {
+		t.Fatalf("enable should say the files differ: %s", r.stdout)
+	}
+	// gather only reads
+	if r := f.must("run", a.name, "--", "cat ~/.claude/CLAUDE.md"); !strings.HasPrefix(r.stdout, "# Style") || strings.Contains(r.stdout, "yonder:begin") {
+		t.Fatalf("node-a's file changed: %s", r.stdout)
+	}
+
+	// a container renders the briefing: the whole fleet, itself marked, its own text kept
+	f.must("run", a.name, "--", y+" agents link --harness claude-code")
+	r := f.must("run", a.name, "--", "cat ~/.claude/CLAUDE.md")
+	for _, want := range []string{"# Style\nbe brief", "## Yonder briefing", "`node-a` this machine", "`node-b`", "`laptop`", "`node-b` · me@"} {
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("node-a's block lacks %q:\n%s", want, r.stdout)
+		}
+	}
+	// a role set here reaches node-a's briefing with the registry sync
+	f.must("set", "node-b", "--role", "gpu")
+	if r := f.must("run", a.name, "--", "cat ~/.claude/CLAUDE.md"); !strings.Contains(r.stdout, "`node-b` gpu") {
+		t.Fatalf("node-a should render the new role:\n%s", r.stdout)
+	}
+	f.must("run", a.name, "--", y+" agents unlink")
+	if r := f.must("run", a.name, "--", "cat ~/.claude/CLAUDE.md"); strings.Contains(r.stdout, "yonder") {
+		t.Fatalf("unlink leaves node-a's own text: %s", r.stdout)
+	}
 }

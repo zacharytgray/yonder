@@ -347,7 +347,7 @@ syncs between your machines:
 
 ```sh
 yonder agents import ~/.claude                # CLAUDE.md, skills/, agents/, commands/, hooks/
-yonder agents link                            # wire it into Claude Code, Codex and Pi here
+yonder agents link                            # wire it into Claude Code, Codex, Pi and Hermes here
 yonder sync                                   # send it to every online machine
 ```
 
@@ -359,6 +359,30 @@ marked block and keeps your own text. It renders `~/.codex/AGENTS.md` and `~/.pi
 the same way, and links each skill, subagent, command and hook. After you edit the store, the
 next `yonder sync` renders the new text in on every machine. Anything in the way is backed up first.
 `yonder agents unlink` puts it all back.
+
+The block starts with a briefing about your machines, so every agent knows them without asking.
+Its machine list comes from the records: name, role, address, OS, hardware, served models, and
+one word on availability. The rest is yours, in `briefing.md` in the store: which work goes where,
+where things live, how secrets are used. Every session loads all of it, so it has a budget: 4 KB
+in all, 2 KB hand-written, and the machine list gets the rest. A growing fleet shortens the list
+(models to a count, then no hardware, then name, role and address) instead of failing. If the
+briefing still can't fit, your instructions render without it, and `sync` and `doctor` say why.
+Nothing is ever cut out of your text. `yonder doctor` and
+`yonder agents briefing review` flag paths that are gone, machine names and roles that don't
+match the records, sections not reviewed in 90 days, and lines your own text already repeats.
+The review also prints a trimmed draft for you to edit. Hermes gets the block in
+`~/.hermes/SOUL.md`, the one file it loads in every session. Its block holds the briefing and
+`instructions.hermes.md`, not the shared instructions, since Hermes is a messaging agent with its
+own persona. `[shared] hermes = true` in `render.toml` in the store adds them.
+
+If your machines already have different `CLAUDE.md` or `AGENTS.md` files, `yonder agents gather`
+shows which sections are the same, which differ, and which only one machine has. Yonder doesn't
+merge them. The yonder skill walks your agent through it with you: it asks about each conflict,
+shows the result as a diff, imports it, and trims each machine's file after a backup.
+
+For rules that name models, write a tier like `{{model:top}}` and give each harness its name for
+it in `render.toml` in the store, under `[claude]`, `[codex]`, `[pi]` or `[hermes]`. A rule that
+differs in more than a name goes in that harness's `instructions.<harness>.md`.
 
 How sync behaves:
 
@@ -406,6 +430,8 @@ How sync behaves:
 | `yonder layers` / `yonder enable\|disable <layer>` | See and switch the optional layers for the whole fleet |
 | `yonder sync [store] [machine...]` | Sync the registry and the stores of the layers that are on. `--resolve` settles a conflict |
 | `yonder agents import\|link\|unlink\|log\|diff\|accept\|restore\|allow` | Agent config: put it in the store, wire it into the harnesses, see and undo changes, review hooks |
+| `yonder agents briefing show\|review` | The briefing about your machines that every agent loads: print it, or list what to fix and a trimmed draft |
+| `yonder agents gather` | Compare each machine's own instructions files, for a reconcile with your agent |
 | `yonder remove <machine> [--lost]` | Take a machine out of the fleet |
 
 ## How agents learn it
