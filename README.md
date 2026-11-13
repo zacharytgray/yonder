@@ -373,8 +373,8 @@ How sync behaves:
 - Secrets and settings never sync. Names like `.env`, `*.pem` or a harness's `settings.json` and
   `config.toml` are refused, and so are files that look like they hold a key, with the line
   number.
-- If a sync would delete most of the store, it stops and asks for `--allow-deletes`: a moved
-  or missing folder looks like that.
+- If a sync would delete more than half of the store (two files or more), it stops and asks for
+  `--allow-deletes`: a moved or missing folder looks like that. `yonder doctor` says so too.
 - Replaced and deleted versions are kept: `yonder agents restore <path>`. `yonder agents log`
   and `yonder agents diff` show which machine changed what.
 - There is no daemon. Sync runs on `yonder sync`, `refresh` and `add`, and after a change made
@@ -382,8 +382,9 @@ How sync behaves:
   `yonder sync --background`; for Claude Code, a SessionStart hook does it.
 - Two machines that are never awake at the same time only meet through a third one. A cron
   entry running `yonder sync` on an always-on machine covers that.
-- A machine away for more than 90 days holds back its old files, since the others may have
-  deleted them meanwhile. `yonder doctor` lists them, and `yonder sync --stale-ok` sends them.
+- Two machines that haven't synced with each other for more than 90 days hold back the old files
+  only one of them has, since the other may have deleted them meanwhile. Files both know, and
+  anything changed since, sync as usual. `yonder sync <machine> --stale-ok` syncs the held files.
 
 ## Commands
 

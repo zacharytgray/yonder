@@ -882,23 +882,38 @@ exec bit, the size, a version counter per machine, a deleted flag, and its origi
 yonder made the change itself (`import`, `restore`, `resolve`, `accept`; a scan doesn't know who
 edited a file, so it records no harness). A scan bumps this machine's counter for every file whose
 hash or exec bit changed since the last scan and for every file that went missing (a delete
-marker). That is how edits made without yonder are caught without a watcher. Delete markers older
-than 90 days are dropped.
+marker). That is how edits made without yonder are caught without a watcher. A delete marker is
+dropped 90 days after the later of its origin time and when this machine recorded it (`marked` in
+the state), so a marker that reached a machine late lasts as long there as anywhere.
 
 The scan reads the store folder through a symlink at its own path (a store moved into a dotfiles
 repo and linked back is the same store). It stops, changing nothing, when the folder is missing
-while files are on record, or when it would delete every tracked file (of two or more) or more
-than half of ten or more: a moved or broken folder looks like that, and the deletes would spread
-to every machine. The error says what it found; `yonder sync --allow-deletes` goes ahead. A peer
-whose scan stops this way fails its part of the sync, and the fix is to run the same there.
+while files are on record, or when it would delete two or more files that are more than half of
+what is tracked (so 2 of 3 and 8 of 9 stop; one file gone from a tiny store, or 4 of 9, is just a
+delete): a moved or broken folder looks like that, and the deletes would spread to every machine.
+The error says what it found; `yonder sync --allow-deletes` goes ahead. `doctor` reports a held
+store as a FAIL with that fix. A peer whose scan stops this way exits 5, and the caller prints
+`agents: gpu-box held: mass delete on gpu-box (8 of its 9 files are gone)` with the fix to run
+there; it doesn't fail the caller's sync.
 
-**Back after a long absence.** Delete markers are dropped after 90 days, so a machine away longer
-could bring back files the others deleted meanwhile. When a machine loads its store state and its
-last sync with anyone is more than 90 days old, it marks every file it held then, unchanged since,
-as held back (`suspect` in the state). A held-back file is left out of its offers, and it is sent
-only to a machine that already knows the path (whose own version then decides, including a delete
-it still remembers). Editing the file here, or a peer that knows it, clears the mark;
-`yonder sync --stale-ok` on that machine sends them all. `doctor` lists them.
+**Pairs that haven't met for a long time.** Delete markers are dropped after 90 days, so two
+machines that haven't synced with each other for longer could bring back files one of them deleted
+meanwhile. The rule is per pair. Each machine records its last sync with each other machine
+(`peers` in the state; a receiver records one when the caller pushes to it), and an offer carries
+the offering machine's record of its last sync with the caller (`last_with`). The pair's last
+sync is the later of the two. When it is more than 90 days ago, a file that only one side has,
+unchanged since that sync (its origin time is no later), is held back: not sent, not taken, and
+reported (`held back: ...`). A file both sides know syncs as usual, delete markers included, and
+so does anything changed since the pair last met, since a delete can't have been aimed at it. A
+pair that never synced is new, not stale, so a new machine gets everything.
+
+A hold outlives the sync that found it, since that sync makes the pair fresh again. The machine
+that has the file records it (`held`: peer, path, since when), whether it was the caller or the
+caller told it to (`hold` in the push bundle). Its offers to that peer flag the file `held`, and
+the peer skips flagged paths it doesn't know. A hold ends when the file changes after it, when
+the peer turns out to know the path, or with `yonder sync <machine> --stale-ok`, which syncs
+held files and clears the holds. `doctor` warns for each machine last synced more than 90 days
+ago.
 
 **A sync with one peer** (the caller holds its store lock; the peer takes its own, waiting up to 5
 seconds, else it exits 4 and the caller skips it with a note, which doesn't fail the sync):
@@ -967,7 +982,8 @@ file stays, and the state records what is live. It still syncs on to other machi
 store's version. A change made here, a delete, and content that is already live never wait. An
 edit here to a path that waits replaces the waiting change (which goes to history). Whether a
 change was made here is decided from this machine's own store, never from a version's origin,
-which the sender writes. A restore (and a resolve that picks a waiting copy) of a path the store
+which the sender writes; and content that waits in pending/ came from elsewhere, so a waiting
+version that wins a conflict or beats a delete in a sync this machine runs still waits. A restore (and a resolve that picks a waiting copy) of a path the store
 reviews goes to pending/ too, since history also holds changes that were never accepted.
 
 ## Agents store
@@ -991,7 +1007,11 @@ over the shared one by name. A machine's own map (`~/CLAUDE.md`) stays out of th
 ### What never syncs
 
 Every rule below matches paths with case folded, since a Mac stores `Hooks/` and `hooks/` as one
-folder. A file name that looks like a secret never syncs, on the sending or the receiving side:
+folder. A Mac also folds some non-ASCII letters into ASCII ones (`hookſ/` into `hooks/`, `ﬁles/`
+into `files/`), so the path segments the rules look at must be plain ASCII: the top folder, a
+`machines/` name, a skill or `claude/` folder name, and a `files/` harness and file name. A path
+with a non-ASCII character there never syncs. Deeper names, such as a file inside a skill, may be
+anything. A file name that looks like a secret never syncs, on the sending or the receiving side:
 `.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_*`, `auth.json`, `credentials*`, `.credentials*`,
 `.git-credentials`, `.netrc`, `_netrc`, `*.age`, `*token*`, `*secret*`. `skills/yonder/` (each
 machine installs its own) and `skills/synced/` (Claude.ai's own folder) never sync. Under
@@ -1046,8 +1066,10 @@ The rules:
   hooks are linked into `~/.claude/hooks/`, so a `settings.json` entry for `~/.claude/hooks/x.sh`
   keeps working; registering a new hook stays the user's step. So does a session-start hook
   running `yonder sync --background`, which link suggests.
-- It edits a user's instructions file only inside the marked block, from the first
-  `<!-- yonder:begin` to the last `<!-- yonder:end -->` after it. A begin marker with no end is
+- It edits a user's instructions file only inside the marked block: from the first line that is a
+  begin marker (`<!-- yonder:begin ... -->`) to the first line after it that is
+  `<!-- yonder:end -->`. Markers count only as whole lines, so text that mentions them (in
+  backticks, say) is the user's, before or after the block. A begin marker with no end is
   refused and the file left alone; the error and `doctor` say to delete the begin line or add the
   end. A rendered file starts with a marker line. Whether a file is yonder's is decided from that
   line every time, never from what link wrote before: a rendered file the user rewrote is theirs
@@ -1112,7 +1134,8 @@ Every file passes the secret check first; a refused one is a FAIL line and exit 
 - `agents status [--json]` adds `"store"` to the skill report: `layer_on`, `dir`, `files`, `bytes`,
   `review`, `linked`, `paused`, `pending`, `conflicts`, `refused`, `last_sync` (per machine),
   `notices` (deletes that lost to an edit, 7 days), `home_paths`, `link_problems`,
-  `large_instructions` (rendered instructions over 25 KB), `held_back` and `missing`.
+  `large_instructions` (rendered instructions over 25 KB), `stale_peers` and `held` (why the next
+  sync would stop here).
 
 `import`, `link`, `accept`, `restore` and `allow` need the layer on; `log`, `diff`, `status` and
 `unlink` work either way.
@@ -1135,9 +1158,10 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   --keep mine|theirs|<machine>`), per change waiting for review (fix `yonder agents accept`), per
   delete that lost to an edit in the last 7 days, per instructions file naming an absolute home
   path, per link entry that no longer matches or block with no end marker (fix `yonder agents
-  link`), per harness whose rendered instructions are over 25 KB, and for files held back after a
-  long absence (fix `yonder sync --stale-ok`); a FAIL when the store folder is missing while files
-  are on record.
+  link`), per harness whose rendered instructions are over 25 KB, and per machine last synced
+  more than 90 days ago (files only one side has are held back); a FAIL when the next sync would
+  stop here: the store folder is missing while files are on record, or a mass delete (fix: put
+  them back, or `yonder sync --allow-deletes`).
 - Each fleet machine, in parallel: in tailscale status; online (offline is a WARN with last seen
   and notes, and its other checks are skipped); pending (WARN; with no held pin the detail is
   "<m> is online now; run `yonder add <m>` to finish setup", with a pin the fix is `yonder refresh <m>`); no pinned host key (fix `yonder add
@@ -1263,7 +1287,8 @@ way, such as the same LAN.
   nothing through sync; `yonder remove <m> --lost` run there still strips the tombstone's keys.
 - `_store-offer`, `_store-send` and `_store-recv` name their sender the same way and refuse an
   unknown or removed one. They also refuse when this machine has no registry yet, with exit 3
-  when the store's layer is off here, and with exit 4 when the store is busy. A peer's bundle is
+  when the store's layer is off here, exit 4 when the store is busy, and exit 5 when a mass
+  delete holds it. A peer's bundle is
   checked entry by entry before anything is written, and only inside the store folder (see Store
   sync). Each machine runs the store's checks (secrets, settings names, limits, case) on what it
   receives, not only on what it sends, and decides review from its own state, not from fields
