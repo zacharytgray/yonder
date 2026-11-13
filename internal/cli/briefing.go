@@ -192,6 +192,7 @@ func (a *app) checkPaths(self string, refs []agents.PathRef) ([]agents.Finding, 
 // pathsExist runs one [ -e ] per path on m. a ~/ path is under that machine's home.
 func (a *app) pathsExist(m registry.Machine, self string, refs []agents.PathRef, idx []int) ([]bool, error) {
 	var script strings.Builder
+	fmt.Fprintf(&script, "printf '%%s\\n' %s\n", transport.Quote(agents.ReplyStart))
 	for _, i := range idx {
 		p := refs[i].Path
 		arg := transport.Quote(p)
@@ -204,8 +205,9 @@ func (a *app) pathsExist(m registry.Machine, self string, refs []agents.PathRef,
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Fields(out)
-	if len(lines) != len(idx) {
+	_, reply, ok := strings.Cut(out, agents.ReplyStart+"\n")
+	lines := strings.Fields(reply)
+	if !ok || len(lines) != len(idx) {
 		return nil, fmt.Errorf("unexpected reply from %s", m.Name)
 	}
 	res := make([]bool, len(idx))

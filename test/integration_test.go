@@ -515,7 +515,7 @@ func briefingOverSSH(t *testing.T, f *fleet, a, b node) {
 	// a container renders the briefing: the whole fleet, itself marked, its own text kept
 	f.must("run", a.name, "--", y+" agents link --harness claude-code")
 	r := f.must("run", a.name, "--", "cat ~/.claude/CLAUDE.md")
-	for _, want := range []string{"# Style\nbe brief", "## Yonder briefing", "`node-a` this machine", "`node-b`", "`laptop`", "All reached as user `me`"} {
+	for _, want := range []string{"# Style\nbe brief", "## Yonder briefing", "`node-a` this machine", "`node-b`", "`laptop`", "`node-b` · me@"} {
 		if !strings.Contains(r.stdout, want) {
 			t.Fatalf("node-a's block lacks %q:\n%s", want, r.stdout)
 		}

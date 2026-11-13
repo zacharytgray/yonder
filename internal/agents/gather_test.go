@@ -17,7 +17,7 @@ func TestGatherScriptRoundTrip(t *testing.T) {
 		must(t, os.MkdirAll(filepath.Join(home, filepath.Dir(p)), 0o755))
 		must(t, os.WriteFile(filepath.Join(home, p), []byte(c), 0o644))
 	}
-	cmd := exec.Command("sh", "-c", GatherScript())
+	cmd := exec.Command("sh", "-c", "echo welcome from a chatty profile; "+GatherScript())
 	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
 	out, err := cmd.Output()
 	must(t, err)

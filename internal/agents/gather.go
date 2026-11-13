@@ -27,6 +27,10 @@ var GatherFiles = []GatherFile{
 
 const gatherMax = 256 << 10 // a bigger file isn't instructions anyone wrote by hand
 
+// ReplyStart opens a read-only script's reply: a login shell's profile may
+// print first, and the parsers skip to it.
+const ReplyStart = "=== yonder reply"
+
 // GatherScript prints each file that exists as "=== <path> <bytes>", its
 // bytes, then a newline. it only reads.
 func GatherScript() string {
@@ -34,7 +38,8 @@ func GatherScript() string {
 	for _, f := range GatherFiles {
 		paths = append(paths, f.Path)
 	}
-	return `for f in ` + strings.Join(paths, " ") + `; do
+	return `printf '%s\n' '` + ReplyStart + `'
+for f in ` + strings.Join(paths, " ") + `; do
   p="$HOME/$f"
   [ -f "$p" ] || continue
   n=$(wc -c < "$p" | tr -d ' ')
@@ -48,6 +53,15 @@ done
 func ParseGather(r io.Reader) (map[string][]byte, error) {
 	out := map[string][]byte{}
 	br := bufio.NewReader(r)
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			return nil, errors.New("no reply from the gather script")
+		}
+		if strings.TrimSuffix(line, "\n") == ReplyStart {
+			break
+		}
+	}
 	for {
 		line, err := br.ReadString('\n')
 		if errors.Is(err, io.EOF) && line == "" {
