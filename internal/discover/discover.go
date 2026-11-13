@@ -1,5 +1,5 @@
-// Package discover gathers this machine's facts: hardware, local models and
-// agent harnesses. every probe has its own short timeout and runs
+// Package discover gathers this machine's facts: hardware and agent
+// harnesses. every probe has its own short timeout and runs
 // concurrently; a missing tool is simply absent, never an error.
 package discover
 
@@ -7,7 +7,6 @@ import (
 	"context"
 	"os"
 	"runtime"
-	"sort"
 	"sync"
 	"time"
 
@@ -19,15 +18,14 @@ type Facts = registry.Facts
 // overall cap, so a stuck probe can never stall `add` or `refresh`.
 const overall = 3 * time.Second
 
-// Local gathers this machine's facts, with the model ports from its config.toml.
+// Local gathers this machine's facts.
 func Local() Facts {
 	ctx, cancel := context.WithTimeout(context.Background(), overall)
 	defer cancel()
-	c, _ := registry.Open().Config() // a broken config just means no extra ports
-	return collect(ctx, c.Discover.ModelPorts)
+	return collect(ctx)
 }
 
-func collect(ctx context.Context, modelPorts []int) Facts {
+func collect(ctx context.Context) Facts {
 	host, _ := os.Hostname()
 	f := Facts{
 		Hostname: host,
@@ -38,13 +36,11 @@ func collect(ctx context.Context, modelPorts []int) Facts {
 
 	var (
 		hw      hardware
-		models  []registry.Model
 		harness []registry.Harness
 		wg      sync.WaitGroup
 	)
-	wg.Add(3)
+	wg.Add(2)
 	go func() { defer wg.Done(); hw = probeHardware(ctx) }()
-	go func() { defer wg.Done(); models = probeModels(ctx, modelPorts) }()
 	go func() { defer wg.Done(); harness = probeHarnesses(ctx) }()
 	wg.Wait()
 
@@ -56,18 +52,7 @@ func collect(ctx context.Context, modelPorts []int) Facts {
 	f.DiskFreeGB = hw.diskFreeGB
 	f.GPUs = hw.gpus
 	f.Harnesses = harness
-	f.Models = models
-	f = Sanitize(f)
-	models = f.Models
-
-	sort.SliceStable(models, func(i, j int) bool {
-		if models[i].Runtime != models[j].Runtime {
-			return models[i].Runtime < models[j].Runtime
-		}
-		return models[i].Name < models[j].Name
-	})
-	f.Models = models
-	return f.Normalize()
+	return Sanitize(f).Normalize()
 }
 
 // gb rounds a byte count to GiB with one decimal.

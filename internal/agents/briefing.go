@@ -90,8 +90,7 @@ func isHeading(line string) bool {
 // share of the budget.
 const (
 	detailFull     = iota // everything
-	detailModels          // served models as a count
-	detailHardware        // no OS, CPU, GPU or RAM either
+	detailHardware        // no OS, CPU, GPU or RAM
 	detailMinimal         // name, role and address
 )
 
@@ -190,9 +189,6 @@ func machineLine(m registry.Machine, self string, user bool, detail int) string 
 			parts = append(parts, hw)
 		}
 	}
-	if ms := servedText(f.Models, detail > detailFull); ms != "" {
-		parts = append(parts, ms)
-	}
 	if w := availability(m); w != "" {
 		parts = append(parts, w)
 	}
@@ -232,45 +228,6 @@ func hardwareText(f registry.Facts) string {
 	return strings.Join(parts, ", ")
 }
 
-const maxModels = 4
-
-// servedText lists the models a server answered for at discovery time, or
-// only how many when short.
-func servedText(ms []registry.Model, short bool) string {
-	var s []string
-	for _, m := range ms {
-		if !m.Serving {
-			continue
-		}
-		t := clean(m.Name, 60)
-		var tags []string
-		if r := clean(m.Runtime, 16); r != "" {
-			tags = append(tags, r)
-		}
-		if m.Port > 0 && m.Port < 65536 {
-			tags = append(tags, fmt.Sprintf(":%d", m.Port))
-		}
-		if len(tags) > 0 {
-			t += " (" + strings.Join(tags, " ") + ")"
-		}
-		s = append(s, t)
-	}
-	switch {
-	case len(s) == 0:
-		return ""
-	case short && len(s) == 1:
-		return "serves 1 model"
-	case short:
-		return fmt.Sprintf("serves %d models", len(s))
-	}
-	more := ""
-	if len(s) > maxModels {
-		more = fmt.Sprintf(" and %d more", len(s)-maxModels)
-		s = s[:maxModels]
-	}
-	return "serves " + strings.Join(s, ", ") + more
-}
-
 // clean makes a record's text safe for the block: one line, no control,
 // format (bidi, zero-width) or line-separator characters, no backticks,
 // single spaces, at most max runes. records come from other machines.
@@ -291,7 +248,7 @@ func clean(s string, max int) string {
 	return out
 }
 
-// unsafeRune: what never goes into a rendered line or a model name: control
+// unsafeRune: what never goes into a rendered line: control
 // characters (escape included), format characters (bidi, zero-width) and the
 // unicode line and paragraph separators.
 func unsafeRune(r rune) bool {
@@ -380,9 +337,8 @@ func (l *Linker) briefingSource() ([]byte, bool) {
 //
 // the shares: the hand-written part has its own 2 KB cap, and the machine
 // list gets the rest of the 4 KB, so at least 2 KB. the list steps down to
-// fit its share (models to a count, then no hardware, then name, role and
-// address), so a fleet that grows or starts serving models doesn't need an
-// edit. only a list too long even at its shortest goes over.
+// fit its share (no hardware, then name, role and address), so a fleet that
+// grows doesn't need an edit. only a list too long even at its shortest goes over.
 func (l *Linker) briefing(key string) (string, BriefingUsage, error) {
 	u := BriefingUsage{Warn: BriefingWarn, Cap: BriefingCap, HandCap: HandCap}
 	var hand string

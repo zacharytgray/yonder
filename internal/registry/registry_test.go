@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -142,7 +141,6 @@ func TestStoreRoundTrip(t *testing.T) {
 		Facts: Facts{
 			CPU: "Example CPU", CPUCores: 16, MemoryGB: 64,
 			GPUs:      []GPU{{Name: "Example GPU", Vendor: "nvidia", MemoryGB: 24}},
-			Models:    []Model{{Name: "example:7b", Runtime: "ollama", SizeGB: 4.1}},
 			Harnesses: []Harness{{Name: "claude-code", Version: "2.0.0"}},
 		},
 	}
@@ -153,7 +151,7 @@ func TestStoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Facts.GPUs[0].Name != "Example GPU" || got.Facts.Models[0].Runtime != "ollama" || !got.UpdatedAt.Equal(t0) {
+	if got.Facts.GPUs[0].Name != "Example GPU" || got.Facts.Harnesses[0].Name != "claude-code" || !got.UpdatedAt.Equal(t0) {
 		t.Fatalf("round trip lost data: %+v", got)
 	}
 	data, _ := os.ReadFile(filepath.Join(s.Dir, "machines", "gpu-box.toml"))
@@ -207,9 +205,17 @@ func TestSetSelfKeepsOtherKeys(t *testing.T) {
 	}
 }
 
-func TestDiscoverModelPortsKept(t *testing.T) {
+// a config.toml from before v0.3.1 may say model_ports. it parses, nothing
+// reads it, writes keep it, and OldModelPorts finds it for doctor.
+func TestOldModelPortsConfig(t *testing.T) {
 	s := &Store{Dir: t.TempDir()}
+	if s.OldModelPorts() {
+		t.Fatal("no config, no model_ports")
+	}
 	if err := os.WriteFile(filepath.Join(s.Dir, "config.toml"), []byte("self = \"old\"\n[discover]\nmodel_ports = [9292, 5000]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Config(); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetSelf("laptop"); err != nil {
@@ -222,8 +228,92 @@ func TestDiscoverModelPortsKept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Self != "laptop" || !slices.Equal(c.Discover.ModelPorts, []int{9292, 5000}) {
+	if c.Self != "laptop" || !s.OldModelPorts() {
 		t.Fatalf("got %+v", c)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir, "config.toml"), []byte("self = \"laptop\"\n[discover]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s.OldModelPorts() {
+		t.Fatal("an empty [discover] is not model_ports")
+	}
+}
+
+// oldRecord is a machine record as v0.3.0 and before wrote it, models included.
+const oldRecord = `name = 'gpu-box'
+os = 'linux'
+arch = 'amd64'
+tailscale_ip = '100.64.0.2'
+dns_name = 'gpu-box.example.ts.net'
+ssh_user = 'me'
+ssh_port = 22
+yonder_path = '/home/me/.local/bin/yonder'
+ssh_host_key = 'ssh-ed25519 AAAAexample'
+ssh_client_keys = ['ssh-ed25519 AAAAclient me@gpu-box']
+role = 'gpu'
+updated_at = 2026-11-11T20:00:00Z
+discovered_at = 2026-11-11T20:00:00Z
+
+[facts]
+cpu = 'Example CPU'
+cpu_cores = 16
+memory_gb = 64.0
+
+[[facts.gpus]]
+name = 'Example GPU'
+memory_gb = 24.0
+
+[[facts.models]]
+name = 'example:7b'
+runtime = 'ollama'
+size_gb = 4.1
+source = 'api'
+serving = true
+port = 11434
+
+[[facts.harnesses]]
+name = 'claude-code'
+version = '2.0.0'
+`
+
+// a record from an older peer still carries facts.models. it parses, the
+// models go quietly, and the record written back has none.
+func TestOldRecordModelsDropped(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	if err := os.MkdirAll(filepath.Join(s.Dir, "machines"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir, "machines", "gpu-box.toml"), []byte(oldRecord), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.Machine("gpu-box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Facts.GPUs[0].Name != "Example GPU" || m.Facts.Harnesses[0].Name != "claude-code" || m.Facts.Extra != nil || !m.UpdatedAt.Equal(t0) {
+		t.Fatalf("got %+v", m)
+	}
+	if err := s.SaveMachine(m); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(s.Dir, "machines", "gpu-box.toml"))
+	if strings.Contains(string(data), "models") {
+		t.Fatalf("models written back:\n%s", data)
+	}
+
+	// the same record as json, the way _sync and _facts send it
+	js := `{"machines":[{"name":"gpu-box","updated_at":"2026-01-02T03:04:05Z","facts":{"cpu":"Example CPU",
+		"models":[{"name":"example:7b","runtime":"ollama","serving":true,"port":11434}],"harnesses":[{"name":"codex"}]}}]}`
+	var b Bundle
+	if err := json.Unmarshal([]byte(js), &b); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Machines) != 1 || b.Machines[0].Facts.CPU != "Example CPU" || b.Machines[0].Facts.Harnesses[0].Name != "codex" {
+		t.Fatalf("got %+v", b)
+	}
+	out, _ := json.Marshal(b.Machines[0])
+	if strings.Contains(string(out), "models") {
+		t.Fatalf("models in json: %s", out)
 	}
 }
 

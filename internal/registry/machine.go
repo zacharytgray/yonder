@@ -38,6 +38,7 @@ type Machine struct {
 
 // Facts is written by discovery and owned by the machine itself.
 // step 2 fills these in; Extra holds anything without a typed field yet.
+// records from before v0.3.1 may carry a models list; it is dropped on read.
 type Facts struct {
 	Hostname    string         `toml:"hostname,omitempty" json:"hostname"`
 	OS          string         `toml:"os,omitempty" json:"os"`
@@ -50,7 +51,6 @@ type Facts struct {
 	DiskTotalGB float64        `toml:"disk_total_gb,omitempty" json:"disk_total_gb"`
 	DiskFreeGB  float64        `toml:"disk_free_gb,omitempty" json:"disk_free_gb"`
 	GPUs        []GPU          `toml:"gpus,omitempty" json:"gpus"`
-	Models      []Model        `toml:"models,omitempty" json:"models"`
 	Harnesses   []Harness      `toml:"harnesses,omitempty" json:"harnesses"`
 	Extra       map[string]any `toml:"extra,omitempty" json:"extra,omitempty"`
 }
@@ -64,15 +64,6 @@ type GPU struct {
 	Unified      bool    `toml:"unified,omitempty" json:"unified"`               // shares system memory (apple silicon)
 }
 
-type Model struct {
-	Name    string  `toml:"name" json:"name"`
-	Runtime string  `toml:"runtime,omitempty" json:"runtime"` // ollama, lmstudio, llamacpp, vllm, mlx, ...
-	SizeGB  float64 `toml:"size_gb,omitempty" json:"size_gb"`
-	Source  string  `toml:"source,omitempty" json:"source"`   // how it was found: api | cli
-	Serving bool    `toml:"serving,omitempty" json:"serving"` // a server answered at discovery time
-	Port    int     `toml:"port,omitempty" json:"port"`       // local port when serving
-}
-
 type Harness struct {
 	Name    string `toml:"name" json:"name"` // claude-code, codex, pi, hermes, opencode, gemini
 	Version string `toml:"version,omitempty" json:"version"`
@@ -83,9 +74,6 @@ type Harness struct {
 func (f Facts) Normalize() Facts {
 	if f.GPUs == nil {
 		f.GPUs = []GPU{}
-	}
-	if f.Models == nil {
-		f.Models = []Model{}
 	}
 	if f.Harnesses == nil {
 		f.Harnesses = []Harness{}

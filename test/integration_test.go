@@ -273,6 +273,7 @@ func TestFleetOverSSH(t *testing.T) {
 		t.Fatalf("refresh: %+v", r)
 	}
 
+	oldRecordOverSSH(t, f)
 	agentsOverSSH(t, f, a, b)
 	briefingOverSSH(t, f, a, b)
 
@@ -309,6 +310,54 @@ func TestFleetOverSSH(t *testing.T) {
 	}
 	if r := f.run("", "add", "node-c", "--user", "me", "--port", "1", "--yes"); r.code != 75 {
 		t.Fatalf("dead port: %+v", r)
+	}
+}
+
+// oldRecordOverSSH: a record as v0.3.0 and before wrote it, with
+// facts.models, held here. ls and show read it without the models, and sync
+// carries it to node-b, which takes it and writes no models either.
+func oldRecordOverSSH(t *testing.T, f *fleet) {
+	t.Helper()
+	path := filepath.Join(f.home, "yonder", "config", "machines", "node-a.toml")
+	rec, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	stamp := ""
+	for _, line := range strings.Split(string(rec), "\n") {
+		if v, ok := strings.CutPrefix(line, "updated_at = "); ok {
+			at, err := time.Parse(time.RFC3339Nano, v)
+			if err != nil {
+				t.Fatalf("updated_at %q: %v", v, err)
+			}
+			// a second newer, so sync carries it
+			stamp = at.Add(time.Second).UTC().Format(time.RFC3339Nano)
+			line = "updated_at = " + stamp
+		}
+		lines = append(lines, line)
+	}
+	old := strings.TrimRight(strings.Join(lines, "\n"), "\n") +
+		"\n\n[[facts.models]]\nname = 'example:7b'\nruntime = 'ollama'\nsize_gb = 4.1\nsource = 'api'\nserving = true\nport = 11434\n"
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.must("ls", "--json"); strings.Contains(r.stdout, "model") || !strings.Contains(r.stdout, `"name": "node-a"`) {
+		t.Fatalf("ls --json with an old record: %s", r.stdout)
+	}
+	if r := f.must("ls"); strings.Contains(r.stdout, "MODELS") || !strings.Contains(r.stdout, "node-a") {
+		t.Fatalf("ls with an old record: %s", r.stdout)
+	}
+	if r := f.must("show", "node-a"); strings.Contains(r.stdout, "example:7b") {
+		t.Fatalf("show with an old record: %s", r.stdout)
+	}
+	f.must("sync")
+	r := f.must("run", "node-b", "--", "cat ~/.config/yonder/machines/node-a.toml")
+	if !strings.Contains(r.stdout, "updated_at = "+stamp) || strings.Contains(r.stdout, "models") {
+		t.Fatalf("node-a's record on node-b: %s", r.stdout)
+	}
+	if r := f.must("run", "node-b", "--", `"$(command -v yonder || echo ~/.local/bin/yonder)" ls --json --no-refresh`); strings.Contains(r.stdout, "model") || !strings.Contains(r.stdout, `"name": "node-a"`) {
+		t.Fatalf("ls --json on node-b: %s", r.stdout)
 	}
 }
 

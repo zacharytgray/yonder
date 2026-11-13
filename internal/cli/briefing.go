@@ -23,8 +23,8 @@ func newAgentsBriefingCmd() *cobra.Command {
 		Use:   "briefing",
 		Short: "Show and review the briefing about your machines that every agent loads",
 		Long: `The briefing is the first part of yonder's block in each harness's instructions file:
-a machine list generated from the records (name, role, address, OS, hardware, served
-models, availability), then the hand-written agents/` + agents.BriefingFile + ` (routing, where
+a machine list generated from the records (name, role, address, OS, hardware,
+availability), then the hand-written agents/` + agents.BriefingFile + ` (routing, where
 things live, how secrets are used by name). Every session loads all of it, so it has a
 budget: ` + fmt.Sprintf("%d KB rendered (a warning at %d KB), %d KB hand-written", agents.BriefingCap>>10, agents.BriefingWarn>>10, agents.HandCap>>10) + `. Over a cap
 nothing renders and nothing is cut.

@@ -216,11 +216,11 @@ const DUSK_OUT = 4.0, DUSK_IN = 30.0;
 const SCENES = [
   { from: 4.0, title: 'hermes · mac-mini', steps: [
     { cmd: 'yonder ls', type: 4.5, cps: 40, out: 5.0, gap: 0.25, lines: [
-      '<span class="d">NAME          ROLE     STATE           HARDWARE                MODELS  HARNESSES</span>',
-      'laptop        laptop   <span class="g">online</span>          M3 Pro · 36 GB          0       claude-code,codex',
-      'mac-mini      server   <span class="a">this machine</span>    M4 · 16 GB              0       claude-code,hermes',
-      'pc            desktop  <span class="g">online</span>          RTX 4090 24 GB · 64 GB  3       -',
-      'raspberry-pi  other    <span class="d">offline 2h ago</span>  Cortex-A76 · 8 GB       0       -',
+      '<span class="d">NAME          ROLE     STATE           HARDWARE                HARNESSES</span>',
+      'laptop        laptop   <span class="g">online</span>          M3 Pro · 36 GB          claude-code,codex',
+      'mac-mini      server   <span class="a">this machine</span>    M4 · 16 GB              claude-code,hermes',
+      'pc            desktop  <span class="g">online</span>          RTX 4090 24 GB · 64 GB  -',
+      'raspberry-pi  other    <span class="d">offline 2h ago</span>  Cortex-A76 · 8 GB       -',
     ], hl: { line: 1, at: 6.5 } }] },
   { from: 8.0, title: 'hermes · mac-mini', steps: [
     { cmd: 'ls ~/Documents/*.key', type: 8.25, cps: 50, out: 8.75, lines: ['/Users/me/Documents/Talk.key'] },

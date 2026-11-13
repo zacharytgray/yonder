@@ -36,11 +36,11 @@ you    I'm about to give a presentation but I forgot to download it on my laptop
        It's on my Mac Mini. Can you send it over?
 
 agent  $ yonder ls
-       NAME          ROLE     STATE           HARDWARE                MODELS  HARNESSES
-       laptop        laptop   online          M3 Pro · 36 GB          0       claude-code,codex
-       mac-mini      server   this machine    M4 · 16 GB              0       claude-code,hermes
-       pc            desktop  online          RTX 4090 24 GB · 64 GB  3       -
-       raspberry-pi  other    offline 2h ago  Cortex-A76 · 8 GB       0       -
+       NAME          ROLE     STATE           HARDWARE                HARNESSES
+       laptop        laptop   online          M3 Pro · 36 GB          claude-code,codex
+       mac-mini      server   this machine    M4 · 16 GB              claude-code,hermes
+       pc            desktop  online          RTX 4090 24 GB · 64 GB  -
+       raspberry-pi  other    offline 2h ago  Cortex-A76 · 8 GB       -
 
        $ yonder cp ~/Documents/Talk.key laptop:~/Desktop/
        copied Talk.key (folder, 23 files, 18.4 MB) to laptop:/Users/me/Desktop/Talk.key
@@ -54,8 +54,7 @@ agent  $ yonder ls
   <tr>
     <td width="50%" valign="top">
       <h3>Sees every machine</h3>
-      <p>Hardware, GPUs, free disk, local models (Ollama, LM Studio, llama.cpp, vLLM, MLX) and
-      installed agents. Discovered, not typed.</p>
+      <p>Hardware, GPUs, free disk and installed agents. Discovered, not typed.</p>
     </td>
     <td width="50%" valign="top">
       <h3>Runs anywhere</h3>
@@ -361,11 +360,11 @@ next `yonder sync` renders the new text in on every machine. Anything in the way
 `yonder agents unlink` puts it all back.
 
 The block starts with a briefing about your machines, so every agent knows them without asking.
-Its machine list comes from the records: name, role, address, OS, hardware, served models, and
-one word on availability. The rest is yours, in `briefing.md` in the store: which work goes where,
+Its machine list comes from the records: name, role, address, OS, hardware, and one word on
+availability. The rest is yours, in `briefing.md` in the store: which work goes where,
 where things live, how secrets are used. Every session loads all of it, so it has a budget: 4 KB
 in all, 2 KB hand-written, and the machine list gets the rest. A growing fleet shortens the list
-(models to a count, then no hardware, then name, role and address) instead of failing. If the
+(no hardware, then name, role and address) instead of failing. If the
 briefing still can't fit, your instructions render without it, and `sync` and `doctor` say why.
 Nothing is ever cut out of your text. `yonder doctor` and
 `yonder agents briefing review` flag paths that are gone, machine names and roles that don't
@@ -415,7 +414,7 @@ How sync behaves:
 | Command | What it does |
 |---|---|
 | `yonder init` | Set up the fleet from the machine you work from |
-| `yonder ls` / `yonder show <machine>` | Machines, roles, state, hardware, models, agents. `--json` for scripts |
+| `yonder ls` / `yonder show <machine>` | Machines, roles, state, hardware, agents. `--json` for scripts |
 | `yonder run <machine> [--secret NAME] [--detach] -- <cmd>` | Run a command there |
 | `yonder cp [--force] <src>... <dest>` | Send files and folders between machines, like scp. Each side is a path or `<machine>:<path>` |
 | `yonder jobs <machine> [id] [--follow\|--kill]` | List detached jobs, or print one job's output. `--follow` waits for it and exits with its code. `--kill` stops it |
@@ -494,6 +493,10 @@ comes with the command that fixes it.
 - Tailscale is required. Yonder uses it to find your machines and to know which ones are online.
 - No wake-on-LAN. Tailscale cannot wake a sleeping machine.
 - Yonder is for your own one to five machines. It is not a team tool or a job scheduler.
+- Yonder doesn't serve, run or list local models. v0.3.1 removed model discovery: `ls` lost its
+  MODELS column, and `ls --json` and `show --json` no longer have `model_count` or
+  `facts.models`. A script that read them should ask the model server's own API. A
+  `[discover] model_ports` line left in `config.toml` is ignored; `yonder doctor` notes it can go.
 - Yonder assumes a single-owner tailnet: your machines only. It refuses nodes another account
   owns (shared in from another tailnet, another user's, or tagged: tagged devices count as not
   yours) unless you pass `--allow-shared`, and names that match more than one machine unless you

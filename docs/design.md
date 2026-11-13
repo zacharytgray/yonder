@@ -28,7 +28,7 @@ internal/tailnet/      tailscale status --json
 internal/transport/    ssh runner (system ssh binary)
 internal/remote/       the hidden _exec / _send / _recv / _facts / _sync / _log commands run on the target
 internal/runlog/       JSONL command log
-internal/discover/     hardware, models, harnesses
+internal/discover/     hardware, harnesses
 internal/secrets/      providers (1password, bws) and output scrubbing
 internal/agents/       embedded SKILL.md and per-harness install; the agents store's rules, import and harness links
 internal/store/        store sync: manifests, version counters, bundles, history, review
@@ -107,10 +107,13 @@ memory_gb = 64.0              # GiB, one decimal (disk and gpu memory too)
 disk_total_gb = 1800.0        # root filesystem
 disk_free_gb = 512.0
 [[facts.gpus]]                # name, vendor, memory_gb, memory_used_gb, util_percent, unified
-[[facts.models]]              # name, runtime, size_gb, source, serving, port
 [[facts.harnesses]]           # name (claude-code, codex, pi, hermes, opencode, gemini), version, path
 [facts.extra]                 # anything without a typed field yet
 ```
+
+Records from before v0.3.1 may carry `[[facts.models]]`. Since v0.3.1 yonder doesn't discover
+models, so it reads such a record without them and never writes them back; an older yonder reads
+a record without models as an empty list.
 
 A tombstone is `removed/<name>.toml` with `name`, `removed_at`, an optional `reason`, the
 machine's `ssh_client_keys` and `secrets_account`, `lost = true` after `remove --lost`, and
@@ -474,7 +477,10 @@ more.
 
 ## `ls --json` and `show --json`
 
-Agents parse these. Keys are always present; new keys may be added, none removed or renamed.
+Agents parse these. Keys are always present; new keys may be added, none removed or renamed,
+with one exception: v0.3.1 removed `model_count` and `facts.models`, along with model discovery
+(serving and running models is out of yonder's scope). A script that read them gets nothing
+there now; read a model server's own API instead.
 
 ```json
 {
@@ -493,7 +499,7 @@ Agents parse these. Keys are always present; new keys may be added, none removed
       "ssh_user": "me", "ssh_port": 22,
       "hardware": "16 cores, 64 GB RAM, Example GPU",
       "summary": "Example GPU 24 GB · 64 GB",
-      "model_count": 3, "harnesses": ["claude-code", "codex"],
+      "harnesses": ["claude-code", "codex"],
       "stale": false,
       "discovered_at": "...", "updated_at": "...",
       "facts": { "...": "as in the record, arrays never null" }
@@ -522,30 +528,17 @@ facts as they are. The 7-day `stale` marker still applies to whatever is printed
 
 Discovery (`internal/discover`) runs on the machine itself, all probes concurrent, each with its own
 timeout (about 3 s total). A missing tool is absent from the facts, never an error. Every
-discovered string (model names, runtimes, harness versions and paths, CPU and GPU names, OS
-version, hostname) loses its control and format characters (escape sequences, bidi overrides,
-zero-width) and is cut to 120 characters (paths to 512). A model whose name is left empty is
-dropped. The caller runs the same cleaning again on what a peer's `_facts` returns (OS and arch
+discovered string (harness versions and paths, CPU and GPU names, OS version, hostname) loses
+its control and format characters (escape sequences, bidi overrides, zero-width) and is cut to
+120 characters (paths to 512). The caller runs the same cleaning again on what a peer's `_facts` returns (OS and arch
 too), and drops `facts.extra` from it, before saving; a peer's reply is outside input. Agents
 still read these strings; the skill tells them to treat them as data.
 
 - Hardware: `sysctl`, `sw_vers`, `pmset -g batt`, `system_profiler SPDisplaysDataType` (Intel
   Macs only; Apple silicon reports the chip as one unified-memory GPU), `/proc`, `/etc/os-release`,
   `/sys/class/power_supply/BAT*`, `nvidia-smi`, `rocm-smi`.
-- Models: Ollama (`:11434/api/tags`, else `ollama list`), LM Studio (`:1234/v1/models` and
-  `lms ls --json`), OpenAI-compatible servers on `:8080` and `:8000` (llama.cpp, vLLM, MLX,
-  llama-swap). `source` is `api` or `cli`. `serving` is true when a local server listed it, with
-  its `port`. Runtime is guessed from `owned_by` for the unnamed servers (`llama-swap`,
-  `llamacpp`, `vllm`, `mlx`, else `openai-api`). A server on another port is found only when
-  that machine's `config.toml` names the port; yonder reads it and never writes it:
-
-  ```toml
-  [discover]
-  model_ports = [9292]   # more 127.0.0.1 ports to ask for /v1/models; up to 8 are used
-  ```
-
-  Ports already probed, and ports outside 1-65535, are ignored. The setting lives on the
-  machine that serves the models, since discovery runs there.
+- Models are not discovered, since v0.3.1. A `[discover] model_ports` setting left in an older
+  `config.toml` is ignored, and `doctor` notes that it can go.
 - Harnesses: each binary is searched on `PATH` plus `~/.local/bin`, `/opt/homebrew/bin`,
   `/usr/local/bin`, `~/.npm-global/bin` and `~/.bun/bin`; version is the first version number in
   `<bin> --version` (2 s timeout). Every probed tool runs with `PATH` set to its own directory,
@@ -1140,8 +1133,8 @@ instructions file. It is not memory. Personal and project facts stay in each har
 memory; the briefing holds only facts about the machines and how to use them.
 
 It has two parts. The machine list is generated from the records and never hand-written: per
-machine its name, role, address, OS and architecture, CPU, GPU and RAM, the models a server
-answered for at discovery, and one availability word from the role and notes (`always-on`,
+machine its name, role, address, OS and architecture, CPU, GPU and RAM, and one availability
+word from the role and notes (`always-on`,
 `sleeps`, `intermittent`, `travels`). This machine is marked. The rest is `agents/briefing.md`,
 hand-written: routing (which work goes where), where things live, how secrets are used by name.
 Online state is left out on purpose; `yonder ls` answers it live.
@@ -1150,12 +1143,12 @@ Online state is left out on purpose; `yonder ls` answers it live.
 ## Yonder briefing
 
 Machines (generated from yonder's records; live state: `yonder ls`, details: `yonder show <machine>`):
-- `gpu-box` gpu · 100.64.0.2 · Ubuntu 24.04.1 LTS amd64 · AMD Ryzen 9 7950X, RTX 4090 24 GB, 64 GB RAM · serves llama3:8b (ollama :11434) · sleeps
+- `gpu-box` gpu · 100.64.0.2 · Ubuntu 24.04.1 LTS amd64 · AMD Ryzen 9 7950X, RTX 4090 24 GB, 64 GB RAM · sleeps
 - `laptop` laptop, this machine · 100.64.0.1 · macOS 15.1 arm64 · M3 Pro, 36 GB RAM · travels
 All reached as user `me` over Tailscale. Run with `yonder run <machine> -- <cmd>`, ...
 
 ## Routing
-- Heavy jobs go to `gpu-box`; models are in `gpu-box:~/models`.
+- Heavy jobs go to `gpu-box`; data sets are in `gpu-box:~/data`.
 ```
 
 In `briefing.md`, a `reviewed: YYYY-MM-DD` line under a heading dates that section; one before
@@ -1168,10 +1161,9 @@ note or fact change alters the list. A store with no `briefing.md` still gets th
 
 **Budget.** Every session loads all of it. The rendered briefing has a hard cap of 4 KB with a
 warning at 3 KB. The shares: the hand-written part has its own cap of 2 KB, and the machine list
-gets the rest of the 4 KB, so at least 2 KB. The list grows with the fleet and with served models,
-without anyone editing anything, so it steps down to fit its share rather than fail: first each
-machine's served models become a count ("serves 4 models"), then the OS and hardware go, then
-each line is only name, role and address. A shortened list says so and points at `yonder ls` and
+gets the rest of the 4 KB, so at least 2 KB. The list grows with the fleet, without anyone
+editing anything, so it steps down to fit its share rather than fail: first the OS and hardware
+go, then each line is only name, role and address. A shortened list says so and points at `yonder ls` and
 `yonder show <machine>`; `agents status` and `doctor` add "machine list shortened to fit".
 
 Over a cap nothing is cut into the briefing. A `briefing.md` over 2 KB is refused by the store
@@ -1188,7 +1180,7 @@ hand-written 1.2 KB / 2.0 KB`.
 **Records are cleaned.** The list is built from records that arrive from other machines through
 `_sync`, so every field is cleaned at render time: one line, no control, escape, format (bidi,
 zero-width) or line-separator characters, no backticks, single spaces, clipped (OS 40, CPU and
-GPU 40, a model 60, a runtime 16 characters). The role is used only when it is one of `laptop`,
+GPU 40 characters). The role is used only when it is one of `laptop`,
 `desktop`, `server`, `gpu`, `other`; the ssh user only when it is a plain user name; the address
 only when it parses as an IP; a machine whose name isn't valid is left out. A list that still
 holds yonder's marker (`<!-- yonder:`) or a `{{model:` placeholder is refused, so the briefing
@@ -1333,7 +1325,8 @@ nothing.
 one-line detail, and a fix under anything not passing. It exits 1 if any check failed, else 0.
 
 - This machine: tailscale installed, running, logged in; config and self record (and whether a
-  tombstone says it was removed); sshd host key; stale facts; log dir writable; the skill for each
+  tombstone says it was removed); sshd host key; stale facts; log dir writable; a PASS note when
+  `config.toml` still has `[discover] model_ports`, which nothing reads since v0.3.1; the skill for each
   detected harness; `authorized_keys` free of lost machines' keys (a key the lost machine shares
   with a live record is its own FAIL, naming those machines, with fix "make new keys there, then
   `yonder remove <lost> --lost --include-shared --yes`"; when `authorized_keys` or `~/.ssh` is a
