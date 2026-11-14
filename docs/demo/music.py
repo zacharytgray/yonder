@@ -1,6 +1,6 @@
 # soundtrack for the demo, synthesized from scratch. stdlib only.
 # usage: python3 music.py out.wav
-# 120 bpm in G, G C D G a bar each: whistled hook, held upright bass roots,
+# 120 bpm in G, G C D G a bar each, five times: whistled hook, held upright bass roots,
 # soft electric piano on 2 and 4, kick, claps and shaker.
 # event times match the constants in index.html. build.sh sets the loudness.
 import math
@@ -10,7 +10,7 @@ import sys
 import wave
 
 SR = 44100
-DUR = 33.0
+DUR = 41.0
 N = int(SR * DUR)
 BEAT = 0.5
 BAR = 4 * BEAT
@@ -138,8 +138,8 @@ CHORDS = {
     'C': (['G3', 'C4', 'E4'], 'C2'),
     'D': (['F#3', 'A3', 'D4'], 'D2'),
 }
-PROG = ['G', 'C', 'D', 'G'] * 4 + ['G']
-END = 32.0  # the final chord; it rings out to 33s
+PROG = ['G', 'C', 'D', 'G'] * 5 + ['G']
+END = 40.0  # the final chord; it rings out to 41s
 
 for b, name in enumerate(PROG):
     t0 = b * BAR
@@ -157,7 +157,7 @@ for b, name in enumerate(PROG):
         for k, n in enumerate(chord):
             epiano(t0 + beat * BEAT + k * 0.006, hz(n), 0.42, 0.07)
     # drums: kick on 1 and 3 (four on the floor in the build), claps on 2 and 4
-    build = 13 <= b <= 14
+    build = 17 <= b <= 18
     for beat in range(4):
         if beat in (0, 2) or build:
             place(t0 + beat * BEAT, kick(0.38))
@@ -200,20 +200,21 @@ for i in range(N):
 whistle([(0, 0.5, 'D5'), (0.5, 0.5, 'G5'), (1, 0.5, 'A5'), (1.5, 1, 'B5'), (2.5, 0.5, 'A5'), (3, 1, 'G5'),
          (4, 0.5, 'E5'), (4.5, 0.5, 'G5'), (5, 1, 'A5'), (6, 1.5, 'G5')])
 whistle([(28, 0.5, 'B5'), (28.5, 0.5, 'A5'), (29, 0.5, 'G5'), (29.5, 0.5, 'A5'), (30, 1.5, 'B5')], 0.08)
-whistle([(60, 0.5, 'D5'), (60.5, 0.5, 'G5'), (61, 0.5, 'A5'), (61.5, 1, 'B5'), (62.5, 0.5, 'D6'), (63, 1, 'B5'), (64, 2, 'G5')])
+whistle([(76, 0.5, 'D5'), (76.5, 0.5, 'G5'), (77, 0.5, 'A5'), (77.5, 1, 'B5'), (78.5, 0.5, 'D6'), (79, 1, 'B5'), (80, 2, 'G5')])
 
 # effects: a quiet tuned pluck on each pop, key ticks, swishes into cuts
 for t, n in ((0.25, 'D6'), (1.0, 'G6'), (1.5, 'B5'), (2.0, 'D6'), (2.5, 'G6'), (4.25, 'D6'), (6.0, 'B5'),
-             (10.0, 'D6'), (10.75, 'G6'), (12.0, 'D6'), (13.75, 'B5'), (14.5, 'G6'), (16.25, 'D6'), (16.5, 'G6'),
-             (28.25, 'B5'), (28.5, 'D6'), (28.75, 'G6'), (30.1, 'D6'), (30.45, 'G6')):
+             (10.0, 'D6'), (10.75, 'G6'), (12.0, 'D6'), (14.25, 'B5'), (14.5, 'G6'), (17.75, 'D6'), (18.0, 'E6'),
+             (18.25, 'G6'), (24.25, 'D6'), (24.5, 'G6'), (30.5, 'D6'), (31.0, 'G6'), (31.5, 'B5'),
+             (34.75, 'C6'), (35.0, 'E6'), (35.25, 'G6'), (38.1, 'D6'), (38.35, 'G6')):
     place(t, pluck(hz(n), 0.3, 0.99), 0.07)
-for t, n in ((21.5, 'G5'), (21.56, 'B5'), (21.62, 'D6'), (21.68, 'G6')):  # [HF_TOKEN]
+for t, n in ((25.5, 'G5'), (25.56, 'B5'), (25.62, 'D6'), (25.68, 'G6')):  # [HF_TOKEN]
     place(t, pluck(hz(n), 0.4, 0.992), 0.08)
-for t0, n, cps in ((4.5, 9, 40), (8.25, 20, 50), (9.0, 49, 60), (12.75, 43, 60), (16.5, 25, 60), (20.25, 51, 60),
-                   (23.25, 10, 40), (26.25, 45, 70), (27.0, 47, 70), (27.75, 21, 60)):
+for t0, n, cps in ((4.5, 9, 40), (8.25, 20, 50), (9.0, 49, 60), (12.75, 28, 50), (16.5, 13, 40), (19.25, 27, 50),
+                   (24.25, 51, 60), (27.0, 20, 40), (30.5, 45, 70), (31.25, 47, 70), (32.25, 14, 40), (34.25, 21, 60)):
     for c in range(0, n, 2):
         place(t0 + c / cps, noise(0.02, 0.004), 0.025)
-for cut in (4.0, 8.0, 12.0, 16.0, 20.0, 23.0, 26.0, 30.0):
+for cut in (4.0, 8.0, 12.0, 16.0, 19.0, 24.0, 30.0, 38.0):
     sw = noise(0.16, 1.0, hp=False, lp=0.12)
     m = len(sw)
     place(cut - 0.16, [v * (i / m) ** 2 for i, v in enumerate(sw)], 0.35)
