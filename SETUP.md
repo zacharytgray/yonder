@@ -337,7 +337,7 @@ in their own words, to any agent on any of their machines:
 
 The agent will check the disk with `yonder run pi -- df -h /`, find what is using the space,
 and ask before it deletes anything. Other ideas: "Which of my machines has the
-most free disk?", "Run the tests on the PC", "Is my GPU box busy?"
+most free disk?", "Run the tests on the PC", "Is the PC busy?"
 
 Also tell them:
 
