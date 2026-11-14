@@ -1,6 +1,7 @@
 #!/bin/sh
 # builds the fake fleet the demo's tables come from, then prints the real
-# `yonder ls`, `yonder log` and `yonder agents install` output.
+# `yonder ls`, `yonder layers`, the laptop's rendered CLAUDE.md, `yonder log` and
+# `yonder agents install` output.
 # usage: docs/demo/fleet.sh [path/to/yonder]   (run `make build` first)
 set -eu
 yonder=$(cd "$(dirname "${1:-bin/yonder}")" && pwd)/$(basename "${1:-bin/yonder}")
@@ -32,6 +33,7 @@ machine mac-mini darwin arm64 100.64.0.1 server 'always on'
 cat >> "$f/home/config/machines/mac-mini.toml" <<'EOF'
 [facts]
 hostname = 'mac-mini'
+os_version = 'macOS 15.5'
 cpu = 'Apple M4'
 memory_gb = 16.0
 [[facts.gpus]]
@@ -44,10 +46,11 @@ name = 'claude-code'
 [[facts.harnesses]]
 name = 'hermes'
 EOF
-machine laptop darwin arm64 100.64.0.2 laptop 'sleeps when the lid is shut'
+machine laptop darwin arm64 100.64.0.2 laptop 'goes everywhere'
 cat >> "$f/home/config/machines/laptop.toml" <<'EOF'
 [facts]
 hostname = 'laptop'
+os_version = 'macOS 15.5'
 laptop = true
 cpu = 'Apple M3 Pro'
 memory_gb = 36.0
@@ -65,6 +68,7 @@ machine pc linux amd64 100.64.0.3 desktop 'heavy jobs'
 cat >> "$f/home/config/machines/pc.toml" <<'EOF'
 [facts]
 hostname = 'pc'
+os_version = 'Ubuntu 24.04'
 cpu = 'AMD Ryzen 9 7950X 16-Core Processor'
 memory_gb = 64.0
 [[facts.gpus]]
@@ -76,6 +80,7 @@ machine raspberry-pi linux arm64 100.64.0.4 other 'home automation'
 cat >> "$f/home/config/machines/raspberry-pi.toml" <<'EOF'
 [facts]
 hostname = 'raspberry-pi'
+os_version = 'Debian 12'
 cpu = 'Cortex-A76'
 memory_gb = 8.0
 EOF
@@ -96,7 +101,7 @@ tailnet true true
 tailnet false false
 
 # what the targets would have logged; peers are marked offline for `log` so it reads only this file
-cat > "$f/home/state/log.jsonl" <<'EOF'
+cat > "$f/log-seed.jsonl" <<'EOF'
 {"time":"2026-11-11T09:40:31Z","id":"20261111-094031-a9","from":"mac-mini","to":"laptop","harness":"hermes","user":"me","command":"cp mac-mini:~/Documents/Talk.key -> laptop:~/Desktop/","secrets":[],"exit":0,"ms":1840,"side":"target","copy":true,"files":23,"bytes":19293798}
 {"time":"2026-11-11T09:41:12Z","id":"20261111-094112-a0","from":"mac-mini","to":"pc","harness":"hermes","user":"me","command":"python train.py","secrets":[],"exit":null,"ms":140,"side":"target","detached":true}
 {"time":"2026-11-11T09:42:05Z","id":"20261111-094205-a1","from":"mac-mini","to":"pc","harness":"hermes","user":"me","command":"echo $HF_TOKEN","secrets":["HF_TOKEN"],"exit":0,"ms":96,"side":"target"}
@@ -106,9 +111,32 @@ EOF
 mkdir -p "$f/fakehome/.claude" "$f/fakehome/.codex" "$f/fakehome/.pi" "$f/fakehome/.hermes"
 for b in claude codex pi hermes; do printf '#!/bin/sh\necho 1.0.0\n' > "$f/bin/$b"; chmod +x "$f/bin/$b"; done
 
+# a short hand-written briefing in the agents store
+mkdir -p "$f/home/data/agents"
+cat > "$f/home/data/agents/briefing.md" <<'EOF'
+reviewed: 2026-11-01
+
+## Where things live
+- Projects: `~/GitHub/<repo>` on every machine. Slides: `mac-mini:~/Documents`.
+- GPU jobs go to `pc`. Services run on `mac-mini`.
+- Secrets by name only: `yonder run <machine> --secret NAME -- <cmd>`.
+EOF
+
 run() { env -i PATH="$f/bin:/usr/bin:/bin" HOME="$f/fakehome" TZ=UTC YONDER_HOME="$f/home" "$@"; }
+# both layers on (peers offline here, so nothing syncs)
+run YONDER_TAILSCALE_JSON="$f/ts-false.json" "$yonder" enable secrets agents >/dev/null
+cp "$f/log-seed.jsonl" "$f/home/state/log.jsonl"   # enable logs its sync attempts; keep only the seed
 echo '$ yonder ls'
 run YONDER_TAILSCALE_JSON="$f/ts-true.json" "$yonder" ls
+echo '$ yonder layers'
+run YONDER_TAILSCALE_JSON="$f/ts-false.json" "$yonder" layers
+# the same block as the laptop's claude code loads it
+echo 'Be brief.' > "$f/home/data/agents/instructions.md"
+echo "self = 'laptop'" > "$f/home/config/config.toml"
+run YONDER_TAILSCALE_JSON="$f/ts-false.json" "$yonder" agents link >/dev/null 2>&1
+echo '$ head -8 ~/.claude/CLAUDE.md   (on laptop)'
+head -8 "$f/home/home/.claude/CLAUDE.md"   # under YONDER_HOME, home/ is the agents home
+echo "self = 'mac-mini'" > "$f/home/config/config.toml"
 echo '$ yonder log'
 run YONDER_TAILSCALE_JSON="$f/ts-false.json" "$yonder" log
 echo '$ yonder agents install'

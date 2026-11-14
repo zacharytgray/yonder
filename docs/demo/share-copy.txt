@@ -1,9 +1,9 @@
-I was about to give a talk, and my slides were still on my Mac Mini. So I texted the agent on the Mini. It ran yonder ls, saw my laptop was online, and sent Talk.key to the laptop's Desktop with yonder cp.
+I was about to give a talk, and my slides were still on my Mac Mini. So I texted the agent on the Mini: "Shoot, I forgot to move my slides to my laptop. Can you send them over?" It found Talk.key and put it on the laptop's Desktop with yonder cp.
 
-That's Yonder. It connects my own machines over Tailscale and SSH, so one agent can use every one of them. It sees what each machine has, runs commands there, and logs each command on the machine that ran it.
+That's Yonder. My work is spread across my computers, and each AI agent only knows the machine it runs on. Yonder connects them over Tailscale and SSH, so the agent on any one of them can use all of them. It finds my projects on my other machines, and every agent loads the same instructions, skills and short map of my machines.
 
-Secrets live in 1Password or Bitwarden. The agent asks for one by name. The value stays out of command lines, logs and accidental output. It is not hidden from an agent that sets out to read it.
+Secrets stay in 1Password or Bitwarden. The agent asks for one by name. The value stays out of command lines, logs and accidental output. It is not hidden from an agent that sets out to read it.
 
-It works in Claude Code, Codex, Pi and Hermes. Open source, macOS and Linux.
+One small program, no server, no daemon. It works in Claude Code, Codex, Pi and Hermes. Open source, macOS and Linux.
 
 github.com/zacharytgray/yonder
