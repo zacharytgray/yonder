@@ -1,6 +1,6 @@
 #!/bin/sh
 # rebuilds yonder-demo.mp4, hero.gif and poster.jpg from index.html and music.py.
-# needs node 22+, google chrome, ffmpeg, python3. takes about six minutes.
+# needs node 22+, google chrome, ffmpeg, python3. takes about four minutes.
 set -eu
 cd "$(dirname "$0")"
 work=${WORK:-$(mktemp -d)}
@@ -13,13 +13,10 @@ get() { printf '%s' "$m" | python3 -I -c "import json,sys; print(json.load(sys.s
 ffmpeg -loglevel error -y -i "$work/music-raw.wav" -af "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true:measured_I=$(get input_i):measured_TP=$(get input_tp):measured_LRA=$(get input_lra):measured_thresh=$(get input_thresh):offset=$(get target_offset)" -ar 44100 "$work/music.wav"
 node render.mjs frames "$work/silent.mp4" 30
 
-# poster: the settled hook, baked in as frame 0
-ffmpeg -loglevel error -y -ss 3.8 -i "$work/silent.mp4" -frames:v 1 "$work/poster.png"
-ffmpeg -loglevel error -y -i "$work/poster.png" -q:v 3 poster.jpg
-ffmpeg -loglevel error -y -i "$work/silent.mp4" -i "$work/poster.png" -i "$work/music.wav" \
-  -filter_complex "[0:v][1:v]overlay=0:0:enable='eq(n,0)'[v]" -map "[v]" -map 2:a \
-  -c:v libx264 -preset slow -crf 20 -pix_fmt yuv420p -c:a aac -b:a 160k -movflags +faststart \
-  -shortest yonder-demo.mp4
+# poster: the hook is fully drawn at frame 0, so the poster is frame 0
+ffmpeg -loglevel error -y -i "$work/silent.mp4" -frames:v 1 -q:v 3 poster.jpg
+ffmpeg -loglevel error -y -i "$work/silent.mp4" -i "$work/music.wav" -map 0:v -map 1:a \
+  -c:v copy -c:a aac -b:a 160k -movflags +faststart -shortest yonder-demo.mp4
 
 # readme gif: silent, 1280 wide, 15 fps
 ffmpeg -loglevel error -y -i "$work/silent.mp4" \

@@ -1,13 +1,9 @@
-My work is spread across computers. The slides are on my Mac mini, the project is on my desktop, and I'm on my laptop. Each AI agent only knows the machine it runs on, so I kept copying files and re-explaining context by hand.
+My work is spread across computers: a laptop, a Mac mini that's always on, a PC with a GPU, and a Raspberry Pi. Each AI agent only knows the machine it runs on.
 
-So I built Yonder. It connects my computers so the agent on any one of them can use all of them. To my agent, every machine works like one computer.
+So I built Yonder. It connects my computers so the agent on any one of them can use all of them.
 
-Say I'm about to give a presentation, and the slides are still on my Mac mini. I text my agent: "Shoot, I forgot to move my slides to my laptop. Can you send them over?" It finds them and puts them on my laptop's Desktop.
+I text my agent "The Pi's disk is full, can you clean it up?" and it looks, then frees the space. "Run the training script on the PC" starts the job there, and I check on it later. "Use my Hugging Face token" works by name: the key comes from 1Password or Bitwarden, and the value stays out of output and logs.
 
-- Work from anywhere. I start on any machine. My agent can look on my other computers, so it finds my projects and files wherever they are.
-- Context stays in sync. My agent instructions, skills and a short map of my machines are the same on every computer. I don't keep them in sync myself.
-- Shared secrets, kept safe. API keys stay in 1Password or Bitwarden. Agents ask for a key by name, and Yonder keeps the value out of commands, logs and output.
-
-It's one small program, with no server and nothing running in the background. It uses Tailscale and SSH. It works with Claude Code, Codex, Pi and Hermes. Open source, MIT, macOS and Linux.
+It's one small program, with no server. It uses Tailscale and SSH, and it works with Claude Code, Codex, Pi and Hermes. To set it up, tell your agent: "Set up Yonder for me: https://github.com/zacharytgray/yonder". Open source, MIT, macOS and Linux.
 
 github.com/zacharytgray/yonder

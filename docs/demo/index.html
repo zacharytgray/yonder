@@ -12,7 +12,7 @@
     --night: #1a1828; --ink: #26223d; --rule-dk: #36314a; --cream: #f3eada; --muted-dk: #aba3b8;
     --paper: #f6f0e4; --raised: #fbf7ef; --band: #efe6d5; --rule: #ddd0ba; --muted: #5e5870;
     --sun: #d2602f; --sun-dk: #f08a55; --sun-text: #a3431a;
-    --online: #4f6b42; --online-dk: #9fbf8c; --lantern: #e3a23a; --warn: #8a5a12; --warn-dk: #f2b54e;
+    --online: #4f6b42; --online-dk: #9fbf8c; --lantern: #e3a23a; --warn-dk: #f2b54e;
     --sky-dk: #a9c8da;
     --display: "Fraunces", "Iowan Old Style", Georgia, serif;
     --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
@@ -20,25 +20,23 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); }
-  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: var(--sans); }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: var(--sans); background: var(--night); }
   .disp { font-family: var(--display); font-weight: 600; font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144; letter-spacing: -0.01em; line-height: 1.1; }
 
   /* dusk ground: hook and outro */
   #dusk { position: absolute; inset: 0; color: var(--cream); }
   #dusk svg { position: absolute; inset: 0; }
-  .hook { position: absolute; left: 150px; transform-origin: 0 70%; }
-  #h1 { top: 200px; font-size: 118px; }
-  #h2 { top: 345px; font-size: 132px; color: var(--sun-dk); }
+  .hook { position: absolute; left: 150px; font-size: 100px; }
+  #h1 { top: 210px; }
+  #h2 { top: 335px; color: var(--sun-dk); }
   .mlabel { position: absolute; top: 788px; font: 600 36px var(--sans); text-align: center; color: var(--cream); transform: translateX(-50%); white-space: nowrap; }
-  .mlabel small { display: block; font: 500 20px var(--mono); color: var(--muted-dk); margin-top: 4px; }
-  #agenttag { position: absolute; top: 676px; font: 600 22px var(--sans); color: var(--night); background: var(--sun-dk);
+  #agenttag { position: absolute; top: 846px; font: 600 22px var(--sans); color: var(--night); background: var(--sun-dk);
     border-radius: 999px; padding: 5px 14px; transform: translateX(-50%); white-space: nowrap; }
-  #lockup { position: absolute; left: 150px; top: 120px; width: 600px; transform-origin: 0 50%; }
-  #o1 { position: absolute; left: 150px; top: 300px; font-size: 72px; transform-origin: 0 70%; }
-  #o3 { position: absolute; left: 154px; top: 400px; font: 500 28px var(--sans); color: var(--muted-dk); }
-  #o4 { position: absolute; left: 154px; top: 458px; font: 500 26px/1.5 var(--mono); color: var(--cream); white-space: pre; }
-  #o4 .p { color: var(--sun-dk); }
-  #o2 { position: absolute; left: 154px; top: 552px; font: 500 28px var(--mono); color: var(--muted-dk); }
+  #lockup { position: absolute; left: 150px; top: 120px; width: 600px; }
+  #o1 { position: absolute; left: 150px; top: 300px; font-size: 72px; }
+  #o3 { position: absolute; left: 154px; top: 420px; font: 500 28px var(--sans); color: var(--muted-dk); }
+  #o4 { position: absolute; left: 154px; top: 468px; font: 500 30px var(--mono); color: var(--cream); white-space: pre; }
+  #o2 { position: absolute; left: 154px; top: 548px; font: 500 24px var(--sans); color: var(--muted-dk); }
 
   /* paper ground */
   #paper { position: absolute; inset: 0; background: var(--paper); color: var(--ink); }
@@ -55,9 +53,9 @@
   .ph-sub { font-size: 13px; color: var(--muted); margin-top: -4px; font-family: var(--mono); }
   #thread { position: absolute; left: 0; right: 0; top: 168px; bottom: 86px; padding: 18px 16px; overflow: hidden;
     display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; }
-  .bubble { max-width: 310px; padding: 11px 16px; border-radius: 22px; font-size: 22px; line-height: 1.3; transform-origin: 100% 100%; }
+  .bubble { max-width: 320px; padding: 11px 16px; border-radius: 22px; font-size: 25px; line-height: 1.28; }
   .me { align-self: flex-end; background: var(--sun-text); color: #fff; border-bottom-right-radius: 6px; }
-  .them { align-self: flex-start; background: var(--band); color: var(--ink); border-bottom-left-radius: 6px; transform-origin: 0 100%; }
+  .them { align-self: flex-start; background: var(--band); color: var(--ink); border-bottom-left-radius: 6px; }
   .dots { display: flex; gap: 6px; padding: 16px 18px; }
   .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: block; }
   #compose { position: absolute; left: 14px; right: 14px; bottom: 26px; height: 48px; border-radius: 24px;
@@ -65,43 +63,31 @@
 
   #strip { position: absolute; height: 92px; }
   #strip svg { position: absolute; inset: 0; overflow: visible; }
-  .chip { position: absolute; top: 14px; width: 260px; height: 64px; border-radius: 14px; background: var(--raised);
-    border: 1.5px solid var(--rule); display: flex; align-items: center; gap: 14px; padding: 0 18px; }
-  .chip .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
+  .chip { position: absolute; top: 14px; width: 270px; height: 64px; border-radius: 14px; background: var(--raised);
+    border: 1.5px solid rgba(79,107,66,0.45); display: flex; align-items: center; gap: 14px; padding: 0 18px; }
+  .chip .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--online); flex: none; }
   .chip .nm { font: 600 23px var(--sans); white-space: nowrap; }
   .chip .rl { font-size: 16px; color: var(--muted); margin-top: 1px; white-space: nowrap; }
   .chip .tag { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--sun-text); border: 1.5px solid rgba(163,67,26,0.4);
     border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
-  .pills { position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; gap: 22px; }
-  .pill { height: 70px; border-radius: 16px; background: var(--raised); border: 1.5px solid var(--rule); padding: 0 26px;
-    display: flex; align-items: center; gap: 14px; }
-  .pill b { font: 600 30px var(--sans); color: var(--ink); }
-  .pill span { font-size: 18px; color: var(--muted); }
-  .pill i { width: 12px; height: 12px; border-radius: 50%; background: var(--sun); display: block; }
 
   #term { position: absolute; border-radius: 16px; background: var(--ink); color: var(--cream);
     box-shadow: 0 26px 70px rgba(38,34,61,0.25); overflow: hidden; }
   .tbar { height: 46px; display: flex; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid var(--rule-dk); }
   .tbar i { width: 13px; height: 13px; border-radius: 50%; display: block; background: var(--rule-dk); }
   .tbar span { margin-left: 14px; font-size: 16px; color: var(--muted-dk); font-family: var(--mono); }
-  #tbody { padding: 22px 28px; font: 22px/1.5 var(--mono); white-space: pre; font-variant-ligatures: none; }
-  #term.narrow #tbody { font-size: 23px; }
-  #term.small #tbody { font-size: 19px; }
-  #term.big #tbody { font-size: 40px; padding: 40px 44px; }
+  #tbody { padding: 22px 28px; font: 25px/1.5 var(--mono); white-space: pre; font-variant-ligatures: none; }
   .p { color: var(--sun-dk); }
   .d { color: var(--muted-dk); }
-  .r { color: var(--warn-dk); }
   .g { color: var(--online-dk); }
-  .a { color: var(--sun-dk); }
   .ln { display: block; }
   .hl { background: rgba(240,138,85,0.16); box-shadow: -10px 0 0 rgba(240,138,85,0.16), 10px 0 0 rgba(240,138,85,0.16); border-radius: 4px; }
-  .sec { display: inline-block; font-size: 1.6em; margin: 6px 0; color: var(--night); background: var(--sun-dk); border-radius: 6px; padding: 0 6px; transform-origin: 30% 60%; }
-  .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--cream); vertical-align: -0.22em; }
+  .sec { display: inline-block; font-size: 1.4em; margin: 6px 0; color: var(--night); background: var(--sun-dk); border-radius: 6px; padding: 0 8px; }
+  .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--cream); vertical-align: -0.22em; opacity: 0.85; }
 
-  #caption { position: absolute; text-align: center; font-size: 50px;
+  #caption { position: absolute; text-align: center; font-size: 48px;
     font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 72; color: var(--ink); }
   #caption em { font-style: normal; color: var(--sun); }
-  #caption em.m { font: 500 0.82em var(--mono); color: var(--sun-text); }
 </style>
 </head>
 <body>
@@ -120,79 +106,62 @@
       <g clip-path="url(#above)"><g id="sun"><path d="M1230 760a150 150 0 0 1 300 0z" fill="#f08a55"/></g></g>
       <path d="M0 760 C 160 742 300 738 470 748 C 640 758 760 736 930 744 C 1100 752 1180 740 1290 748 C 1420 757 1600 738 1760 746 C 1840 750 1890 752 1920 754 L1920 762 L0 762 Z" fill="#2e2a45"/>
       <path d="M0 762 C 220 752 380 756 560 754 C 760 752 980 758 1160 755 C 1380 752 1600 757 1920 756 L1920 764 L0 764 Z" fill="#1f1c30"/>
-      <rect id="hz" x="0" y="757" width="1920" height="6" rx="3" fill="#f3eada"/>
-      <g id="refl">
+      <rect x="0" y="757" width="1920" height="6" rx="3" fill="#f3eada"/>
+      <g>
         <rect x="1270" y="784" width="220" height="11" rx="5.5" fill="#f08a55" opacity=".55"/>
         <rect x="1310" y="808" width="140" height="11" rx="5.5" fill="#f08a55" opacity=".35"/>
         <rect x="1345" y="832" width="70" height="11" rx="5.5" fill="#f08a55" opacity=".2"/>
       </g>
-      <circle id="lantern" cx="1650" cy="230" r="7" fill="#e3a23a"/>
-      <path id="arc1" d="M620 748 Q 425 540 232 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
-      <path id="arc2" d="M620 748 Q 1170 410 1718 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
-      <path id="arc3" d="M620 748 Q 810 640 998 748" fill="none" stroke="#5e5870" stroke-width="3" stroke-linecap="round"/>
-      <circle id="d-laptop" cx="230" cy="760" r="13" fill="#9fbf8c"/>
-      <circle id="d-mini" cx="620" cy="760" r="13" fill="#9fbf8c"/>
-      <circle id="d-pi" cx="1000" cy="760" r="11" fill="#1a1828" stroke="#aba3b8" stroke-width="3"/>
-      <circle id="d-pc" cx="1720" cy="760" r="13" fill="#9fbf8c"/>
+      <circle cx="1650" cy="230" r="7" fill="#e3a23a"/>
+      <path id="arc-laptop" d="M1000 748 Q 615 470 232 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
+      <path id="arc-pi" d="M1000 748 Q 810 610 622 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
+      <path id="arc-pc" d="M1000 748 Q 1360 520 1718 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
+      <circle id="d-laptop" cx="230" cy="760" r="13"/>
+      <circle id="d-pi" cx="620" cy="760" r="13"/>
+      <circle id="d-mini" cx="1000" cy="760" r="13" fill="#9fbf8c"/>
+      <circle id="d-pc" cx="1720" cy="760" r="13"/>
     </svg>
     <div class="mlabel" id="lb-laptop" style="left:230px">Laptop</div>
-    <div class="mlabel" id="lb-mini" style="left:620px">Mac Mini</div>
-    <div class="mlabel" id="lb-pi" style="left:1000px">Raspberry Pi<small>asleep · seen 2h ago</small></div>
+    <div class="mlabel" id="lb-pi" style="left:620px">Pi</div>
+    <div class="mlabel" id="lb-mini" style="left:1000px">Mac mini</div>
     <div class="mlabel" id="lb-pc" style="left:1720px">PC</div>
-    <div id="agenttag" style="left:620px">your agent</div>
-    <div class="hook disp" id="h1">Every computer you own,</div>
-    <div class="hook disp" id="h2">one agent.</div>
+    <div id="agenttag" style="left:1000px">your agent</div>
+    <div class="hook disp" id="h1">Your work is on four computers.</div>
+    <div class="hook disp" id="h2">Your agent knows one.</div>
     <img id="lockup" src="../brand/yonder-logo-dark.svg" alt="yonder">
     <div class="disp" id="o1">Every computer you own, one agent.</div>
-    <div id="o3">One small program&nbsp; · &nbsp;Claude Code, Codex, Pi, Hermes&nbsp; · &nbsp;macOS &amp; Linux&nbsp; · &nbsp;MIT</div>
-    <div id="o4"><span class="p">$</span> brew trust --cask zacharytgray/yonder/yonder
-<span class="p">$</span> brew install --cask zacharytgray/yonder/yonder</div>
-    <div id="o2">github.com/zacharytgray/yonder</div>
+    <div id="o3">Tell your agent:</div>
+    <div id="o4"><span style="color:var(--sun-dk)">&gt;</span> Set up Yonder for me: https://github.com/zacharytgray/yonder</div>
+    <div id="o2">macOS and Linux&nbsp; · &nbsp;Claude Code, Codex, Pi, Hermes&nbsp; · &nbsp;MIT</div>
   </div>
 
   <div id="paper">
     <div id="strip">
-      <svg width="1600" height="92">
+      <svg width="1355" height="92">
         <line class="lk" id="l-0" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>
         <line class="lk" id="l-1" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>
         <line class="lk" id="l-2" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>
         <line id="l-on" y1="46" y2="46" stroke="#d2602f" stroke-width="4" stroke-linecap="round"/>
-        <circle id="pkt" cy="46" r="8" fill="#d2602f"/>
       </svg>
-      <div id="chips">
-        <div class="chip" id="c-laptop"><div class="dot"></div><div><div class="nm">Laptop</div><div class="rl" id="lap-rl">M3 Pro · 36 GB</div></div></div>
-        <div class="chip" id="c-mini"><div class="dot"></div><div><div class="nm">Mac Mini</div><div class="rl" id="mini-rl">M4 · 16 GB</div></div><div class="tag">agent here</div></div>
-        <div class="chip" id="c-pc"><div class="dot"></div><div><div class="nm">PC</div><div class="rl" id="pc-rl">RTX 4090 · 64 GB</div></div></div>
-        <div class="chip" id="c-pi"><div class="dot"></div><div><div class="nm">Raspberry Pi</div><div class="rl" id="pi-rl">offline · 2h ago</div></div></div>
-      </div>
-      <div class="pills" id="providers">
-        <div class="pill"><i></i><b>1Password</b><span>Touch ID or a service account</span></div>
-        <div class="pill"><i></i><b>Bitwarden</b><span>Secrets Manager</span></div>
-      </div>
-      <div class="pills" id="simple">
-        <div class="pill"><i></i><b>One binary</b><span>macOS and Linux</span></div>
-        <div class="pill"><i></i><b>No server</b><span>peer to peer over SSH</span></div>
-        <div class="pill"><i></i><b>No daemon</b><span>runs when called</span></div>
-      </div>
-      <div class="pills" id="harnesses">
-        <div class="pill"><i></i><b>Claude Code</b></div>
-        <div class="pill"><i></i><b>Codex</b></div>
-        <div class="pill"><i></i><b>Pi</b></div>
-        <div class="pill"><i></i><b>Hermes</b></div>
-      </div>
+      <div class="chip" id="c-laptop"><div class="dot"></div><div><div class="nm">Laptop</div><div class="rl" id="laptop-rl">M3 Pro · 36 GB</div></div></div>
+      <div class="chip" id="c-pi"><div class="dot"></div><div><div class="nm">Pi</div><div class="rl" id="pi-rl">Cortex-A76 · 8 GB</div></div></div>
+      <div class="chip" id="c-mini"><div class="dot"></div><div><div class="nm">Mac mini</div><div class="rl" id="mini-rl">M4 · 16 GB</div></div><div class="tag">agent here</div></div>
+      <div class="chip" id="c-pc"><div class="dot"></div><div><div class="nm">PC</div><div class="rl" id="pc-rl">RTX 4090 · 64 GB</div></div></div>
     </div>
 
-    <div id="term"><div class="tbar"><i></i><i></i><i></i><span id="ttl">hermes · mini</span></div><div id="tbody"></div></div>
+    <div id="term"><div class="tbar"><i></i><i></i><i></i><span>hermes · mac-mini</span></div><div id="tbody"></div></div>
 
     <div id="phone"><div id="screen">
       <div class="ph-island"></div>
       <div class="ph-status"><span>9:41</span><span>●●●</span></div>
       <div class="ph-head"><img class="avatar" src="../brand/yonder-icon.svg" alt=""><div class="ph-name">agent</div><div class="ph-sub">on mac-mini</div></div>
       <div id="thread">
-        <div class="bubble me" id="m1">Shoot, I forgot to move my slides to my laptop. Can you send them over?</div>
-        <div class="bubble them" id="m2">Done. Talk.key is on your laptop's Desktop.</div>
-        <div class="bubble me" id="m3">also, where did I leave my thesis code?</div>
-        <div class="bubble them" id="m4">On the PC, in ~/GitHub/thesis.</div>
+        <div class="bubble me" id="m1">The Pi's disk is full, can you clean it up?</div>
+        <div class="bubble them" id="r1">Done. I cleared 2.1 GB of old pip downloads.</div>
+        <div class="bubble me" id="m2">Run the training script on the PC.</div>
+        <div class="bubble them" id="r2">It's running there. Epoch 3 of 20 so far.</div>
+        <div class="bubble me" id="m3">Use my Hugging Face token on the PC.</div>
+        <div class="bubble them" id="r3">Done. It came from 1Password by name.</div>
         <div class="bubble them dots" id="typing"><i></i><i></i><i></i></div>
       </div>
       <div id="compose">Message</div>
@@ -203,285 +172,181 @@
 </div>
 
 <script>
-// every frame is a pure function of t (seconds). 120 bpm: beat 0.5s, bar 2s.
-// event times here match the cues in music.py.
+// every frame is a pure function of t (seconds). the music is 84 bpm; BAR matches music.py.
+const BAR = 4 * 60 / 84;
+const A = BAR, B = A + 5, C = B + 5, OUT = 6 * BAR, XF = 0.35;
 const $ = id => document.getElementById(id);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const eo = x => 1 - Math.pow(1 - clamp(x), 3);
-const eio = x => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
-const back = x => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
 const lerp = (a, b, k) => a + (b - a) * k;
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const typed = (s, t, t0, cps) => s.slice(0, clamp(Math.floor((t - t0) * cps), 0, s.length));
-// pop: opacity + scale with a little overshoot, starting at t0
-function pop(el, t, t0, dur = 0.28, from = 0.7) {
-  const k = clamp((t - t0) / dur);
-  el.style.opacity = t < t0 ? 0 : eo(k * 1.6);
-  el.style.transform = `scale(${lerp(from, 1, back(k))})`;
-  return k;
+// a quiet entrance: fade in and rise a few pixels
+function rise(el, t, t0, dur = 0.35, dy = 10) {
+  const k = eo((t - t0) / dur);
+  el.style.opacity = k;
+  el.style.transform = `translateY(${(1 - k) * dy}px)`;
 }
 
-const DUSK_OUT = 4.0, DUSK_IN = 38.0;
-
-// terminal scenes: each step types a command, then its lines land
+// the real output, from docs/demo/fleet.sh
+const JOB = '20261114-170957-49ba83';
 const SCENES = [
-  { from: 4.0, title: 'hermes · mac-mini', steps: [
-    { cmd: 'yonder ls', type: 4.5, cps: 40, out: 5.0, gap: 0.25, lines: [
-      '<span class="d">NAME          ROLE     STATE           HARDWARE                HARNESSES</span>',
-      'laptop        laptop   <span class="g">online</span>          M3 Pro · 36 GB          claude-code,codex',
-      'mac-mini      server   <span class="a">this machine</span>    M4 · 16 GB              claude-code,hermes',
-      'pc            desktop  <span class="g">online</span>          RTX 4090 24 GB · 64 GB  -',
-      'raspberry-pi  other    <span class="d">offline 2h ago</span>  Cortex-A76 · 8 GB       -',
-      '<span class="d">layers: secrets on, agents on (yonder layers)</span>',
-    ], hl: { line: 1, at: 6.5 } }] },
-  { from: 8.0, title: 'hermes · mac-mini', steps: [
-    { cmd: 'ls ~/Documents/*.key', type: 8.25, cps: 50, out: 8.75, lines: ['/Users/me/Documents/Talk.key'] },
-    { cmd: 'yonder cp ~/Documents/Talk.key laptop:~/Desktop/', type: 9.0, cps: 60, out: 10.0, gap: 0.25, lines: [
-      'copied Talk.key (folder, 23 files, 18.4 MB) to laptop:/Users/me/Desktop/Talk.key',
+  { from: A, to: 'pi', steps: [
+    { cmd: "yonder run pi -- 'du -sh .cache/* | sort -h'", type: A + 0.9, cps: 45, out: A + 2.0, gap: 0.12, lines: [
+      ' 12K    .cache/fontconfig',
+      ' 46M    .cache/thumbnails',
+      '2.1G    .cache/pip',
+    ], hl: { line: 2, at: A + 2.5 } },
+    { cmd: "yonder run pi -- 'rm -rf .cache/pip && du -sh .cache'", type: A + 2.8, cps: 60, out: A + 3.75, lines: [
+      ' 46M    .cache',
     ] }] },
-  { from: 12.0, title: 'hermes · mac-mini', steps: [
-    { cmd: 'yonder run pc -- ls ~/GitHub', type: 12.75, cps: 50, out: 13.75, gap: 0.2, lines: [
-      'dotfiles', 'thesis', 'website',
-    ], hl: { line: 1, at: 14.25 } }] },
-  { from: 16.0, title: 'hermes · mac-mini', wide: true, steps: [
-    { cmd: 'yonder layers', type: 16.5, cps: 40, out: 17.0, gap: 0.25, lines: [
-      'connect  on   always: reach, run on and copy between your machines',
-      'secrets  on   run commands with secrets from 1Password or Bitwarden <span class="d">(set just now by mac-mini)</span>',
-      'agents   on   sync agent instructions, skills, subagents and hooks between machines <span class="d">(set just now by mac-mini)</span>',
-    ], hl: { line: 2, at: 17.75 } }] },
-  { from: 19.0, title: 'claude code · laptop', wide: true, small: true, steps: [
-    { cmd: 'head -8 ~/.claude/CLAUDE.md', type: 19.25, cps: 50, out: 20.0, gap: 0.15, lines: [
-      '<span class="d">&lt;!-- yonder:begin (written by `yonder agents link`; edit the store, not this block) --&gt;</span>',
-      '<span class="a">## Yonder briefing</span>',
-      ' ',
-      'Machines (generated from yonder\'s records; live state: `yonder ls`, details: `yonder show &lt;machine&gt;`):',
-      '- `laptop` laptop, this machine · 100.64.0.2 · macOS 15.5 arm64 · M3 Pro, 36 GB RAM · travels',
-      '- `mac-mini` server · 100.64.0.1 · macOS 15.5 arm64 · M4, 16 GB RAM · always-on',
-      '- `pc` desktop · 100.64.0.3 · Ubuntu 24.04 amd64 · AMD Ryzen 9 7950X, RTX 4090 24 GB, 64 GB RAM',
-      '- `raspberry-pi` other · 100.64.0.4 · Debian 12 arm64 · Cortex-A76, 8 GB RAM',
-    ] }] },
-  { from: 24.0, title: 'hermes · mac-mini', wide: true, steps: [
-    { cmd: "yonder run pc --secret HF_TOKEN -- 'echo $HF_TOKEN'", type: 24.25, cps: 60, out: 25.5, gap: 0.25, lines: [
-      '<span class="sec" id="sec">[HF_TOKEN]</span>',
+  { from: B, to: 'pc', steps: [
+    { cmd: 'yonder run pc --detach -- python3 train.py', type: B + 0.8, cps: 45, out: B + 1.85, gap: 0.12, lines: [
+      JOB,
+      `<span class="d">yonder: started on pc; output: yonder jobs pc ${JOB}</span>`,
     ] },
-    { cmd: 'yonder log | tail -1', type: 27.0, cps: 40, out: 27.75, lines: [
-      '2026-11-11 09:42:05  mac-mini  pc      hermes   <span class="g">0</span>     96    echo $HF_TOKEN  <span class="a">[secrets: [HF_TOKEN]]</span>',
+    { cmd: `yonder jobs pc ${JOB}`, type: B + 2.7, cps: 55, out: B + 3.45, gap: 0.15, lines: [
+      'epoch 1/20  loss 0.920',
+      'epoch 2/20  loss 0.745',
+      'epoch 3/20  loss 0.604',
     ] }] },
-  { from: 30.0, title: 'you · laptop', wide: true, steps: [
-    { cmd: 'brew trust --cask zacharytgray/yonder/yonder', type: 30.5, cps: 70, out: 31.2, lines: [] },
-    { cmd: 'brew install --cask zacharytgray/yonder/yonder', type: 31.25, cps: 70, out: 31.95, lines: [] },
-    { cmd: 'yonder version', type: 32.25, cps: 40, out: 32.75, lines: ['yonder v0.3.1 (darwin/arm64)'] },
-    { cmd: 'yonder agents install', type: 34.25, cps: 60, out: 34.75, gap: 0.25, lines: [
-      'skill installed for claude-code: ~/.claude/skills/yonder',
-      'skill installed for codex, pi: ~/.agents/skills/yonder',
-      'skill installed for hermes: ~/.hermes/skills/yonder',
+  { from: C, to: 'pc', steps: [
+    { cmd: "yonder run pc --secret HF_TOKEN -- 'echo $HF_TOKEN'", type: C + 0.8, cps: 50, out: C + 1.95, lines: [
+      '<span class="sec">[HF_TOKEN]</span>',
     ] }] },
 ];
-const SWITCHES = [8.0, 12.0, 16.0, 19.0, 24.0, 30.0];
-
 const CAPTIONS = [
-  { a: 4.5, b: 7.85, html: 'Your agent sees <em>every computer you own</em>.' },
-  { a: 8.25, b: 11.85, html: 'It finds your slides and <em>sends them over</em>.' },
-  { a: 12.25, b: 13.6, html: '<em>Work from anywhere.</em>' },
-  { a: 13.75, b: 15.85, html: 'It finds your projects <em>on any machine</em>.' },
-  { a: 16.15, b: 18.85, html: '<em>Context stays in sync.</em>' },
-  { a: 19.15, b: 23.85, html: 'Your instructions, skills and machine map, <em>on every computer</em>.' },
-  { a: 24.15, b: 26.35, html: '<em>Shared secrets</em>, kept safe.' },
-  { a: 26.5, b: 29.85, html: 'Agents use names. Values stay out of <em>commands, logs and output</em>.' },
-  { a: 30.15, b: 33.85, html: '<em>Simple and lightweight.</em> One small program.' },
-  { a: 34.15, b: 37.85, html: 'Works in <em>Claude Code, Codex, Pi and Hermes</em>.' },
+  { a: A + 0.45, b: B, html: '<em>Fix</em> another machine.' },
+  { a: B + 0.45, b: C, html: 'Send a job to <em>the right machine</em>.' },
+  { a: C + 0.45, b: OUT, html: 'Keys by name. The value stays <em>out of output and logs</em>.' },
 ];
-
-const MSGS = [['m1', 4.25], ['m2', 10.75], ['m3', 12.0], ['m4', 14.5]];
-const TYPING = [[4.6, 10.75], [12.4, 14.5]];
-// remote commands: when they start and which chip the link from the mac mini runs to
-const RUNS = [[9.85, 'laptop'], [13.55, 'pc']];
-const ROWS = { laptop: 5.25, mini: 5.5, pc: 5.75 };
-// context scene: the agents layer reaches each machine; the pi gets it at its next sync
-const SYNCED = [['laptop', 'lap-rl', 17.75], ['mini', 'mini-rl', 18.0], ['pc', 'pc-rl', 18.25]];
-
-const cursorOn = t => (t % 0.8) < 0.45;
+const MSGS = [['m1', A + 0.3], ['r1', A + 4.25], ['m2', B + 0.3], ['r2', B + 4.2], ['m3', C + 0.3], ['r3', C + 2.6]];
+const TYPING = [[A + 0.75, A + 4.25], [B + 0.75, B + 4.2], [C + 0.75, C + 2.6]];
+// remote commands: when each starts, and which chip it reaches
+const RUNS = [[A + 1.85, 'pi'], [B + 1.75, 'pc'], [C + 1.85, 'pc']];
+const ORDER = ['laptop', 'pi', 'mini', 'pc'];
 
 function termBody(sc, t) {
   let html = '';
   sc.steps.forEach((st, si) => {
     if (si > 0 && t < st.type) return;
     const active = t < st.out;
-    const last = si === sc.steps.length - 1;
-    const cur = active ? (cursorOn(t) ? '<span class="cur"></span>' : '<span class="cur" style="opacity:0"></span>') : '';
+    const cur = active ? '<span class="cur"></span>' : '';
     html += '<span class="ln"><span class="p">$</span> ' + esc(typed(st.cmd, t, st.type, st.cps)) + cur + '</span>';
     st.lines.forEach((l, i) => {
-      const k = eo((t - (st.out + i * (st.gap || 0))) / 0.14);
+      const k = eo((t - (st.out + i * (st.gap || 0))) / 0.2);
       if (k <= 0) return;
       const hl = st.hl && st.hl.line === i && t >= st.hl.at ? ' hl' : '';
-      html += `<span class="ln${hl}" style="opacity:${k};transform:translateX(${(1 - k) * -14}px)">${l}</span>`;
+      html += `<span class="ln${hl}" style="opacity:${k}">${l}</span>`;
     });
-    const done = t >= st.out + Math.max(0, st.lines.length - 1) * (st.gap || 0) + 0.3;
-    if (done && (last || t < sc.steps[si + 1].type))
-      html += '<span class="ln"><span class="p">$</span> ' + (cursorOn(t) ? '<span class="cur"></span>' : '') + '</span>';
   });
   return html;
 }
 
 function renderDusk(t) {
-  const outro = t >= DUSK_IN;
-  const lt = outro ? t - DUSK_IN : t;
-  // horizon draws in on the hook; it is already there for the outro
-  $('hz').setAttribute('width', outro ? 1920 : 1920 * eo(lt / 0.35));
-  const sk = outro ? 1 : back(clamp(lt / 0.4));
-  $('sun').setAttribute('transform', `translate(1380 ${760 + Math.min(lt, 3) * 3}) scale(${sk}) translate(-1380 -760)`);
-  $('refl').style.opacity = outro ? 1 : eo((lt - 0.2) / 0.4);
-  $('lantern').style.opacity = outro ? 1 : eo((lt - 0.75) / 0.6);
-  for (const [n, at] of [['mini', 1.5], ['laptop', 2.0], ['pc', 2.5], ['pi', 2.75]]) {
-    const k = outro ? 1 : clamp((lt - at) / 0.28);
-    const d = $('d-' + n);
-    d.setAttribute('r', Math.max(0, (n === 'pi' ? 11 : 13) * back(k)));
-    d.style.opacity = k > 0 ? 1 : 0;
-    const lb = $('lb-' + n);
-    lb.style.opacity = eo(k * 1.5);
-    lb.style.transform = `translateX(-50%) translateY(${(1 - eo(k)) * 16}px)`;
-  }
-  const tag = $('agenttag');
-  const kt = outro ? 1 : clamp((lt - 1.6) / 0.28);
-  tag.style.opacity = eo(kt * 1.5);
-  tag.style.transform = `translateX(-50%) scale(${lerp(0.7, 1, back(kt))})`;
-  for (const [id, at] of [['arc1', 2.75], ['arc2', 3.0], ['arc3', 3.1]]) {
-    const p = $(id), L = p.getTotalLength();
-    const k = outro ? 1 : eo((lt - at) / 0.45);
+  const outro = t >= A;
+  // arcs reach the other machines at the end of the hook; they stay for the outro
+  for (const [n, at] of [['pi', 1.45], ['laptop', 1.6], ['pc', 1.75]]) {
+    const p = $('arc-' + n), L = p.getTotalLength();
+    const k = outro ? 1 : eo((t - at) / 0.6);
     p.style.strokeDasharray = `${L} ${L}`;
     p.style.strokeDashoffset = L * (1 - k);
-    p.style.opacity = k > 0 ? 0.9 : 0;
-    if (id === 'arc3') { p.style.strokeDasharray = k >= 1 ? '4 12' : `${L} ${L}`; if (k >= 1) p.style.strokeDashoffset = 0; }
+    p.style.opacity = k > 0 ? 0.85 : 0;
+    const d = $('d-' + n), kd = outro ? 1 : eo((t - at - 0.45) / 0.3);
+    d.setAttribute('fill', kd > 0.5 ? '#9fbf8c' : '#1a1828');
+    d.setAttribute('stroke', kd > 0.5 ? 'none' : '#aba3b8');
+    d.setAttribute('stroke-width', 3);
+    d.setAttribute('r', kd > 0.5 ? 13 : 11);
+    $('lb-' + n).style.opacity = lerp(0.55, 1, kd);
   }
-  $('h1').style.display = $('h2').style.display = outro ? 'none' : '';
+  $('sun').setAttribute('transform', `translate(0 ${(outro ? t - OUT + 3 : t) * 2})`);
+  for (const id of ['h1', 'h2']) {
+    $(id).style.display = outro ? 'none' : '';
+    $(id).style.opacity = 1 - eo((t - (A - 0.65)) / 0.3);
+  }
   for (const id of ['lockup', 'o1', 'o2', 'o3', 'o4']) $(id).style.display = outro ? '' : 'none';
-  if (!outro) {
-    pop($('h1'), t, 0.25, 0.32, 0.8);
-    pop($('h2'), t, 1.0, 0.32, 0.8);
-  } else {
-    pop($('lockup'), t, 38.1, 0.34, 0.85);
-    pop($('o1'), t, 38.35, 0.3, 0.85);
-    for (const [id, at] of [['o3', 38.6], ['o4', 38.8], ['o2', 39.0]]) {
-      const k = eo((t - at) / 0.3);
-      $(id).style.opacity = k; $(id).style.transform = `translateY(${(1 - k) * 12}px)`;
-    }
+  if (outro) {
+    for (const [id, at] of [['lockup', OUT + 0.1], ['o1', OUT + 0.35], ['o3', OUT + 0.9], ['o4', OUT + 1.1], ['o2', OUT + 1.4]])
+      rise($(id), t, at, 0.45);
   }
 }
 
 function renderPaper(t) {
-  const sc = SCENES.filter(s => t >= s.from).pop();
-  // geometry: narrow beside the phone until 16s, then wide
-  const kw = eio((t - 16.0) / 0.3);
-  const left = lerp(505, 160, kw), width = lerp(1355, 1600, kw);
+  const sc = SCENES.filter(s => t >= s.from).pop() || SCENES[0];
+  const left = 505, width = 1355, th = 420;
+  const top0 = (1080 - (92 + 28 + th + 36 + 60)) / 2;
   const term = $('term');
   term.style.left = left + 'px'; term.style.width = width + 'px';
-  // vertical layout: strip, terminal, caption, centered as a group
-  const th = lerp(380, 400, kw), top0 = (1080 - (92 + 28 + th + 40 + 60)) / 2;
   term.style.top = (top0 + 120) + 'px'; term.style.height = th + 'px';
-  $('strip').style.top = top0 + 'px';
-  $('caption').style.top = (top0 + 120 + th + 34) + 'px';
-  term.className = sc.big ? 'big' : (sc.small ? 'small' : (sc.wide ? '' : 'narrow'));
-  $('ttl').textContent = sc.title;
-  const ki = back(clamp((t - 4.0) / 0.3));
-  term.style.opacity = eo((t - 4.0) / 0.18);
-  term.style.transform = `translateY(${(1 - ki) * 40}px)`;
+  const strip = $('strip');
+  strip.style.left = left + 'px'; strip.style.width = width + 'px'; strip.style.top = top0 + 'px';
+  $('caption').style.left = left + 'px'; $('caption').style.width = width + 'px';
+  $('caption').style.top = (top0 + 120 + th + 30) + 'px';
+
+  // the terminal body crossfades between scenes
   let bo = 1;
-  for (const s of SWITCHES) { const d = t - s; if (d > -0.12 && d < 0.12) bo = Math.min(bo, Math.abs(d) / 0.12); }
+  for (const s of [B, C]) { const d = t - s; if (d > -0.15 && d < 0.15) bo = Math.min(bo, Math.abs(d) / 0.15); }
   $('tbody').style.opacity = bo;
   $('tbody').innerHTML = termBody(sc, t);
-  const sec = $('sec');
-  if (sec) { const k = clamp((t - 25.5) / 0.3); sec.style.transform = `scale(${lerp(0.5, 1, back(k))})`; }
 
-  // phone pops in at 4.0 and slides off left at 16.0
-  const ph = $('phone');
-  const kin = clamp((t - 4.0) / 0.3), kout = eio((t - 16.0) / 0.3);
-  ph.style.opacity = t < 4.0 ? 0 : 1;
-  ph.style.transform = `translate(${110 - kout * 560}px, ${171 + (1 - back(kin)) * 120}px) scale(0.9)`;
+  $('phone').style.transform = 'translate(110px, 150px) scale(0.95)';
   for (const [id, at] of MSGS) {
     const el = $(id);
     el.style.display = t >= at ? '' : 'none';
-    pop(el, t, at, 0.26, 0.6);
+    rise(el, t, at, 0.3, 8);
   }
   const ty = $('typing');
   ty.style.display = TYPING.some(([a, b]) => t >= a && t < b) ? '' : 'none';
-  [...ty.children].forEach((d, i) => { d.style.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI / 0.5 - i * 1.0)); });
+  [...ty.children].forEach((d, i) => { d.style.opacity = 0.4 + 0.5 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI / 1.1 - i * 0.9)); });
 
-  // strip: fleet chips, provider pills (24-30), the small-program pills (30-34) or harness pills (34-38)
-  const strip = $('strip');
-  strip.style.left = left + 'px'; strip.style.width = width + 'px';
-  const mode = t >= 34 ? 'harnesses' : t >= 30 ? 'simple' : t >= 24 ? 'providers' : 'chips';
-  $('chips').style.display = mode === 'chips' ? '' : 'none';
-  strip.querySelector('svg').style.display = mode === 'chips' ? '' : 'none';
-  $('providers').style.display = mode === 'providers' ? '' : 'none';
-  $('harnesses').style.display = mode === 'harnesses' ? '' : 'none';
-  $('simple').style.display = mode === 'simple' ? '' : 'none';
-  [...$('simple').children].forEach((p, i) => pop(p, t, 30.5 + i * 0.5, 0.28, 0.6));
-  [...$('providers').children].forEach((p, i) => pop(p, t, 24.25 + i * 0.25, 0.28, 0.6));
-  [...$('harnesses').children].forEach((p, i) => pop(p, t, [34.75, 35.0, 35.08, 35.25][i], 0.28, 0.6));
-  strip.style.opacity = eo((t - 4.05) / 0.25);
-  const cw = 260, sp = (width - cw) / 3;
-  const xs = [0, sp, 2 * sp, 3 * sp];
-  ['laptop', 'mini', 'pc', 'pi'].forEach((n, i) => { $('c-' + n).style.left = xs[i] + 'px'; });
-  for (let i = 0; i < 3; i++) { const l = $('l-' + i); l.setAttribute('x1', xs[i] + cw); l.setAttribute('x2', xs[i + 1]); }
-  const lon = $('l-on'), pkt = $('pkt');
-  let lk = 0, run = null;
-  for (const r of RUNS) if (t >= r[0] && t < 16.0) { lk = clamp((t - r[0]) / 0.25); run = r; }
+  // strip: chips evenly spaced, a dashed link between neighbors, an active link from the mac mini
+  const cw = 270, sp = (width - cw) / 3;
+  const xs = Object.fromEntries(ORDER.map((n, i) => [n, i * sp]));
+  ORDER.forEach(n => { $('c-' + n).style.left = xs[n] + 'px'; });
+  for (let i = 0; i < 3; i++) { const l = $('l-' + i); l.setAttribute('x1', i * sp + cw); l.setAttribute('x2', (i + 1) * sp); }
+  let run = null;
+  for (const r of RUNS) if (t >= r[0]) run = r;
+  const lon = $('l-on');
   if (run) {
-    const [x0, x1] = run[1] === 'laptop' ? [xs[1], xs[0] + cw] : [xs[1] + cw, xs[2]];
-    lon.setAttribute('x1', x0); lon.setAttribute('x2', x0 + (x1 - x0) * eo(lk));
-    pkt.setAttribute('cx', x0 + (x1 - x0) * eo(lk));
+    const k = eo((t - run[0]) / 0.35);
+    const [x0, x1] = run[1] === 'pi' ? [xs.mini, xs.pi + cw] : [xs.mini + cw, xs.pc];
+    lon.setAttribute('x1', x0); lon.setAttribute('x2', x0 + (x1 - x0) * k);
   }
   lon.style.opacity = run ? 1 : 0;
-  pkt.style.opacity = run && lk < 1 ? 1 : 0;
-  for (const [n, at] of Object.entries(ROWS)) {
-    const el = $('c-' + n), dot = el.querySelector('.dot');
-    const k = clamp((t - at) / 0.25);
-    dot.style.background = k > 0 ? '#4f6b42' : 'transparent';
-    dot.style.borderColor = k > 0 ? '#4f6b42' : '';
-    el.style.borderColor = k > 0 ? 'rgba(79,107,66,0.45)' : '';
-    el.style.transform = `scale(${t >= at ? lerp(1.08, 1, eo(k)) : 1})`;
+  for (const n of ORDER) {
+    const on = run && run[1] === n;
+    const el = $('c-' + n);
+    el.style.borderColor = on ? 'rgba(210,96,47,0.7)' : '';
+    el.querySelector('.dot').style.background = on ? '#d2602f' : '';
   }
-  const pi = $('c-pi'), kp = clamp((t - 6.0) / 0.25);
-  pi.style.opacity = 0.55 + 0.45 * (t >= 6.0 ? 1 - eo(kp) * 0.25 : 1);
-  pi.style.transform = `scale(${t >= 6.0 ? lerp(1.06, 1, eo(kp)) : 1})`;
-  const chipState = (n, rl, c, html) => {
-    const el = $('c-' + n), d = el.querySelector('.dot');
-    d.style.background = d.style.borderColor = c; el.style.borderColor = c; $(rl).innerHTML = html;
-  };
-  if (t >= 10.0) chipState('laptop', 'lap-rl', '#d2602f', '<span style="color:#a3431a">Desktop/Talk.key</span>');
-  else $('lap-rl').textContent = 'M3 Pro · 36 GB';
-  if (t >= 14.25) chipState('pc', 'pc-rl', '#d2602f', '<span style="color:#a3431a">~/GitHub/thesis</span>');
-  else $('pc-rl').textContent = 'RTX 4090 · 64 GB';
-  $('mini-rl').textContent = 'M4 · 16 GB';
-  $('pi-rl').textContent = 'offline · 2h ago';
-  for (const [n, rl, at] of SYNCED) {
-    if (t < at) continue;
-    chipState(n, rl, '#4f6b42', '<span style="color:#4f6b42;font-weight:600">✓ in sync</span>');
-    $('c-' + n).style.transform = `scale(${lerp(1.08, 1, eo(clamp((t - at) / 0.25)))})`;
-  }
-  if (t >= 18.5) $('pi-rl').textContent = 'offline · at its next sync';
+  $('pi-rl').innerHTML = t >= A + 3.75 ? '<span style="color:#a3431a">2.1 GB freed</span>' : 'Cortex-A76 · 8 GB';
+  $('pc-rl').innerHTML = t >= C + 1.95 ? '<span style="color:#a3431a">HF_TOKEN, by name</span>'
+    : t >= B + 1.85 ? '<span style="color:#a3431a">train.py running</span>' : 'RTX 4090 · 64 GB';
 
-  // caption, centered under the terminal
-  const cap = CAPTIONS.find(c => t >= c.a && t < c.b + 0.15);
+  const cap = CAPTIONS.find(c => t >= c.a && t < c.b);
   const ce = $('caption');
-  ce.style.left = (kw > 0.5 ? 0 : 505) + 'px';
-  ce.style.width = (kw > 0.5 ? 1920 : 1355) + 'px';
   if (cap) {
-    const k = clamp((t - cap.a) / 0.24), ko = clamp((t - cap.b) / 0.15);
     ce.innerHTML = cap.html;
-    ce.style.opacity = eo(k * 1.5) * (1 - ko);
-    ce.style.transform = `translateY(${(1 - back(k)) * 22}px)`;
+    const k = eo((t - cap.a) / 0.4), ko = clamp((t - (cap.b - 0.2)) / 0.2);
+    ce.style.opacity = k * (1 - ko);
+    ce.style.transform = `translateY(${(1 - k) * 10}px)`;
   } else ce.style.opacity = 0;
 }
 
 function render(t) {
-  const dusk = t < DUSK_OUT || t >= DUSK_IN;
-  $('dusk').style.display = dusk ? '' : 'none';
-  $('paper').style.display = dusk ? 'none' : '';
-  if (dusk) renderDusk(t); else renderPaper(t);
+  // the hook crossfades into paper; paper dips to night, then the outro fades up
+  const pin = eo((t - (A - XF)) / XF), pout = eo((t - (OUT - 0.3)) / 0.3);
+  const po = pin * (1 - pout);
+  const dk = t < A ? 1 : eo((t - OUT) / 0.45);
+  $('paper').style.opacity = po;
+  $('paper').style.display = po > 0 ? '' : 'none';
+  $('dusk').style.opacity = dk;
+  $('dusk').style.display = dk > 0 ? '' : 'none';
+  if (dk > 0) renderDusk(t);
+  if (po > 0) renderPaper(t);
 }
 
-window.DURATION = 41.0;
+window.DURATION = 21.6;
 window.render = render;
 render(Number(new URLSearchParams(location.search).get('t') || 0));
 </script>
