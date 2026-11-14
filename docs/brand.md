@@ -41,14 +41,14 @@ Yonder talks like a calm person who knows the work and doesn't need to sell it.
 
 | Say | Don't say |
 |---|---|
-| Text one agent. Fix any machine. | Unleash the power of your fleet! |
+| Every computer you own, one agent. | Unleash the power of your fleet! |
 | `gpu-box` is offline (last seen 2h ago). | Oops! Something went wrong. |
 | Yonder connects machines. It does not decide what your agent may do. | Enterprise-grade security for your AI workflows. |
 | Out yonder, on the GPU box. (once, in a headline) | Yeehaw! Saddle up your servers. |
 
-**Tagline:** Text one agent. Fix any machine.
-**One line:** Yonder connects your own computers so the AI agents on any of them can use all of
-them.
+**Tagline:** Every computer you own, one agent.
+**One line:** Yonder connects your computers so the agent on any one of them can use all of them.
+To your agent, every machine works like one computer.
 
 ## Color
 

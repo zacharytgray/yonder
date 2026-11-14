@@ -6,10 +6,7 @@
   <img src="docs/brand/yonder-logo-light.svg" width="300" alt="Yonder">
 </picture>
 
-### Text one agent. Fix any machine.
-
-Yonder connects your own computers so the AI agents on any of them can use all of them.<br>
-Ask Claude Code on your laptop why the PC is out of disk, and it goes and looks.
+### Every computer you own, one agent.
 
 [![CI][badge-ci]][ci]
 [![Latest release][badge-release]][releases]
@@ -31,9 +28,39 @@ Ask Claude Code on your laptop why the PC is out of disk, and it goes and looks.
 
 </div>
 
+Your work is spread across computers. The slides are on the Mac mini, the project is on the
+desktop, and you're on your laptop. Each AI agent only knows the machine it runs on, so you end
+up copying files and re-explaining context by hand.
+
+Yonder connects your computers so the agent on any one of them can use all of them. To your
+agent, every machine works like one computer.
+
+> You're about to give a presentation, and the slides are still on your Mac mini. You text your
+> agent: "Shoot, I forgot to move my slides to my laptop. Can you send them over?" It finds them
+> and puts them on your laptop's Desktop.
+
+- **Work from anywhere.** Start on any machine. Your agent can look on your other computers, so
+  it finds your projects and files wherever they are.
+- **Context stays in sync.** Your agent instructions, skills and a short map of your machines
+  are the same on every computer. You don't have to keep them in sync yourself.
+- **Shared secrets, kept safe.** API keys stay in 1Password or Bitwarden. Agents ask for a key by
+  name, and Yonder keeps the value out of commands, logs and output.
+
+**Simple and lightweight.** It's one small program, with no server and nothing running in the
+background. It uses Tailscale and SSH. It works with Claude Code, Codex, Pi and Hermes.
+
+```sh
+brew trust --cask zacharytgray/yonder/yonder
+brew install --cask zacharytgray/yonder/yonder
+yonder init
 ```
-you    I'm about to give a presentation but I forgot to download it on my laptop!
-       It's on my Mac Mini. Can you send it over?
+
+## What it does
+
+The slides story, as it runs on the Mac mini:
+
+```
+you    Shoot, I forgot to move my slides to my laptop. Can you send them over?
 
 agent  $ yonder ls
        NAME          ROLE     STATE           HARDWARE                HARNESSES
@@ -47,8 +74,6 @@ agent  $ yonder ls
 
        Sent. Talk.key is on your laptop's Desktop.
 ```
-
-## What it does
 
 <table>
   <tr>
@@ -64,10 +89,9 @@ agent  $ yonder ls
   </tr>
   <tr>
     <td valign="top">
-      <h3>Keeps secrets off the command line</h3>
-      <p>Secrets come from 1Password or Bitwarden. The agent asks for a name like
-      <code>HF_TOKEN</code>. The value stays out of command lines, logs and accidental output.
-      <a href="#what-secrets-protect">What that does and doesn't cover</a>.</p>
+      <h3>Sends files</h3>
+      <p><code>yonder cp</code> copies files and folders between machines, like scp. A Keynote
+      file or an app bundle copies whole. <a href="#send-files">More</a>.</p>
     </td>
     <td valign="top">
       <h3>Says when a machine is asleep</h3>
@@ -82,24 +106,16 @@ agent  $ yonder ls
       merges them all.</p>
     </td>
     <td valign="top">
-      <h3>Works in every agent</h3>
-      <p>One skill, installed into Claude Code, Codex, Pi and Hermes. Each agent knows the drill
-      without being told.</p>
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
-      <h3>Syncs agent config</h3>
-      <p>Optional: one set of instructions, skills, subagents and hooks on every machine, wired
-      into each harness. Peer to peer over the same SSH, with history and no server.</p>
-    </td>
-    <td valign="top">
       <h3>Takes only what you turn on</h3>
-      <p>Connecting machines is always on. Secrets and agent config are layers you switch on or
-      off for the whole fleet with one command.</p>
+      <p>Connecting machines is always on. <a href="#secrets">Secrets</a> and
+      <a href="#agent-config">agent config</a> are layers you switch on or off for the whole
+      fleet with one command.</p>
     </td>
   </tr>
 </table>
+
+Secrets keep values out of the places they leak by accident, not away from an agent that sets
+out to read one. [What secrets protect](#what-secrets-protect) has the details.
 
 Yonder connects machines. It does not decide what your agent may do. Your harness already does
 that, with its own permission modes.
