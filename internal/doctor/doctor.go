@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -331,7 +332,7 @@ func tailscaleChecks(e Env, add func(string, Status, string, string)) bool {
 	} else if e.TailscaleBin != nil {
 		bin, err := e.TailscaleBin()
 		if err != nil {
-			add("tailscale installed", Fail, "the tailscale CLI was not found", "install Tailscale: https://tailscale.com/download")
+			add("tailscale installed", Fail, "the tailscale CLI was not found", "install Tailscale (https://tailscale.com/download) and log in, with the same account on every computer you connect")
 			return false
 		}
 		add("tailscale installed", Pass, bin, "")
@@ -340,14 +341,14 @@ func tailscaleChecks(e Env, add func(string, Status, string, string)) bool {
 		msg := e.StatusErr.Error()
 		switch {
 		case errors.Is(e.StatusErr, tailnet.ErrNotInstalled):
-			add("tailscale installed", Fail, "the tailscale CLI was not found", "install Tailscale: https://tailscale.com/download")
+			add("tailscale installed", Fail, "the tailscale CLI was not found", "install Tailscale (https://tailscale.com/download) and log in, with the same account on every computer you connect")
 		case strings.Contains(msg, "NeedsLogin") || strings.Contains(msg, "NeedsMachineAuth"):
 			add("tailscale running", Pass, "tailscaled is up", "")
-			add("tailscale logged in", Fail, "not logged in ("+backendState(msg)+")", "tailscale up")
+			add("tailscale logged in", Fail, "not logged in ("+backendState(msg)+")", tailnet.LoginHint(runtime.GOOS))
 		case strings.Contains(msg, "YONDER_TAILSCALE_JSON"):
 			add("tailscale running", Fail, msg, "point YONDER_TAILSCALE_JSON at a readable status file, or unset it")
 		default:
-			add("tailscale running", Fail, msg, "start Tailscale (open the app, or `sudo systemctl start tailscaled`), then `tailscale up`")
+			add("tailscale running", Fail, msg, startHint(runtime.GOOS))
 		}
 		return false
 	}
@@ -846,3 +847,11 @@ func LocalHome() string { return registry.UserHome() }
 
 // AuthorizedKeysScript prints ~/.ssh/authorized_keys on a remote, or nothing.
 const AuthorizedKeysScript = `cat "$HOME/.ssh/authorized_keys" 2>/dev/null; exit 0`
+
+// startHint is the fix when tailscale isn't running at all.
+func startHint(goos string) string {
+	if goos == "darwin" {
+		return "open the Tailscale app and log in"
+	}
+	return "`sudo systemctl start tailscaled`, then `sudo tailscale up` and log in"
+}

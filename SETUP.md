@@ -54,7 +54,8 @@ in to the same account. You can't do this for them. Say:
 > the same account on all of them. Tell me when that's done.
 
 If `tailscale status` says it is stopped or logged out, ask them to open the Tailscale app and
-log in (or run `sudo tailscale up` on Linux, which needs their password).
+log in on a Mac, or run `sudo tailscale up` on Linux, which needs their password. A machine
+logged in to a different Tailscale account won't show up; ask them to log it in to the same one.
 
 **SSH on this machine.** Other machines reach this one over SSH. On macOS that is Remote Login.
 Check with `nc -z 127.0.0.1 22 && echo on` (or `yonder init --list` later, which reports it). If

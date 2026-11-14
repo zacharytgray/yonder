@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -224,5 +225,14 @@ func TestTaggedNodeWithSameUserIDNotOwned(t *testing.T) {
 	}
 	if st.Owned(st.Peers[0]) {
 		t.Fatal("a tagged node with the same user id must not count as owned")
+	}
+}
+
+func TestLoginHint(t *testing.T) {
+	if h := LoginHint("darwin"); !strings.Contains(h, "Tailscale app") {
+		t.Errorf("darwin: %q", h)
+	}
+	if h := LoginHint("linux"); !strings.Contains(h, "sudo tailscale up") {
+		t.Errorf("linux: %q", h)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -17,10 +18,18 @@ import (
 const macAppBinary = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 
 var (
-	ErrNotInstalled = errors.New("tailscale not found; install it from https://tailscale.com/download")
-	ErrNotRunning   = errors.New("tailscale is not running or not logged in; run `tailscale up`")
+	ErrNotInstalled = errors.New("tailscale not found; install it from https://tailscale.com/download and log in, with the same account on every computer you connect")
+	ErrNotRunning   = errors.New("tailscale is not running or not logged in; " + LoginHint(runtime.GOOS))
 	ErrSandboxed    = errors.New("can't reach tailscale")
 )
+
+// LoginHint is how a person starts tailscale and logs in on goos.
+func LoginHint(goos string) string {
+	if goos == "darwin" {
+		return "open the Tailscale app and log in"
+	}
+	return "run `sudo tailscale up` and log in"
+}
 
 type Peer struct {
 	HostName     string    `json:"host_name"`

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -180,7 +181,7 @@ func TestNotSetUpAndTailscaleDown(t *testing.T) {
 	e.Self = ""
 	e.Status, e.StatusErr = nil, errors.New(tailnet.ErrNotRunning.Error()+" (state NeedsLogin)")
 	cs := Run(e)
-	if c, _ := find(cs, groupLocal, "tailscale logged in"); c.Status != Fail || c.Fix != "tailscale up" {
+	if c, _ := find(cs, groupLocal, "tailscale logged in"); c.Status != Fail || c.Fix != tailnet.LoginHint(runtime.GOOS) {
 		t.Fatalf("logged in: %+v", c)
 	}
 	if c, _ := find(cs, groupLocal, "set up"); c.Status != Fail || c.Fix != "yonder init" {

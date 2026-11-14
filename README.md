@@ -62,6 +62,10 @@ every 15 minutes. [Layers](#layers) shows how to switch them.
 
 ## Set it up
 
+**Before you start:** install [Tailscale](https://tailscale.com/download) on each computer you
+want to connect, and log in with the same account on all of them. Yonder uses it to find your
+machines. Your agent will check this and turn on SSH with you.
+
 Tell Claude Code, Codex or any coding agent:
 
 > Set up Yonder for me: https://github.com/zacharytgray/yonder
@@ -69,7 +73,8 @@ Tell Claude Code, Codex or any coding agent:
 It follows [SETUP.md](SETUP.md). It checks Tailscale and SSH, asks which machines join and
 which layers to turn on, runs the setup, and tells you the few steps only you can do.
 
-Or do it by hand:
+Or do it by hand. Each computer needs Tailscale, logged in to the same account, and SSH turned
+on (on macOS: System Settings → General → Sharing → Remote Login). Then:
 
 ```sh
 brew trust --cask zacharytgray/yonder/yonder
@@ -163,8 +168,10 @@ that, with its own permission modes.
 
 To have an agent do this, see [Set it up](#set-it-up). By hand:
 
-You need [Tailscale](https://tailscale.com/download) on each machine, and SSH turned on for the
-machines you want to reach (on macOS: System Settings → General → Sharing → Remote Login).
+You need [Tailscale](https://tailscale.com/download) on each machine, logged in to the same
+account on all of them, and SSH turned on for the machines you want to reach (on macOS: System
+Settings → General → Sharing → Remote Login). If Tailscale is missing or logged out, `yonder
+init` stops and says what to do.
 
 ```sh
 brew trust --cask zacharytgray/yonder/yonder

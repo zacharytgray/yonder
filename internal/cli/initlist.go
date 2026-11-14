@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -65,9 +66,9 @@ func (a *app) initList(asJSON, probe bool, user string, allowShared bool) error 
 		v.TailscaleError = err.Error()
 		switch {
 		case errors.Is(err, tailnet.ErrNotInstalled):
-			v.Next = "install Tailscale on this machine (https://tailscale.com/download), log in, then run this again"
+			v.Next = "install Tailscale on this machine (https://tailscale.com/download) and log in, with the same account on every computer you connect, then run this again"
 		default:
-			v.Next = "start Tailscale and log in (`tailscale up`, or open the Tailscale app), then run this again"
+			v.Next = tailnet.LoginHint(runtime.GOOS) + ", then run this again"
 		}
 		if asJSON {
 			_ = writeJSON(a.out, v)
