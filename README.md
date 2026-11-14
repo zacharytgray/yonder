@@ -21,10 +21,10 @@
 **[<kbd> <br> Design <br> </kbd>](docs/design.md)**
 
 <a href="docs/demo/yonder-demo.mp4">
-  <img src="docs/demo/hero.gif" width="100%" alt="Text one agent, fix any machine. From a phone: I forgot my presentation on my Mac Mini, can you send it to my laptop? The agent on the Mac Mini runs yonder ls, sees the laptop, PC and a sleeping Raspberry Pi, copies Talk.key to the laptop with yonder cp, and starts a fine-tune on the PC because it has the free GPU. Then yonder secret setup with 1Password, a secret that prints as [HF_TOKEN], yonder log, a Homebrew install, and the skill going into Claude Code, Codex, Pi and Hermes.">
+  <img src="docs/demo/hero.gif" width="100%" alt="Every computer you own, one agent. From a phone: Shoot, I forgot to move my slides to my laptop. Can you send them over? The agent on the Mac Mini runs yonder ls, finds Talk.key and copies it to the laptop's Desktop with yonder cp, then finds the thesis code on the PC with yonder run. yonder layers shows agent config syncing, and the laptop's CLAUDE.md holds the same map of every machine. A secret from 1Password prints as [HF_TOKEN], and yonder log records it by name. Then a Homebrew install, one binary with no server and no daemon, and the skill going into Claude Code, Codex, Pi and Hermes.">
 </a>
 
-**[▶ Watch the 33-second demo, with sound](docs/demo/yonder-demo.mp4)**
+**[▶ Watch the 41-second demo, with sound](docs/demo/yonder-demo.mp4)**
 
 </div>
 
@@ -68,11 +68,15 @@ agent  $ yonder ls
        mac-mini      server   this machine    M4 · 16 GB              claude-code,hermes
        pc            desktop  online          RTX 4090 24 GB · 64 GB  -
        raspberry-pi  other    offline 2h ago  Cortex-A76 · 8 GB       -
+       layers: secrets on, agents on (yonder layers)
+
+       $ ls ~/Documents/*.key
+       /Users/me/Documents/Talk.key
 
        $ yonder cp ~/Documents/Talk.key laptop:~/Desktop/
        copied Talk.key (folder, 23 files, 18.4 MB) to laptop:/Users/me/Desktop/Talk.key
 
-       Sent. Talk.key is on your laptop's Desktop.
+       Done. Talk.key is on your laptop's Desktop.
 ```
 
 <table>
