@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -275,7 +277,10 @@ func TestFleetOverSSH(t *testing.T) {
 
 	oldRecordOverSSH(t, f)
 	agentsOverSSH(t, f, a, b)
+	scheduleOverSSH(t, f, a, b)
+	acceptOverSSH(t, f, a, b)
 	briefingOverSSH(t, f, a, b)
+	reconcileOverSSH(t, f, a, b)
 
 	// node-c: a record pointing at node-a's port with node-b's host key must be refused (pinning)
 	machines := filepath.Join(f.home, "yonder", "config", "machines")
@@ -553,7 +558,7 @@ func briefingOverSSH(t *testing.T, f *fleet, a, b node) {
 		t.Fatalf("gather text: %s", r.stdout)
 	}
 	f.must("disable", "agents")
-	if r := f.must("enable", "agents"); !strings.Contains(r.stdout, "instructions differ; yonder won't pick one") {
+	if r := f.must("enable", "agents"); !strings.Contains(r.stdout, "agent instructions don't match") || !strings.Contains(r.stdout, "if you are an agent") {
 		t.Fatalf("enable should say the files differ: %s", r.stdout)
 	}
 	// gather only reads
@@ -577,5 +582,210 @@ func briefingOverSSH(t *testing.T, f *fleet, a, b node) {
 	f.must("run", a.name, "--", y+" agents unlink")
 	if r := f.must("run", a.name, "--", "cat ~/.claude/CLAUDE.md"); strings.Contains(r.stdout, "yonder") {
 		t.Fatalf("unlink leaves node-a's own text: %s", r.stdout)
+	}
+}
+
+// scheduleOverSSH: enable agents put the sync schedule on every machine, and
+// running what the job runs syncs with the containers and records the run.
+func scheduleOverSSH(t *testing.T, f *fleet, a, b node) {
+	t.Helper()
+	for _, n := range []node{a, b} {
+		r := f.must("run", n.name, "--", "cat ~/.config/systemd/user/yonder-sync.timer ~/.config/systemd/user/yonder-sync.service")
+		if !strings.Contains(r.stdout, "yonder:schedule v1") || !strings.Contains(r.stdout, "OnCalendar=*:") || !strings.Contains(r.stdout, "sync --scheduled") {
+			t.Fatalf("%s has no schedule: %s", n.name, r.stdout)
+		}
+	}
+	// this host's job, under YONDER_HOME, run the way launchd or systemd would
+	home := filepath.Join(f.home, "yonder", "home")
+	args, env := jobCommand(t, home)
+	cmd := exec.Command(args[0], args[1:]...)
+	env = append(env, "HOME="+f.home, "USER=me", "YONDER_SCHEDULE_JITTER=off", "YONDER_SYNC_BACKGROUND=off")
+	cmd.Env = env
+	// launchd and systemd send this to schedule.log; here it comes back directly
+	logb, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the scheduled job: %v\n%s", err, logb)
+	}
+	var st struct {
+		LastRun *struct {
+			Exit *int `json:"exit"`
+		} `json:"last_run"`
+	}
+	if err := json.Unmarshal([]byte(f.must("schedule", "status", "--json").stdout), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.LastRun == nil || st.LastRun.Exit == nil || *st.LastRun.Exit != 0 {
+		t.Fatalf("the run wasn't recorded: %+v\nlog:\n%s", st.LastRun, logb)
+	}
+	if !strings.Contains(string(logb), "agents: node-a:") {
+		t.Fatalf("the scheduled sync didn't reach node-a:\n%s", logb)
+	}
+	if r := f.run("", "doctor"); !strings.Contains(r.stdout, "every 15 minutes; last run") {
+		t.Fatalf("doctor's schedule line: %s", r.stdout)
+	}
+}
+
+// jobCommand reads the command and environment out of this host's job file.
+func jobCommand(t *testing.T, home string) ([]string, []string) {
+	t.Helper()
+	if runtime.GOOS == "darwin" {
+		data, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "com.yonder.sync.plist"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(data)
+		after := func(s, sep string) string {
+			i := strings.Index(s, sep)
+			if i < 0 {
+				t.Fatalf("no %s in the plist", sep)
+			}
+			return s[i:]
+		}
+		strs := func(from, to string) []string {
+			part := after(s, from)
+			part, _, _ = strings.Cut(part, to)
+			var out []string
+			for _, x := range strings.Split(part, "<string>")[1:] {
+				v, _, _ := strings.Cut(x, "</string>")
+				out = append(out, v)
+			}
+			return out
+		}
+		args := strs("<key>ProgramArguments</key>", "</array>")
+		var env []string
+		keys, _, _ := strings.Cut(after(s, "<key>EnvironmentVariables</key>"), "</dict>")
+		vals := strs("<key>EnvironmentVariables</key>", "</dict>")
+		i := 0
+		for _, k := range strings.Split(keys, "<key>")[2:] {
+			name, _, _ := strings.Cut(k, "</key>")
+			env = append(env, name+"="+vals[i])
+			i++
+		}
+		return args, env
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".config", "systemd", "user", "yonder-sync.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var args, env []string
+	for _, l := range strings.Split(string(data), "\n") {
+		if v, ok := strings.CutPrefix(l, "ExecStart="); ok {
+			bin, rest, _ := strings.Cut(strings.TrimPrefix(v, `"`), `" `)
+			args = append([]string{bin}, strings.Fields(rest)...)
+		}
+		if v, ok := strings.CutPrefix(l, "Environment="); ok {
+			env = append(env, strings.Trim(v, `"`))
+		}
+	}
+	return args, env
+}
+
+// acceptOverSSH: an agent's hook edit on node-a waits here and on node-b;
+// one confirmation at this terminal accepts it on both.
+func acceptOverSSH(t *testing.T, f *fleet, a, b node) {
+	t.Helper()
+	const remoteStore = "~/.local/share/yonder/agents"
+	f.must("run", a.name, "--", "mkdir -p "+remoteStore+"/hooks && printf '#!/bin/sh\\necho agent edit\\n' > "+remoteStore+"/hooks/agent.sh && chmod +x "+remoteStore+"/hooks/agent.sh")
+	r := f.must("sync")
+	if !strings.Contains(r.stdout, "yonder agents accept --all-machines") {
+		t.Fatalf("sync should name the accept command: %s", r.stdout)
+	}
+	store := filepath.Join(f.home, "yonder", "data", "agents")
+	if _, err := os.Stat(filepath.Join(store, "hooks", "agent.sh")); err == nil {
+		t.Fatal("an agent's hook edit went live without review")
+	}
+	if r := f.run("", "agents", "accept", "--all-machines"); r.code == 0 || !strings.Contains(r.stderr, "needs a person at a terminal") {
+		t.Fatalf("no terminal must refuse: %+v", r)
+	}
+	if _, err := exec.LookPath("script"); err != nil {
+		t.Log("no script(1): skipping the terminal half of accept --all-machines")
+		return
+	}
+	// a person at a terminal: script gives it a pty
+	pr, pw := io.Pipe()
+	go func() {
+		// the person types y; a terminal query at startup, which nothing here
+		// answers, can eat what comes first, so type it again a little later
+		for _, d := range []time.Duration{8, 6} {
+			time.Sleep(d * time.Second)
+			if _, err := pw.Write([]byte("y\r")); err != nil {
+				return
+			}
+		}
+		time.Sleep(10 * time.Second)
+		pw.Close()
+	}()
+	cmd := exec.Command("script", "-qefc", "stty rows 40 cols 120; "+yonderBin+" agents accept --all-machines", "/dev/null")
+	cmd.Env = append(slices.Clone(f.env), "TERM=xterm")
+	cmd.Dir = f.home
+	cmd.Stdin = pr
+	out, err := cmd.CombinedOutput()
+	_ = pr.CloseWithError(io.EOF) // stop the key presses
+	if err != nil {
+		t.Fatalf("accept --all-machines in a terminal: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "node-b") || !strings.Contains(string(out), "hooks/agent.sh") {
+		t.Fatalf("the summary should list node-b's change: %s", out)
+	}
+	if b, err := os.ReadFile(filepath.Join(store, "hooks", "agent.sh")); err != nil || !strings.Contains(string(b), "agent edit") {
+		t.Fatalf("not live here after accept: %v\n%s", err, out)
+	}
+	if r := f.must("run", b.name, "--", "cat "+remoteStore+"/hooks/agent.sh"); !strings.Contains(r.stdout, "agent edit") {
+		t.Fatalf("not live on node-b after accept: %s\n%s", r.stdout, out)
+	}
+	if r := f.must("run", b.name, "--", "grep -c _accept-apply ~/.local/state/yonder/log.jsonl"); strings.TrimSpace(r.stdout) == "0" {
+		t.Fatalf("node-b should log the accept: %s", r.stdout)
+	}
+}
+
+// reconcileOverSSH: a plan settles node-a's and node-b's differing CLAUDE.md
+// files, and undo puts both back.
+func reconcileOverSSH(t *testing.T, f *fleet, a, b node) {
+	t.Helper()
+	own := func(n node) string {
+		return f.must("run", n.name, "--", "cat ~/.claude/CLAUDE.md").stdout
+	}
+	beforeA, beforeB := own(a), own(b)
+	var g struct {
+		Fingerprint string `json:"fingerprint"`
+	}
+	if err := json.Unmarshal([]byte(f.must("agents", "gather", "--json").stdout), &g); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(t.TempDir(), "plan.json")
+	body := `{"v":1,"fingerprint":"` + g.Fingerprint + `","sections":[
+	  {"key":"# style","action":"shared","from":"node-a"},
+	  {"key":"# models","action":"merge","text":"# Models\nbig one for planning, small one for scouting"},
+	  {"key":"# gpu","action":"per-machine"}]}`
+	if err := os.WriteFile(plan, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := f.must("agents", "reconcile", "--plan", plan)
+	if !strings.Contains(r.stdout, "node-a: took") || !strings.Contains(r.stdout, "node-b: took") {
+		t.Fatalf("reconcile: %s", r.stdout)
+	}
+	afterA := own(a)
+	ownA, _, found := strings.Cut(afterA, "<!-- yonder:begin")
+	if !found {
+		t.Fatalf("node-a has no block after reconcile:\n%s", afterA)
+	}
+	if strings.Contains(ownA, "be brief") || strings.Contains(ownA, "node-a only") || !strings.Contains(afterA, "big one for planning") || !strings.Contains(afterA, "node-a only") {
+		t.Fatalf("node-a after reconcile:\n%s\n%s", afterA, r.stdout)
+	}
+	afterB := own(b)
+	if strings.Contains(afterB, "node-a only") || !strings.Contains(afterB, "be brief") {
+		t.Fatalf("node-b after reconcile:\n%s", afterB)
+	}
+	if b, _ := os.ReadFile(filepath.Join(f.home, "yonder", "data", "agents", "machines", "node-a", "instructions.md")); !strings.Contains(string(b), "node-a only") {
+		t.Fatalf("node-a's overlay: %q", b)
+	}
+	r = f.must("agents", "reconcile", "--undo")
+	if !strings.Contains(r.stdout, "undone") {
+		t.Fatalf("undo: %s", r.stdout)
+	}
+	for n, before := range map[node]string{a: beforeA, b: beforeB} {
+		if got := own(n); !strings.HasPrefix(got, strings.TrimRight(before, "\n")) {
+			t.Fatalf("%s after undo:\n%s\nwant it to start with:\n%s", n.name, got, before)
+		}
 	}
 }

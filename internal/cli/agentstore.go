@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/zacharytgray/yonder/internal/agents"
@@ -20,18 +19,6 @@ import (
 // backgroundOff stops commands from starting a background sync: tests, and
 // YONDER_SYNC_BACKGROUND=off.
 var backgroundOff = os.Getenv("YONDER_SYNC_BACKGROUND") == "off"
-
-// acceptTTY and acceptAsk are the terminal check and the question accept asks; tests swap them.
-var (
-	acceptTTY = func() bool { return isTerminal(os.Stdin) && isTerminal(os.Stdout) }
-	acceptAsk = func(q string) bool {
-		ok := false
-		if err := huh.NewConfirm().Title(q).Affirmative("Accept").Negative("Not now").Value(&ok).Run(); err != nil {
-			return false
-		}
-		return ok
-	}
-)
 
 // pushSoon starts a background sync of the agents store after a change here.
 func (a *app) pushSoon() {
@@ -133,8 +120,11 @@ links follow on their own. Run it again any time.`,
 			if err := l.Link(hs); err != nil {
 				return err
 			}
-			if !dryRun {
-				fmt.Fprintln(a.out, "to sync at the start of each session, have the harness run `yonder sync --background` (for Claude Code, a SessionStart hook)")
+			if _, ok := agents.CodexOverride(agents.Home()); ok && slices.Contains(hs, "codex") {
+				a.warnf("WARNING: %s", agents.CodexOverrideNote(agents.Home()))
+			}
+			if !dryRun && !scheduleHere() {
+				fmt.Fprintln(a.out, "no sync schedule runs here, so store edits arrive only when a sync runs; `yonder schedule install` adds one")
 			}
 			return nil
 		},
@@ -266,6 +256,7 @@ A store file that differs is left alone unless --replace (the old one is kept).`
 			fmt.Fprintf(a.out, "%d added, %d replaced, %d unchanged, %d left as they are, %d refused\n",
 				counts["added"], counts["replaced"], counts["unchanged"], counts["exists"], counts["refused"]+counts["failed"])
 			if !o.DryRun && counts["added"]+counts["replaced"] > 0 {
+				a.offerReviewed(s, rs)
 				a.pushSoon()
 			}
 			if failed {
@@ -414,79 +405,6 @@ func orNoDiff(d string) string {
 		return "no difference\n"
 	}
 	return d
-}
-
-func newAgentsAcceptCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "accept [path...]",
-		Short: "Review incoming hooks and other executables, and make them live",
-		Long: `Hooks run code, so a new or changed one from another machine waits here until you
-accept it: it syncs on to the fleet, but nothing runs it on this machine yet. accept shows
-each change (all, or the paths named) and asks. It needs a terminal, so an agent can't
-accept for you.
-
-Which changes wait is [sync] review in ~/.config/yonder/config.toml: "executables" (the
-default: hooks, executable files, hook configs), "all", or "none".`,
-		Args: usageArgs(cobra.ArbitraryArgs),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a := newApp(cmd)
-			s, _, err := a.agentStore("agents accept")
-			if err != nil {
-				return err
-			}
-			items, err := s.PendingList()
-			if err != nil {
-				return err
-			}
-			s.Unlock()
-			if len(args) > 0 {
-				items = slices.DeleteFunc(items, func(it store.PendingItem) bool {
-					return !slices.Contains(args, it.Path) && !slices.Contains(args, storeRel(s, it.Path))
-				})
-			}
-			if len(items) == 0 {
-				fmt.Fprintln(a.out, "nothing waits for review")
-				return nil
-			}
-			if !acceptTTY() {
-				for _, it := range items {
-					fmt.Fprintf(a.out, "waiting: %s (%s)\n", agents.Printable(it.Path), originText(it.State.Origin))
-				}
-				return errors.New("accept needs a person at a terminal; run `yonder agents accept` there (yonder agents diff <path> shows a change)")
-			}
-			accepted := 0
-			_, err = withStore(s, func() error {
-				for _, it := range items {
-					live, in, err := s.PendingData(it.Path)
-					if err != nil {
-						fmt.Fprintf(a.out, "%s: %v\n", agents.Printable(it.Path), err)
-						continue
-					}
-					fmt.Fprintf(a.out, "\n%s (%s)\n", agents.Printable(it.Path), originText(it.State.Origin))
-					fmt.Fprint(a.out, pendingDiff(it, live, in))
-					if !acceptAsk("Make " + agents.Printable(it.Path) + " live on this machine?") {
-						fmt.Fprintf(a.out, "left %s waiting\n", agents.Printable(it.Path))
-						continue
-					}
-					if err := s.Accept(it.Path); err != nil {
-						fmt.Fprintf(a.out, "%s: %v\n", agents.Printable(it.Path), err)
-						continue
-					}
-					accepted++
-					fmt.Fprintf(a.out, "accepted %s\n", agents.Printable(it.Path))
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-			if accepted > 0 {
-				a.relinkHere()
-			}
-			return nil
-		},
-	}
-	return cmd
 }
 
 // relinkHere refreshes this machine's links after a local change made files live.

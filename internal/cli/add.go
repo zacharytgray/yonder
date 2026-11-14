@@ -31,6 +31,7 @@ type addOpts struct {
 	interactive bool
 	allowShared bool   // take a peer another tailscale account owns
 	noMesh      bool   // don't authorize fleet keys to and from it
+	noSchedule  bool   // don't install the sync schedule there
 	pin         string // a host key held from before: checked strictly, never replaced
 }
 
@@ -65,6 +66,7 @@ account) is refused unless --allow-shared is given.`,
 	f.BoolVar(&o.allowShared, "allow-shared", false, "allow a peer another tailscale account owns (node sharing)")
 	f.BoolVar(&yes, "yes", false, "never prompt (and authorize fleet keys to and from it)")
 	f.BoolVar(&o.noMesh, "no-mesh", false, "don't add fleet machines' ssh keys to it, or its keys to them")
+	f.BoolVar(&o.noSchedule, "no-schedule", false, "don't install the 15-minute sync schedule there (agents layer only)")
 	return cmd
 }
 
@@ -111,9 +113,15 @@ func (a *app) addCommand(arg string, o addOpts) error {
 		return err
 	}
 	fmt.Fprintf(a.out, "added %s (%s/%s, %s@%s)\n", m.Name, m.OS, m.Arch, m.SSHUser, m.TailscaleIP)
+	if o.noSchedule {
+		a.declineSchedule(self, m.Name) // before the sync that brings it the layer
+	}
 	a.syncFleet(self)
 	a.syncStoresQuiet(self)
 	a.offerMesh(self, m.Name, o)
+	if !o.noSchedule {
+		a.scheduleMachines(self, []string{m.Name}, false)
+	}
 	return nil
 }
 
@@ -136,7 +144,7 @@ func (a *app) resolvePeer(st *tailnet.Status, arg string, allowShared, interacti
 	ps := st.Match(arg)
 	switch len(ps) {
 	case 0:
-		return tailnet.Peer{}, fmt.Errorf("%s is not a peer in this tailnet; `tailscale status` lists them", arg)
+		return tailnet.Peer{}, fmt.Errorf("%s is not a peer in this tailnet; `yonder init --list` shows the ones there are (log it in to the same Tailscale account if it's missing)", arg)
 	case 1:
 	default:
 		names := make([]string, len(ps))

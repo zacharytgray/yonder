@@ -19,6 +19,7 @@ import (
 	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/runlog"
+	"github.com/zacharytgray/yonder/internal/schedule"
 	"github.com/zacharytgray/yonder/internal/tailnet"
 	"github.com/zacharytgray/yonder/internal/transport"
 )
@@ -96,8 +97,12 @@ func Sync(ctx context.Context, _ []string, in io.Reader, out, errw io.Writer) in
 	}
 	// a layer turned off elsewhere stops here too
 	if cfg, err := s.Config(); err == nil && cfg.Self != "" {
-		if err := agents.ApplyLayer(s.LayerOn(registry.LayerAgents), cfg.Self, nil); err != nil {
+		on := s.LayerOn(registry.LayerAgents)
+		if err := agents.ApplyLayer(on, cfg.Self, nil); err != nil {
 			fmt.Fprintf(errw, "yonder _sync: agents layer: %v\n", err)
+		}
+		if _, err := schedule.Apply(on, cfg.Self); err != nil {
+			fmt.Fprintf(errw, "yonder _sync: sync schedule: %v\n", err)
 		}
 	}
 	if err := json.NewEncoder(out).Encode(merged); err != nil {

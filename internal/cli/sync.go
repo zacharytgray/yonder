@@ -31,6 +31,7 @@ type syncOpts struct {
 	deletes    bool // let a scan delete most of a store
 	staleOK    bool // take files a long-absent machine brings back
 	quiet      bool // only problems: for syncs that ride on another command
+	scheduled  bool // run by the timer: record the result for doctor
 }
 
 func newSyncCmd() *cobra.Command {
@@ -54,8 +55,9 @@ haven't synced with each other for over 90 days hold back the old files only one
 has, since the other may have deleted them meanwhile; --stale-ok syncs them, and clears every
 hold this machine keeps, for every machine.
 
-There is no daemon. --background starts the sync and returns at once, for a
-session-start hook. --dry-run shows what would move and changes nothing here (the
+There is no daemon. With the agents layer on, a timer on each machine runs this every
+15 minutes, at login and on wake (` + "`yonder schedule`" + `). --background starts the sync and
+returns at once. --dry-run shows what would move and changes nothing here (the
 other machines still record their own edits).`,
 		Args: usageArgs(cobra.ArbitraryArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,6 +74,9 @@ other machines still record their own edits).`,
 			if o.background {
 				return a.syncBackground(only, args)
 			}
+			if o.scheduled {
+				return a.runScheduled(o)
+			}
 			return a.syncCommand(only, args, o)
 		},
 	}
@@ -81,6 +86,8 @@ other machines still record their own edits).`,
 	cmd.Flags().StringVar(&o.keep, "keep", "", "with --resolve: mine, theirs, or a machine name")
 	cmd.Flags().BoolVar(&o.deletes, "allow-deletes", false, "let this sync delete most or all of a store here (it stops otherwise)")
 	cmd.Flags().BoolVar(&o.staleOK, "stale-ok", false, "sync held-back files and clear every hold this machine keeps, for all machines")
+	cmd.Flags().BoolVar(&o.scheduled, "scheduled", false, "what the sync schedule runs: record the result for doctor")
+	_ = cmd.Flags().MarkHidden("scheduled")
 	return cmd
 }
 
@@ -257,7 +264,8 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 	}
 	gotAt := map[string]int{} // how many changes this machine had received when it synced each peer
 	failed := map[string]bool{}
-	received := 0
+	received, waitThere := 0, 0
+	var live []string
 	for pass := 0; pass < 2; pass++ {
 		for _, m := range peers {
 			if pass == 1 && (failed[m.Name] || gotAt[m.Name] == received) {
@@ -286,12 +294,30 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 			}
 			received += len(rep.Got) + len(rep.Conflicts)
 			gotAt[m.Name] = received
+			waitThere += len(rep.PeerPending)
+			for _, g := range rep.Got {
+				if g.Action != "pending" && g.Action != "deleted" {
+					live = append(live, g.Path)
+				}
+			}
 			if !a.printReport(name, rep, o.quiet) {
 				ok = false
 			}
 		}
 		if o.dryRun {
 			break
+		}
+	}
+	if !o.dryRun {
+		here := 0
+		if items, err := s.PendingList(); err == nil {
+			here = len(items)
+		}
+		if h := acceptHint(here, waitThere); h != "" {
+			fmt.Fprintf(a.out, "%s: %s\n", name, h)
+		}
+		if codexHooks(live) {
+			fmt.Fprintf(a.out, "%s: %s\n", name, codexTrustNote)
 		}
 	}
 	return ok
@@ -325,6 +351,8 @@ func (a *app) printReport(name string, r store.Report, quiet bool) bool {
 			what = "deleted"
 		case "pending":
 			what = "waits for review:"
+		case "accepted":
+			what = "reviewed on " + agents.Printable(g.State.Reviewed) + ", now live:"
 		}
 		line("%s %s (%s)", what, agents.Printable(g.Path), originText(g.State.Origin))
 	}
@@ -336,7 +364,7 @@ func (a *app) printReport(name string, r store.Report, quiet bool) bool {
 		}
 	}
 	for _, p := range r.PeerPending {
-		line("sent %s; it waits for review on %s (`yonder agents accept` there)", p, r.Peer)
+		line("sent %s; it waits for review on %s", p, r.Peer)
 	}
 	for _, c := range r.Conflicts {
 		line("conflict at %s: kept %s's edit; %s's is at %s (yonder sync --resolve %s --keep mine|theirs)", c.Path, c.Winner, c.Loser, c.Copy, c.Path)

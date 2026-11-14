@@ -2,11 +2,12 @@ package agents
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,9 +39,17 @@ func GatherScript() string {
 	for _, f := range GatherFiles {
 		paths = append(paths, f.Path)
 	}
+	// codex's folder: the one the last explicit link saved, as CodexHome
+	// decides, then $CODEX_HOME, then ~/.codex
 	return `printf '%s\n' '` + ReplyStart + `'
+if [ -n "${YONDER_HOME:-}" ]; then st="$YONDER_HOME/state"; else st="${XDG_STATE_HOME:-$HOME/.local/state}/yonder"; fi
+ch=""
+if [ -f "$st/agents/links.json" ]; then
+  ch=$(sed -n 's/^ *"codex_home": *"\([^"\\]*\)",*$/\1/p' "$st/agents/links.json" | head -n 1)
+fi
+[ -n "$ch" ] || ch="${CODEX_HOME:-$HOME/.codex}"
 for f in ` + strings.Join(paths, " ") + `; do
-  p="$HOME/$f"
+  case "$f" in .codex/*) p="$ch/${f#.codex/}" ;; *) p="$HOME/$f" ;; esac
   [ -f "$p" ] || continue
   n=$(wc -c < "$p" | tr -d ' ')
   if [ "$n" -gt ` + strconv.Itoa(gatherMax) + ` ]; then printf '=== %s %s skipped\n' "$f" "$n"; continue; fi
@@ -93,7 +102,7 @@ func ParseGather(r io.Reader) (map[string][]byte, error) {
 func GatherHere(home string) map[string][]byte {
 	out := map[string][]byte{}
 	for _, f := range GatherFiles {
-		p := filepath.Join(home, f.Path)
+		p := InstructionsPath(home, f.Path)
 		if st, err := os.Stat(p); err != nil || !st.Mode().IsRegular() || st.Size() > gatherMax {
 			continue
 		}
@@ -121,16 +130,41 @@ func OwnText(data []byte) (string, bool) {
 	return text, false
 }
 
+// OwnCanon is the user's own text as staleness checks compare it: the file
+// without yonder's block, and without the blank lines at the block's edges
+// or the file's end, which link adds. everything else counts, whitespace too,
+// so a re-render of the block never makes a file look edited.
+func OwnCanon(data []byte) string {
+	text := string(data)
+	if strings.HasPrefix(text, renderMark) {
+		return ""
+	}
+	before, after, found, err := splitBlock(text)
+	if err != nil || !found {
+		return strings.TrimRight(text, "\n") + "\n"
+	}
+	return strings.TrimRight(before, "\n") + "\n" + strings.TrimLeft(after, "\n")
+}
+
+// OwnHash is the sha256 of OwnCanon: what gather reports and reconcile checks.
+func OwnHash(data []byte) string {
+	sum := sha256.Sum256([]byte(OwnCanon(data)))
+	return hex.EncodeToString(sum[:])
+}
+
 // a section of one file: a heading and what follows it up to the next heading,
-// or, where there are no headings, a paragraph
+// or, where there are no headings, a paragraph. lines are its line numbers in
+// the text it came from, so it can be cut out again.
 type section struct {
 	key, heading, text string
+	lines              []int
 }
 
 func splitSections(text string) []section {
 	var out []section
 	var cur *section
 	var para []string
+	var paraLines []int
 	keys := map[string]int{}
 	addKey := func(k string) string {
 		keys[k]++
@@ -141,10 +175,10 @@ func splitSections(text string) []section {
 	}
 	flushPara := func() {
 		t := normText(strings.Join(para, "\n"))
-		para = nil
 		if t != "" {
-			out = append(out, section{key: addKey("¶ " + clip(firstLineOf(t), 60)), text: t})
+			out = append(out, section{key: addKey("¶ " + clip(firstLineOf(t), 60)), text: t, lines: paraLines})
 		}
+		para, paraLines = nil, nil
 	}
 	flushHead := func() {
 		if cur != nil {
@@ -153,27 +187,52 @@ func splitSections(text string) []section {
 			cur = nil
 		}
 	}
-	for _, line := range strings.Split(text, "\n") {
-		if isHeading(line) {
+	fence := "" // the open code fence, if any: a # line inside one is code, not a heading
+	for i, line := range strings.Split(text, "\n") {
+		if f := fenceOf(line); f != "" {
+			switch {
+			case fence == "":
+				fence = f
+			case strings.HasPrefix(strings.TrimSpace(line), fence) && strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), fence[:1])) == "":
+				fence = ""
+			}
+		} else if fence == "" && isHeading(line) {
 			flushPara()
 			flushHead()
 			h := strings.TrimSpace(line)
-			cur = &section{key: addKey(strings.ToLower(strings.Join(strings.Fields(h), " "))), heading: h}
+			cur = &section{key: addKey(strings.ToLower(strings.Join(strings.Fields(h), " "))), heading: h, lines: []int{i}}
 			continue
 		}
 		if cur != nil {
 			cur.text += line + "\n"
+			cur.lines = append(cur.lines, i)
 			continue
 		}
-		if strings.TrimSpace(line) == "" {
+		if strings.TrimSpace(line) == "" && fence == "" {
 			flushPara()
 			continue
 		}
 		para = append(para, line)
+		paraLines = append(paraLines, i)
 	}
 	flushPara()
 	flushHead()
 	return out
+}
+
+// fenceOf is the fence a line opens or closes (``` or ~~~, three or more), or "".
+func fenceOf(line string) string {
+	t := strings.TrimLeft(line, " ")
+	if len(line)-len(t) > 3 {
+		return ""
+	}
+	for _, c := range []string{"`", "~"} {
+		n := len(t) - len(strings.TrimLeft(t, c))
+		if n >= 3 {
+			return strings.Repeat(c, n)
+		}
+	}
+	return ""
 }
 
 func firstLineOf(s string) string {
@@ -185,7 +244,16 @@ func firstLineOf(s string) string {
 func normText(s string) string {
 	var out []string
 	blank := false
+	fence := false
 	for _, l := range strings.Split(s, "\n") {
+		if fenceOf(l) != "" {
+			fence = !fence
+		}
+		if fence {
+			out = append(out, l) // code keeps its own spacing
+			blank = false
+			continue
+		}
 		l = strings.TrimRight(l, " \t\r")
 		if l == "" {
 			if blank {
@@ -213,6 +281,9 @@ type GatherReport struct {
 	Machines []GatherMachine `json:"machines"`
 	Sections []GatherSection `json:"sections"`
 	Summary  map[string]int  `json:"summary"` // same, differs, some, only
+	// Fingerprint names the files as read: a reconcile plan that carries it
+	// is refused once any of them changed
+	Fingerprint string `json:"fingerprint"`
 }
 
 type GatherMachine struct {
@@ -227,6 +298,7 @@ type GatherFileInfo struct {
 	Bytes    int    `json:"bytes"`  // the user's own text
 	Yonder   bool   `json:"yonder"` // held a yonder block, or was rendered by yonder; that part is left out
 	Rendered bool   `json:"rendered,omitempty"`
+	Hash     string `json:"hash"` // sha256 of the user's own text (OwnCanon), so a re-rendered block doesn't change it
 }
 
 type GatherSection struct {
@@ -241,6 +313,7 @@ type GatherVersion struct {
 	Machines []string `json:"machines"`
 	Files    []string `json:"files"` // machine:~/path
 	Text     string   `json:"text"`
+	Diff     string   `json:"diff,omitempty"` // against the first version
 }
 
 // section statuses
@@ -269,7 +342,7 @@ func Compare(ms []MachineFiles) GatherReport {
 			}
 			own, yonder := OwnText(data)
 			gm.Files = append(gm.Files, GatherFileInfo{Path: "~/" + gf.Path, Harness: gf.Harness, Bytes: len(strings.TrimSpace(own)),
-				Yonder: yonder, Rendered: yonder && own == ""})
+				Yonder: yonder, Rendered: yonder && own == "", Hash: OwnHash(data)})
 			for _, s := range splitSections(own) {
 				any = true
 				gs, ok := byKey[s.key]
@@ -286,8 +359,19 @@ func Compare(ms []MachineFiles) GatherReport {
 		}
 		r.Machines = append(r.Machines, gm)
 	}
+	fp := sha256.New()
+	for _, m := range r.Machines {
+		for _, f := range m.Files {
+			fmt.Fprintf(fp, "%s:%s=%s\n", m.Name, f.Path, f.Hash)
+		}
+	}
+	r.Fingerprint = hex.EncodeToString(fp.Sum(nil))[:16]
 	for _, k := range order {
 		gs := byKey[k]
+		for i := 1; i < len(gs.Versions); i++ {
+			v0, v := gs.Versions[0], &gs.Versions[i]
+			v.Diff = Diff([]byte(v0.Text+"\n"), []byte(v.Text+"\n"), strings.Join(v0.Files, ", "), strings.Join(v.Files, ", "))
+		}
 		switch {
 		case len(gs.Versions) > 1:
 			gs.Status = Differs

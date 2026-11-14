@@ -10,6 +10,7 @@ import (
 
 	"github.com/zacharytgray/yonder/internal/agents"
 	"github.com/zacharytgray/yonder/internal/registry"
+	"github.com/zacharytgray/yonder/internal/schedule"
 )
 
 func newEnableCmd() *cobra.Command {
@@ -146,6 +147,14 @@ func (a *app) setLayers(names []string, on bool) error {
 	reached := a.syncFleet(self)
 	if on {
 		a.syncStoresQuiet(self)
+		if slices.Contains(changed, registry.LayerAgents) {
+			ms, _ := a.store.Machines()
+			var names []string
+			for _, m := range ms {
+				names = append(names, m.Name)
+			}
+			a.scheduleMachines(self, names, true) // a machine where it was turned off stays off
+		}
 	}
 	word := "off"
 	if on {
@@ -201,10 +210,17 @@ func parseLayers(in []string) ([]string, error) {
 
 // applyLayers does what this machine's layer settings ask of it here: with
 // agents off it unlinks the harnesses; back on, it links them again.
+// it also keeps the sync schedule in line with the agents layer.
 func (a *app) applyLayers(self string) {
-	if err := agents.ApplyLayer(a.store.LayerOn(registry.LayerAgents), self, a.out); err != nil {
+	on := a.store.LayerOn(registry.LayerAgents)
+	if err := agents.ApplyLayer(on, self, a.out); err != nil {
 		a.warnf("agents layer: %v", err)
 	}
+	res, err := schedule.Apply(on, self)
+	if err != nil {
+		a.warnf("sync schedule: %v", err)
+	}
+	a.printSchedule(res, "")
 }
 
 func orDash(s string) string {

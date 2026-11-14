@@ -293,3 +293,44 @@ func TestLayers(t *testing.T) {
 		t.Fatalf("doctor should skip secrets checks while the layer is off: %s", r.stdout)
 	}
 }
+
+// TestInitList: --list --json changes nothing and says what init would offer
+func TestInitList(t *testing.T) {
+	f := newFleet(t, "testdata/fleet.json")
+	r := f.must("init", "--list", "--json", "--no-probe")
+	var v struct {
+		Self struct {
+			Name  string `json:"name"`
+			SetUp bool   `json:"set_up"`
+		} `json:"self"`
+		Peers []struct {
+			Name   string `json:"name"`
+			CanAdd bool   `json:"can_add"`
+			Note   string `json:"note"`
+		} `json:"peers"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Self.Name != "laptop" || v.Self.SetUp || len(v.Peers) == 0 {
+		t.Fatalf("list: %s", r.stdout)
+	}
+	for _, p := range v.Peers {
+		if p.Name == "phone" && (p.CanAdd || p.Note == "") {
+			t.Errorf("a phone can't join: %+v", p)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(f.home, "yonder", "config", "config.toml")); err == nil {
+		t.Fatal("--list wrote config")
+	}
+	if r := f.run("", "init", "--json"); r.code != 2 {
+		t.Fatalf("--json without --list: %+v", r)
+	}
+	f.must("init", "--yes", "--no-skill", "--role", "laptop=server", "--notes", "laptop=always on")
+	if r := f.must("show", "laptop", "--json"); !strings.Contains(r.stdout, `"role": "server"`) || !strings.Contains(r.stdout, "always on") {
+		t.Fatalf("role and notes: %s", r.stdout)
+	}
+	if r := f.run("", "init", "--yes", "--role", "laptop=boss"); r.code != 2 {
+		t.Fatalf("bad role: %+v", r)
+	}
+}

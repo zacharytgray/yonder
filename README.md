@@ -28,6 +28,14 @@
 
 </div>
 
+**Set it up with your agent.** Tell Claude Code, Codex or any coding agent:
+
+> Set up Yonder for me: https://github.com/zacharytgray/yonder
+
+It follows [SETUP.md](SETUP.md): it checks Tailscale and SSH, asks which machines join and what
+to turn on, runs the setup, and tells you the few steps only you can do. Or do it yourself with
+the [manual steps](#install).
+
 Your work is spread across computers. The slides are on the Mac mini, the project is on the
 desktop, and you're on your laptop. Each AI agent only knows the machine it runs on, so you end
 up copying files and re-explaining context by hand.
@@ -46,8 +54,8 @@ agent, every machine works like one computer.
 - **Shared secrets, kept safe.** API keys stay in 1Password or Bitwarden. Agents ask for a key by
   name, and Yonder keeps the value out of commands, logs and output.
 
-**Simple and lightweight.** It's one small program, with no server and nothing running in the
-background. It uses Tailscale and SSH. It works with Claude Code, Codex, Pi and Hermes.
+**Simple and lightweight.** It's one small program, with no server and no daemon. A timer runs
+a short sync every 15 minutes. It uses Tailscale and SSH. It works with Claude Code, Codex, Pi and Hermes.
 
 ```sh
 brew trust --cask zacharytgray/yonder/yonder
@@ -126,6 +134,8 @@ that, with its own permission modes.
 
 ## Install
 
+To have an agent do all of this, point it at [SETUP.md](SETUP.md) (above). By hand:
+
 You need [Tailscale](https://tailscale.com/download) on each machine, and SSH turned on for the
 machines you want to reach (on macOS: System Settings → General → Sharing → Remote Login).
 
@@ -175,7 +185,8 @@ lines that are no longer needed. `--no-mesh` skips it.
 Every prompt has a flag, so an agent can run setup too:
 
 ```sh
-yonder init --yes --machines mac-mini,pc
+yonder init --list --json      # what init would offer, and whether ssh works; changes nothing
+yonder init --yes --machines mac-mini,pc --layers agents --role pc=gpu --notes pc="sleeps at night"
 ```
 
 ## Send files
@@ -396,8 +407,12 @@ own persona. `[shared] hermes = true` in `render.toml` in the store adds them.
 
 If your machines already have different `CLAUDE.md` or `AGENTS.md` files, `yonder agents gather`
 shows which sections are the same, which differ, and which only one machine has. Yonder doesn't
-merge them. The yonder skill walks your agent through it with you: it asks about each conflict,
-shows the result as a diff, imports it, and trims each machine's file after a backup.
+pick for you. Ask your agent to "reconcile my yonder instructions": the yonder skill has it point
+out each difference in plain words and ask you whether to share one version, keep each machine's
+own (on purpose), merge them, or drop it. It shows you the resulting plan, and only after you say
+yes applies it with `yonder agents reconcile --plan plan.json`. That writes the shared and
+per-machine files, takes what moved out of each machine's own file after a backup, and links the
+store in. `yonder agents reconcile --undo` puts every file back.
 
 For rules that name models, write a tier like `{{model:top}}` and give each harness its name for
 it in `render.toml` in the store, under `[claude]`, `[codex]`, `[pi]` or `[hermes]`. A rule that
@@ -409,10 +424,23 @@ How sync behaves:
   both versions are kept. The later one stays, and the other sits beside it as
   `<name>.conflict-<machine>-<date>.<ext>`. Settle it with
   `yonder sync --resolve <path> --keep mine|theirs`.
-- Hooks run code, so new or changed ones from another machine wait until you run
-  `yonder agents accept` in a terminal. So do executables and files linked into a harness's own
-  folder. `[sync] review` in `~/.config/yonder/config.toml` changes that: `executables` (the
-  default), `all` or `none`.
+- Hooks run code, so new or changed ones from another machine wait until you accept them in a
+  terminal. So do executables and files linked into a harness's own folder. `yonder agents accept`
+  shows one summary of everything waiting, grouped into hooks, scripts and harness files, and you
+  type `y` once to accept it all (`s` or `--show` pages through the full diffs first). `yonder agents accept
+  --all-machines` does every online machine from the terminal you're at. A change you already
+  accepted, or imported yourself in a terminal and said yes to, doesn't ask again on your other
+  machines; one an agent made or imported always does. `sync` and `doctor` print the command
+  when something waits. `[sync] review` in `~/.config/yonder/config.toml` sets what waits:
+  `executables` (the default), `all` or `none` (no review at all).
+- Codex also asks you to trust a changed hook before it runs it. After a hook in
+  `files/codex/` changes, open Codex and run `/hooks`.
+- Codex: Yonder renders `~/.codex/AGENTS.md`. If you use `$CODEX_HOME`, run
+  `yonder agents link` with it set: Yonder remembers that folder and keeps using it, including
+  for the scheduled sync. A `CODEX_HOME` outside your home folder isn't supported; link refuses
+  it. If Codex has an `AGENTS.override.md` with text, Codex reads that instead of `AGENTS.md` and
+  doesn't see Yonder's instructions; `link` and `doctor` warn about it, and Yonder never writes
+  into it.
 - Secrets and settings never sync. Names like `.env`, `*.pem` or a harness's `settings.json` and
   `config.toml` are refused, and so are files that look like they hold a key, with the line
   number.
@@ -420,11 +448,16 @@ How sync behaves:
   `--allow-deletes`: a moved or missing folder looks like that. `yonder doctor` says so too.
 - Replaced and deleted versions are kept: `yonder agents restore <path>`. `yonder agents log`
   and `yonder agents diff` show which machine changed what.
-- There is no daemon. Sync runs on `yonder sync`, `refresh` and `add`, and after a change made
-  through yonder. To sync at the start of each agent session, have the harness run
-  `yonder sync --background`; for Claude Code, a SessionStart hook does it.
-- Two machines that are never awake at the same time only meet through a third one. A cron
-  entry running `yonder sync` on an always-on machine covers that.
+- Sync is automatic. With the `agents` layer on, every machine runs `yonder sync` every 15
+  minutes, at login and when it wakes: a launchd job (`com.yonder.sync`) on macOS, a systemd user
+  timer (`yonder-sync.timer`) on Linux. Nothing stays running in between. `init`, `add` and
+  `yonder enable agents` install it, `yonder disable agents` removes it, and `--no-schedule` skips
+  it. `yonder schedule` shows when it last ran and how that went; each run's output is in
+  `~/.local/state/yonder/sync/schedule.log`. If you made a `com.yonder.sync` job by hand,
+  `yonder schedule install` backs it up and takes it over. A session-start hook running
+  `yonder sync --background` is no longer needed.
+- On Linux the timer runs only while you're logged in, unless lingering is on. For an always-on
+  machine run `sudo loginctl enable-linger $USER`; `yonder doctor` reminds you.
 - Two machines that haven't synced with each other for more than 90 days hold back the old files
   only one of them has, since the other may have deleted them meanwhile. Files both know, and
   anything changed since, sync as usual. `yonder sync --stale-ok` syncs the held files (it clears every hold, for every machine).
@@ -448,9 +481,11 @@ How sync behaves:
 | `yonder agents install\|uninstall\|status` | Manage the skill in each agent harness. `--all-machines` does every machine |
 | `yonder layers` / `yonder enable\|disable <layer>` | See and switch the optional layers for the whole fleet |
 | `yonder sync [store] [machine...]` | Sync the registry and the stores of the layers that are on. `--resolve` settles a conflict |
+| `yonder schedule [install\|remove] [machine...]` | The timer that runs `yonder sync` every 15 minutes, at login and on wake |
 | `yonder agents import\|link\|unlink\|log\|diff\|accept\|restore\|allow` | Agent config: put it in the store, wire it into the harnesses, see and undo changes, review hooks |
 | `yonder agents briefing show\|review` | The briefing about your machines that every agent loads: print it, or list what to fix and a trimmed draft |
 | `yonder agents gather` | Compare each machine's own instructions files, for a reconcile with your agent |
+| `yonder agents reconcile --plan <file> \| --undo` | Apply the reconcile plan your agent made with you, or undo it |
 | `yonder remove <machine> [--lost]` | Take a machine out of the fleet |
 
 ## How agents learn it

@@ -14,6 +14,7 @@ import (
 	"github.com/zacharytgray/yonder/internal/agents"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/remote"
+	"github.com/zacharytgray/yonder/internal/schedule"
 	"github.com/zacharytgray/yonder/internal/transport"
 )
 
@@ -49,7 +50,7 @@ Store layout:
 	cmd.AddCommand(newAgentsInstallCmd(), newAgentsUninstallCmd(), newAgentsStatusCmd(),
 		newAgentsImportCmd(), newAgentsLinkCmd(), newAgentsUnlinkCmd(), newAgentsLogCmd(),
 		newAgentsDiffCmd(), newAgentsAcceptCmd(), newAgentsRestoreCmd(), newAgentsAllowCmd(),
-		newAgentsBriefingCmd(), newAgentsGatherCmd())
+		newAgentsBriefingCmd(), newAgentsGatherCmd(), newAgentsReconcileCmd())
 	return cmd
 }
 
@@ -139,6 +140,9 @@ func newAgentsStatusCmd() *cobra.Command {
 				if ss, err := agents.StoreReport(self); err == nil {
 					r.Store = &ss
 				}
+				j := schedule.Here(self)
+				st := schedule.Check(j.OS, j.Home, j.StateDir)
+				r.Schedule = &st
 			}
 			if asJSON {
 				enc := json.NewEncoder(a.out)

@@ -411,7 +411,7 @@ func TestWaitingChangeStaysWaitingWhenItBeatsADelete(t *testing.T) {
 	v.sync(c)
 	c.write("hooks/x.sh", "unreviewed from charlie\n", t0.Add(2*time.Minute))
 	c.sync(v)
-	a.locked(func() { must(t, a.s.Accept("hooks/x.sh")) }) // live on alpha, which then deletes it
+	a.locked(func() { must(t, a.s.Accept("hooks/x.sh", true)) }) // live on alpha, which then deletes it
 	must(t, os.Remove(filepath.Join(a.s.Dir, "hooks/x.sh")))
 	r := v.sync(a) // the waiting edit beats alpha's delete
 	if len(r.DeleteLost) != 1 || v.read("hooks/x.sh") != "old safe hook\n" {

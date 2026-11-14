@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/zacharytgray/yonder/internal/registry"
+	"github.com/zacharytgray/yonder/internal/schedule"
 	"github.com/zacharytgray/yonder/internal/version"
 	"github.com/zacharytgray/yonder/skill"
 )
@@ -144,6 +145,8 @@ type Report struct {
 	SkillHash string          `json:"skill_hash"`
 	Harnesses []HarnessStatus `json:"harnesses"`
 	Store     *StoreStatus    `json:"store,omitempty"` // the agents store; absent before init
+	// the sync schedule here; absent from a yonder older than 0.4
+	Schedule *schedule.Status `json:"schedule,omitempty"`
 }
 
 func stateOf(dir string) (state, installed string) {

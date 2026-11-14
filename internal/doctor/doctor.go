@@ -17,6 +17,7 @@ import (
 	"github.com/zacharytgray/yonder/internal/mesh"
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/remote"
+	"github.com/zacharytgray/yonder/internal/schedule"
 	"github.com/zacharytgray/yonder/internal/secrets"
 	"github.com/zacharytgray/yonder/internal/tailnet"
 	"github.com/zacharytgray/yonder/internal/transport"
@@ -656,6 +657,18 @@ func peerChecks(e Env, m registry.Machine, fl fleet) peerResult {
 		add("skill", Warn, "can't read skill status (an older yonder?): "+err.Error(), "upgrade yonder on "+m.Name)
 	} else {
 		res.checks = append(res.checks, skillChecks(m.Name, factsOnly(r, m), "", "yonder agents install --all-machines")...)
+		if e.Layers[registry.LayerAgents] && r.Store != nil && len(r.Store.Pending) > 0 {
+			n := len(r.Store.Pending)
+			add("review", Warn, fmt.Sprintf("%s wait%s for review on %s", plural(n, "change", "changes"), map[bool]string{true: "s", false: ""}[n == 1], m.Name),
+				"the person runs `yonder agents accept --all-machines` in a terminal on any fleet machine")
+		}
+		if e.Layers[registry.LayerAgents] {
+			if r.Schedule == nil {
+				add("schedule", Warn, "can't read its sync schedule: yonder there is older than 0.4", "upgrade yonder on "+m.Name+", then `yonder schedule install "+m.Name+"`")
+			} else {
+				res.checks = append(res.checks, ScheduleCheck(m.Name, m.Name, *r.Schedule, e.Now))
+			}
+		}
 	}
 
 	if keys, err := e.Remote.AuthorizedKeys(m); err != nil {
@@ -667,6 +680,28 @@ func peerChecks(e Env, m registry.Machine, fl fleet) peerResult {
 		res.checks = append(res.checks, meshChecks(m.Name, m.Name, keys, fl)...)
 	}
 	return res
+}
+
+// ScheduleCheck is one machine's sync schedule as a check. machine is "" for
+// this one; a fix for another machine names it.
+func ScheduleCheck(group, machine string, s schedule.Status, now time.Time) Check {
+	st, detail, fix := s.Problem(now)
+	if machine != "" {
+		fix = strings.Replace(fix, "yonder schedule install", "yonder schedule install "+machine, 1)
+		if strings.HasPrefix(fix, "read ") || strings.HasPrefix(fix, "sudo ") {
+			fix = "on " + machine + ": " + fix
+		}
+	}
+	c := Check{Group: group, Name: "schedule", Detail: detail, Fix: fix}
+	switch st {
+	case "fail":
+		c.Status = Fail
+	case "warn":
+		c.Status = Warn
+	default:
+		c.Status, c.Fix = Pass, ""
+	}
+	return c
 }
 
 func sshFix(m registry.Machine, ue *transport.UnreachableError) string {

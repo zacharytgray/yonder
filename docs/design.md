@@ -15,7 +15,12 @@ no server, no account. Tailscale carries the network; plain OpenSSH carries the 
 - One owner. Yonder assumes a tailnet of one person's machines, with no nodes shared in from
   another tailnet.
 - Permissions belong to the harness. Yonder connects machines and records what crossed them.
-- Every interactive prompt has a flag, so an agent can run onboarding too.
+- Every interactive prompt has a flag, so an agent can run onboarding too. `SETUP.md` at the repo
+  root is the guide an agent follows when a person says "Set up Yonder for me" with the repo's
+  link; the README says so up front. `CLAUDE.md` (and `AGENTS.md`, a link to it) opens by
+  sending such an agent to `SETUP.md`, so it doesn't take the developer guide for setup steps.
+- Every error says what to do next, in a form an agent can act on: a command to run, or what to
+  ask the person to do.
 - Fail loud. `doctor` explains every broken or inert piece and prints the fix.
 
 ## Layout
@@ -34,12 +39,15 @@ internal/agents/       embedded SKILL.md and per-harness install; the agents sto
 internal/store/        store sync: manifests, version counters, bundles, history, review
 internal/doctor/       checks
 internal/mesh/         which fleet keys each machine's authorized_keys should hold; the sh that edits a peer's
+internal/schedule/     the launchd / systemd timer that runs `yonder sync` every 15 minutes
 internal/version/      version string, set with -ldflags
 skill/yonder/SKILL.md  the agent skill (embedded into the binary)
 test/                  end-to-end tests against the built binary (+ docker integration)
 ```
 
-The hidden commands a caller runs on a target are `_exec`, `_job` (the detached supervisor),
+The hidden commands a caller runs on a target are `_accept-list` and `_accept-apply` (run
+through `_exec`; see Review), `_reconcile-trim [--probe]` and `_reconcile-undo <id>` (through
+`_exec`; see Machines whose instructions differ), `_exec`, `_job` (the detached supervisor),
 `_jobs [id [--follow]]`, `_kill <id>`, `_send` and `_recv` (see Copying files), `_sync`, `_log`, `_facts`, `_init-self <name>` (prints `{"mesh_keys":[...]}`), `_store-offer`, `_store-send` and `_store-recv <store>` (see Store sync), and `_secret-probe [--verify]` and
 `_secret-provision <account> <vault> [--write] [--extra-vault V]...` (both run through `_exec`;
 see Secrets).
@@ -57,9 +65,17 @@ see Secrets).
 ~/.local/state/yonder/sync/<store>.log.jsonl    changes this machine recorded, with where each came from
 ~/.local/state/yonder/sync/history/<store>/     replaced and deleted versions
 ~/.local/state/yonder/sync/pending/<store>/     incoming changes waiting for review
+~/.local/state/yonder/sync/accept-tickets.json  lists this machine gave `accept --all-machines` callers, 10 minutes each
 ~/.local/state/yonder/sync/last.log             output of the last `yonder sync --background`
+~/.local/state/yonder/sync/schedule.log         output of the scheduled syncs (cut back past 1 MB)
+~/.local/state/yonder/sync/schedule.json        the last scheduled run: started, finished, exit, error
+~/.local/state/yonder/schedule/declined         the person turned the schedule off here
+~/.local/state/yonder/schedule/backup/<ts>/     a hand-made job with yonder's label, taken over
+~/Library/LaunchAgents/com.yonder.sync.plist    macOS: the sync schedule
+~/.config/systemd/user/yonder-sync.{service,timer}  Linux: the sync schedule
 ~/.local/state/yonder/agents/links.json         what `agents link` made and what it replaced
 ~/.local/state/yonder/agents/backup/<ts>/       files and folders link moved out of the way
+~/.local/state/yonder/agents/reconcile/<id>/    a reconcile: record.json where it was applied; trim.json and files/ where files were trimmed
 ~/.local/state/yonder/log.jsonl        commands this machine received
 ~/.local/state/yonder/jobs/<id>.log    output of detached runs (scrubbed)
 ~/.local/state/yonder/jobs/<id>.json   detached run status: pid, pgid, state, exit
@@ -385,6 +401,28 @@ nothing changes. For this machine, and for a pending peer (it holds no record of
 `set <m>: role server, notes "always on"`. An older peer without `set` gets "too old for set;
 upgrade it there".
 
+`yonder init --list [--json] [--no-probe] [--user u] [--allow-shared]` shows what init would
+offer and changes nothing: this machine (`sshd`: something answers on 127.0.0.1:22; `set_up`;
+`valid_name`), the layers, and every tailnet peer with `can_add`, `in_fleet`, `pending`,
+`owned`, a `note` (the same reasons init's list gives) and `add_flags` (its full name when the
+short one is shared, `--allow-shared`). For each online peer that can join or is in the fleet,
+unless `--no-probe`, it dials port 22 (3 s), and when that answers, runs `exit 0` over ssh the
+way `add` probes (BatchMode, the host key accepted into a temp known_hosts that is then
+deleted, so nothing is pinned): `ssh.port_open`, `ssh.key_auth`, and an `error` and `fix`
+(turn SSH on; `ssh-copy-id <user>@<ip>`, or `--identity`). Probes run in parallel. Without
+tailscale it prints `tailscale_error` and `next` and exits 1. The JSON:
+`{"self":{...},"tailscale_error","next","layers":{...},"peers":[{"name","dns_name","os",
+"tailscale_ip","online","last_seen","owned","in_fleet","pending","can_add","note","ssh",
+"add_flags"}]}`.
+
+Each question init asks has a flag: the layers (`--layers`), the peers (`--machines`), each
+machine's role and notes (`--role m=R`, `--notes m=TEXT`, repeatable, this machine included; a
+machine named that isn't this one or being added is a warning), a peer another account owns
+(`--allow-shared`), the skill on the peers (`--no-skill`), mesh (`--no-mesh`), the schedule
+(`--no-schedule`), a peer's ssh key (`--identity m=path`), and secrets (`--yes` prints the
+`yonder secret setup` lines instead of asking). A machine with `--role` or `--notes` isn't asked
+for either.
+
 `yonder init --yes` sets up only this machine unless `--machines a,b` names peers (short or full
 names, resolved like `add`). Its peer list shows a peer the account doesn't own with a note and
 leaves it out; with `--allow-shared` it is listed, marked as not yours, and asks again when picked.
@@ -594,7 +632,7 @@ Turning a layer off stops it and keeps its data:
   "the secrets layer is off, so --secret is refused; turn it on with `yonder enable secrets`".
   `secrets.toml`, provider settings and tokens stay. `doctor` skips the provider checks.
 - `agents` off: every machine unlinks its harnesses (`agents unlink`, which puts back what link
-  replaced) and marks its links paused; `_store-*` there refuse with exit 3 and the caller skips
+  replaced), marks its links paused, and removes its sync schedule; `_store-*` there refuse with exit 3 and the caller skips
   that machine ("the agents layer is off there"). The store and its history stay. A machine
   applies the setting when it arrives: in `_sync` on a peer, after the caller's own sync. Turning
   it back on links each paused machine again with the harnesses it had.
@@ -960,23 +998,106 @@ too, so this machine's own scans take it. Files
 are written through an `os.Root` on the store folder with a temp file and a rename, so no link in
 the store can send a write elsewhere.
 
-`yonder sync [store] [machine...]` syncs the registry, applies the layers, then each store whose
+`yonder sync [store] [machine...]` syncs the registry, applies the layers (and the sync
+schedule, below), then each store whose
 layer is on with every online, set-up peer (or the named ones), in order, then once more with any
 peer synced before this machine received something, so one run relays changes between peers.
 Output is one line per peer and store (`agents: gpu-box: get 1, send 2`, or `up to date`), then a
 line per path received (with its origin), sent, waiting for review there, in conflict, or skipped,
-up to 20. `--dry-run` plans and prints without changing anything here (the peers still record their
+up to 20. When changes wait for review, here or on a peer it just sent to, a last line names the
+command: `yonder agents accept --all` for here, `--all-machines` for elsewhere; `add`, `refresh`
+and `enable` print it too. When a file under `files/codex/` went live, a line says Codex asks to
+trust changed hooks again with `/hooks`. `--dry-run` plans and prints without changing anything here (the peers still record their
 own edits when they scan). `--background` starts `yonder sync` in its own session with output in
-`sync/last.log` and returns at once, for a session-start hook; `YONDER_SYNC_BACKGROUND=off` turns
-those starts off. `--resolve <path> --keep mine|theirs|<machine>` settles a conflict first: the
+`sync/last.log` and returns at once; `YONDER_SYNC_BACKGROUND=off` turns those starts off. `--resolve <path> --keep mine|theirs|<machine>` settles a conflict first: the
 chosen version goes at the path (`mine` is this machine's, `theirs` the only other one), every
 conflict copy is deleted, and the sync spreads it. `refresh`, `add` and `enable` sync the stores
 too, printing only what moved and what failed. Commands that change the agents store here
 (`import`, `restore`, `allow`) start a background sync.
 
-Two machines that are never awake at the same time only meet through a third machine, or a timer.
-A cron or launchd entry running `yonder sync` on an always-on machine is that timer; it is a
-timer, not a daemon.
+### The sync schedule
+
+Sync needs no action from the person. With the agents layer on, every machine runs `yonder sync`
+on a timer: every 15 minutes, at login, and on wake. It is a timer, not a daemon: nothing stays
+resident between runs.
+
+- macOS: a LaunchAgent, label `com.yonder.sync`, at `~/Library/LaunchAgents/com.yonder.sync.plist`,
+  loaded with `launchctl bootstrap gui/<uid>`. It uses `StartCalendarInterval` (four minutes an
+  hour) and `RunAtLoad`. launchd runs a calendar job that was missed during sleep once on wake, and
+  skips a missed `StartInterval`, so calendar it is. RunAtLoad runs it at login. With nobody logged
+  in to the desktop there is no `gui/<uid>` domain; the file is written and loads at the next login,
+  and install says so.
+- Linux: `yonder-sync.service` (oneshot) and `yonder-sync.timer` in `~/.config/systemd/user`, enabled
+  with `systemctl --user enable --now`. The timer is `OnCalendar=*:<m>/15` (a wall-clock timer whose
+  time passed during suspend fires on resume), `Persistent=true` (a run missed while off happens at
+  boot) and `OnStartupSec=1min` (the user manager starts at login). Without lingering the user
+  manager runs only while the person is logged in; install and doctor say `sudo loginctl
+  enable-linger <user>` for an always-on machine. No user manager at all (a container, no D-Bus) is a
+  warning: the files are written, nothing runs.
+- The job runs `<yonder> sync --scheduled`. `<yonder>` is the path a person would type (the PATH
+  entry when it is this binary); a binary inside a versioned Homebrew folder (`Cellar/`,
+  `Caskroom/`) becomes Homebrew's `bin/yonder` link, so an upgrade doesn't strand the job. Its
+  environment: a PATH starting with the binary's folder (launchd and systemd start jobs with a bare
+  one), `SHLVL=1` on macOS (the Tailscale app binary acts as its CLI only when `SHLVL` is set; yonder
+  also sets it itself when it runs that binary), and any `YONDER_HOME`, `XDG_*_HOME` or
+  `YONDER_SSH_IDENTITY` set at install time, so the job reads the same config and stores.
+- Its output goes to `sync/schedule.log` in yonder's state dir (launchd `StandardOutPath`, systemd
+  `StandardOutput=append:`). `--scheduled` cuts that log back when it passes 1 MB, writes
+  `sync/schedule.json` when it starts and again with its exit code when it ends, waits a random 0 to
+  30 seconds first (`YONDER_SCHEDULE_JITTER=off` skips it), and is otherwise a normal sync.
+- Linux without systemd (no `systemctl`: a container, a minimal install) can't run the timer.
+  Install writes the files, says so once, and is quiet after that; doctor WARNs "no systemd here"
+  and says a sync from a machine that has the timer still reaches it, and `yonder sync` works by
+  hand. Install prints only that note, not the line saying sync runs every 15 minutes.
+- Machines don't all sync at the same minute: the minute in each 15 is a hash of the machine's name,
+  plus the random wait. Two machines syncing each other at once find each other busy and skip
+  (see the store lock above), so this keeps those skips rare.
+- Every file yonder writes holds `yonder:schedule v1`. A job with the same label or unit names
+  that lacks it was made by hand (people made `com.yonder.sync` and `yonder-sync.timer` before
+  0.4). An explicit install (`init`, `add`, `enable agents`, `yonder schedule install`) unloads it,
+  moves its files to `schedule/backup/<ts>/` and replaces them, so the two never run side by side.
+  On macOS a job loaded under that label from another plist under the home is moved aside too:
+  install reads which plist launchd loaded before the bootout, which forgets it. Doctor counts the
+  job as loaded only when launchd loaded it from yonder's plist. A sync never takes one over on
+  its own, and `remove` never deletes one: doctor WARNs with the install line instead.
+- Paths and carried variables with a control character (a newline would start a new line in the
+  plist or unit) are refused at install. In unit files `%` is written `%%`, so a path holding
+  `%h` stays a path.
+
+When it is installed and removed:
+
+- `init` installs it on this machine and every peer it added, `add` on the machine it added, and
+  `enable agents` on every online machine, when the agents layer is on. `enable agents` uses
+  `schedule install --unless-declined`, so a machine where the person turned it off stays off.
+  `--no-schedule` (init and add) records the decline on each machine before the first sync that
+  applies the layer there, so nothing is installed first. Peers get it through `_exec`
+  (`yonder schedule install`), so they log it.
+- Every machine also keeps it in line with the layer whenever the layer setting is applied (after
+  each registry sync, in `_sync` on a peer): layer on and no job here, or yonder's job pointing at a
+  binary that is gone, installs it, unless declined; layer off removes yonder's job. So a machine
+  offline during `enable agents` gets it at its next sync, and `disable agents` removes it
+  everywhere as the setting arrives.
+- `yonder schedule remove [m...]` removes it and records the decline, so a sync doesn't put it
+  back; `yonder schedule install [m...]` clears the decline. `remove --forget-local` (what
+  `yonder remove <m>` runs on the machine leaving) removes it.
+- Under `YONDER_HOME` the files are written but launchctl and systemctl are never called, so tests
+  never touch the real service manager.
+
+`yonder schedule [status --json]` and doctor read the state: the job file is there and yonder's,
+its binary exists, the service manager has it loaded (`launchctl print gui/<uid>/com.yonder.sync`;
+`systemctl --user is-active yonder-sync.timer`), lingering on Linux, and the last run from
+`schedule.json`. `agents status --json` carries the same object as `schedule`, which is how doctor
+reads a peer's.
+
+**The session-start sync.** Before 0.4 the advice was a harness hook running `yonder sync
+--background` at session start. With the schedule it no longer matters: the schedule runs at
+login and on wake, and a session-start sync runs in the background anyway, so the session that
+started it loads the old text and only later sessions see what it fetched, which the schedule
+already covers within 15 minutes. `--background` stays for a machine with `--no-schedule`, and
+`agents link` mentions the schedule only where none is installed.
+
+Two machines that are never awake at the same time still only meet through a third machine,
+which every always-on machine's schedule now provides.
 
 **Refusals are loud.** A file a store won't sync is a FAIL line in `sync` output (exit 1) and in
 `doctor`, with the reason and the fix. Only regular files sync: a symlink, a folder entry yonder
@@ -1053,10 +1174,84 @@ Hooks run code, so a new or changed hook from another machine waits for `yonder 
 before it is live here. Executable files count too, and so does everything under `files/`: a file
 linked into a harness's own folder (a hook or MCP config, a model catalog) can change what runs. The
 setting is `[sync] review` in `config.toml`: `"executables"` (default), `"all"` (every incoming
-change waits) or `"none"`. `accept [path...]` shows each waiting change as a line diff against
-what is live (a change to the exec bit as its own line; control, format and bidi characters
-shown escaped) and asks; it needs a terminal on stdin and stdout and refuses otherwise, so an agent
-can't accept on its own. `agents status`, `diff` and `doctor` show what waits.
+change waits) or `"none"`. `agents status`, `diff` and `doctor` show what waits.
+
+**One confirmation.** `accept` (or `accept --all`) prints one summary of everything waiting,
+grouped by kind: hooks (`hooks/`, `machines/<m>/hooks/`), harness files (`files/`,
+`machines/<m>/files/`), scripts (other executables) and other (with `review = "all"`). Each line
+is the path, the machine it came from with the harness when known, how long ago, and either
+"new, N lines, size" or "+a -r lines" against what is live, plus an exec-bit change. Paths,
+origins and diffs are shown escaped (control, format and bidi characters). Then one question,
+answered by typing a letter and Enter: `y` accepts all, `s` shows the full diffs first (paged
+through `$PAGER`, else `less -R`; `--show` does it before asking), `o` goes through them one by
+one, and `n`, Enter alone or anything else is not now. A typed letter, not a menu: it is the one
+thing the person must type, it can't be picked by a stray key, and it reads the same through any
+terminal. `accept <path>...` asks per path, as
+before. Accepting takes only what the summary showed: each item carries the hash and exec bit
+listed, and a change that arrived since keeps waiting (`AcceptIf`). It needs a terminal on stdin
+and stdout and refuses otherwise, after printing the summary and the command for the person to
+run, so an agent can't accept on its own. One confirmation is still a person at a terminal,
+never none.
+
+**Changes a person already reviewed.** A version carries `reviewed: <machine>` when a person on
+that machine typed a yes for it: `accept` at a terminal there (`--all`, a path, or the caller's
+own part of `--all-machines`), or `agents import` at a terminal, which shows the hooks and other
+files that would wait on the other machines on one screen and asks "Make these live on every
+machine?". Only a typed `y` marks them. An import with no terminal (an agent's) marks nothing:
+it prints the same summary and says the person approves them with `yonder agents accept
+--all-machines` in their own terminal. A ticket accept on another machine (`_accept-apply`) makes
+the change live there but doesn't mark it: the person's yes was typed at the caller, so a machine
+that was offline then asks its own person later. Such a marked version doesn't wait for review
+on other machines: a person has looked at that exact content once. The mark is tied to content: a scan that finds an edit makes a new version without
+it, so an agent's edit on any machine, or an agent's import, always waits everywhere else, as
+before. The mark travels with the version, and also on its own: two machines holding the same
+version where one has the mark pass it over without a new version (the plan's equal-counters
+case), and a machine where that version waits makes it live then (`accept` in its log, from the
+machine that sent the mark). A mark that isn't a valid machine name is dropped. This holds for
+`review = "all"` too. It is the same kind of claim as `allowed`: a peer writes it, and every
+fleet machine trusts every other fully (Trust model), so a hostile machine could forge it, as it
+could write the hook straight into `~/.claude/hooks` over ssh. A typed yes at a terminal is a
+person as far as yonder can tell; an agent that drives a terminal (a pty) can type one too, which
+no check can rule out. People who want no review at all set `[sync] review = "none"`.
+
+**Every machine from one terminal.** `accept --all-machines` (implies `--all`) does the same
+summary for every set-up machine, one confirmation, and accepts on each:
+
+1. The terminal check runs first, at the caller; with no person there it refuses before asking
+   any machine anything.
+2. This machine lists in process. Each other online machine runs `yonder _accept-list` through
+   `_exec` (so it logs the call), which prints its waiting changes as JSON with a ticket: 16
+   random bytes, saved in `sync/accept-tickets.json` there with the caller's name (from
+   `SSH_CONNECTION`, the same check `_sync` uses), the time, and exactly the path, hash and exec
+   bit of each item listed. An offline machine or an older yonder is a line in the summary,
+   not a failure.
+3. The caller prints every machine's summary, under its name, and asks once. A reply speaks only
+   for the machine that sent it: its items are filed under the name the caller asked, whatever
+   the reply says.
+4. On yes, this machine accepts its own list in process, and each other machine gets
+   `_accept-apply` through `_exec` with its ticket and the items it listed. It accepts an item
+   only if the ticket exists there, is under 10 minutes old, was given to the same caller, and
+   lists that exact item, and the item still waits with that hash and exec bit. The ticket is
+   deleted on first use. It prints what it accepted and skipped.
+
+Why that is the design. No machine can prove to another that a person pressed a key: any fleet
+machine can already run any command on every other (Trust model), so no message format can stop
+a hostile one, and yonder doesn't pretend otherwise. What the design does guarantee:
+
+- The one yes comes from the calling terminal, after the same terminal check as a local accept,
+  and nothing is asked of any machine before that check passes. No reply from a peer is ever
+  taken as a yes.
+- A peer can't widen what the person saw. Each target accepts only what it listed itself, to that
+  caller, byte for byte; a forged, replayed or late request accepts nothing new, and a change that
+  arrived after the summary keeps waiting. One peer's reply can't name another machine's changes.
+- The hidden commands aren't a way around the terminal. `_accept-list` and `_accept-apply` refuse
+  a local call (no `SSH_CONNECTION`), and refuse a caller whose `_exec` envelope names an agent
+  harness (`claude-code`, `codex`, `pi`, `hermes`): `_exec` passes the envelope's harness and
+  caller to the command as `YONDER_EXEC_HARNESS` and `YONDER_EXEC_FROM`, set from the envelope
+  and never inherited. `shell` and unknown names pass, so a person running `--all-machines` over
+  ssh still works. The harness check is advisory, since an agent can hide its markers; the real
+  gate stays the caller's terminal and the single-use ticket. Every call is logged on the target
+  with the caller's name, so `yonder log` shows what was accepted where.
 
 ### Wiring the harnesses
 
@@ -1066,9 +1261,28 @@ harness found here (the same detection as the skill install), or the ones named:
 | Harness | Instructions | Skills | Other |
 |---|---|---|---|
 | Claude Code | A marked block in `~/.claude/CLAUDE.md` holding the briefing, then the text of `instructions.md`, `instructions.claude.md` and the machine's two, where they exist, joined with blank lines. The user's own text stays. | One link per skill in `~/.claude/skills/<name>`. | One link per file in `~/.claude/agents/`, `~/.claude/commands/` and `~/.claude/hooks/`; `files/claude/*` into `~/.claude/`. |
-| Codex | `~/.codex/AGENTS.md` rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/`. |
+| Codex | `~/.codex/AGENTS.md` (or the saved `$CODEX_HOME` folder, below) rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/` (or that folder). |
 | Pi | Same as Codex, into `~/.pi/agent/AGENTS.md`. | `~/.agents/skills` (shared with Codex). | `files/pi/*` into `~/.pi/agent/`. |
 | Hermes | A marked block in `~/.hermes/SOUL.md`, only when that file exists, holding the briefing and `instructions.hermes.md` (and the machine's), not the shared `instructions.md`. Hermes is a messaging gateway with its own persona, so coding-agent rules stay out of it unless `[shared] hermes = true` in `agents/render.toml` (then the shared text and the machine's come after the briefing, as for the others). Hermes loads SOUL.md from its home in every session, whatever the working folder; its AGENTS.md, CLAUDE.md and `.hermes.md` come from the working folder only, so none of those is global. It seeds a default SOUL.md when there is none, so yonder never creates it; link says to run Hermes once first. Its fleet lines outside the block are the user's to drop; doctor flags any that repeat the briefing. | Not wired: link prints that the store's skills folder can be added to `skills.external_dirs` in its config. | `files/hermes/*` into `~/.hermes/`. |
+
+Codex's folder is decided at an explicit `agents link`: `$CODEX_HOME` when that is set, else
+`~/.codex`. It is saved in `links.json` (`codex_home`), and every later relink, gather, reconcile
+and doctor uses the saved folder, whatever their own environment holds, so a sync run by the
+timer, by a peer over ssh or from another shell never moves Codex's files. A peer's gather is a
+shell script, so it reads `codex_home` from that machine's `links.json` itself (in
+`$YONDER_HOME/state`, else `$XDG_STATE_HOME/yonder`, else `~/.local/state/yonder`), then falls
+back to `$CODEX_HOME` and `~/.codex`. Only an explicit `agents link` changes the saved folder; a
+relink, or the agents layer coming back on, keeps it. The saved folder belongs to the user's own
+home: code given any other home (a test fixture) never reads it. Before any link the
+environment decides. The schedule job also carries `CODEX_HOME` when it is set at install. A
+`CODEX_HOME` outside the home folder is not supported: link and reconcile write only below the
+home, with no symlink on the way, and refuse it. `CODEX_HOME` applies only to this user's real
+home (or the test home under `YONDER_HOME`, where it counts only inside it), never to a fixture
+folder. When `AGENTS.override.md` in that folder has text, Codex reads it instead of
+`AGENTS.md`, so it sees none of yonder's text or briefing. Yonder never writes into the override
+file: `agents link` prints a WARNING when it links Codex there, and doctor WARNs while it has
+text, with the fix (move its text into the store or `AGENTS.md`, then delete it). Yonder doesn't
+claim Codex gets the shared instructions in that case.
 
 The text is copied in, never `@`-imported. Claude Code asks once per project before it imports a
 file outside the project, and keeps the import off if declined; a headless session can't answer,
@@ -1081,8 +1295,8 @@ The rules:
 
 - Yonder never edits a settings file (`settings.json`, `config.toml`, `config.yaml`). Claude Code
   hooks are linked into `~/.claude/hooks/`, so a `settings.json` entry for `~/.claude/hooks/x.sh`
-  keeps working; registering a new hook stays the user's step. So does a session-start hook
-  running `yonder sync --background`, which link suggests.
+  keeps working; registering a new hook stays the user's step. Link points at
+  `yonder schedule install` where no sync schedule is installed.
 - It edits a user's instructions file only inside the marked block: from the first line that is a
   begin marker (`<!-- yonder:begin ... -->`) to the first line after it that is
   `<!-- yonder:end -->`. Markers count only as whole lines, so text that mentions them (in
@@ -1282,20 +1496,100 @@ text. Each section is then:
 - `some`: one version, on more than one machine but not all.
 - `only`: on one machine only.
 
-`--json`: `{"machines":[{"name","files":[{"path","harness","bytes","yonder","rendered"}],"error"}],
-"sections":[{"key","heading","status","machines","versions":[{"machines","files","text"}]}],
-"summary":{"same","differs","some","only"}}`. A machine offline or not set up is listed with an
-`error` and no files.
+`--json`: `{"machines":[{"name","files":[{"path","harness","bytes","yonder","rendered","hash"}],"error"}],
+"sections":[{"key","heading","status","machines","versions":[{"machines","files","text","diff"}]}],
+"summary":{"same","differs","some","only"},"fingerprint"}`. A machine offline or not set up is
+listed with an `error` and no files. `hash` is the sha256 of the user's own text (`OwnCanon`):
+the file without yonder's block and without the blank lines at the block's edges and the file's
+end, which link adds; every other byte counts, whitespace too. So a block re-rendered after
+gather (which happens at every registry sync) doesn't make a file look edited or a plan's
+fingerprint stale. Sections don't split at a `#` line inside a code fence (three or more
+backticks or tildes), and a fenced block keeps its own spacing. `diff` is a
+line diff of that version against the first one (versions after the first only). `fingerprint`
+is 16 hex characters over every machine's file paths and hashes.
 
-The yonder skill has the reconcile procedure for the agent: sort each section into shared,
-machine-only or conflicting; ask the user about each conflict; show the result as a diff; after
-approval, write `instructions.md` and `machines/<m>/instructions.md` with `agents import` (no new
-apply step is needed: `import --kind instructions --machine <m>` writes an overlay); then trim
-what moved out of each machine's own file, backing each up first.
+**Applying a plan.** An agent turns the gather into a plan with the user (the skill's
+procedure), and `yonder agents reconcile --plan plan.json [--dry-run]` applies it:
 
-When `enable agents`, or `init` with the layer on and machines added, finds that two or more
-machines have instructions that don't all agree, it says so and names the procedure. It writes
-nothing.
+```json
+{"v": 1, "fingerprint": "<from gather --json>", "sections": [
+  {"key": "## style",  "action": "shared", "from": "laptop"},
+  {"key": "## gpu",    "action": "per-machine", "machines": ["gpu-box"]},
+  {"key": "## models", "action": "merge", "text": "## Models\n..."},
+  {"key": "## old",    "action": "drop"},
+  {"key": "## mine",   "action": "leave"}]}
+```
+
+- `shared`: the version `from` names (a machine with one version of it, or `machine:~/path`)
+  goes in `instructions.md`; it is taken out of every file that has any version of it.
+- `per-machine`: an intentional difference. Each machine (all that have it, or `machines`)
+  gets its own version in `machines/<m>/instructions.md`, and it is taken out of that machine's
+  files. A machine with two different versions of it is refused: merge them, or pick one.
+- `merge`: `text` (the agent's merged text, heading included) goes in `instructions.md`, and the
+  section is taken out everywhere.
+- `drop`: taken out everywhere. `leave`, and any section the plan doesn't name: left as it is.
+
+Unknown keys, a key twice, an unknown action, a merge with no text or with yonder's marker, a
+plan version other than 1, and a fingerprint that differs from a fresh gather are refused before
+anything happens. A store file is written section by section: a section with the same key is
+replaced in place, a new one appended, the rest of the file kept. The new store text must pass
+the store's check (secrets and the rest) first.
+
+Applying, in order: a fresh gather (a machine offline now is named and left as it is); the plan
+checked against it; the store as the plan leaves it rendered in a temp copy (following a
+symlinked store folder), for this machine and each machine the plan touches, so text that won't
+render (a `{{model:...}}` with no name, say) is refused before anything is written. It renders
+for the harnesses linked here and every harness `render.toml` has names for (all of them when
+neither applies), so a tier named only for Claude Code and Codex doesn't refuse a plan for Pi.
+A peer with another harness linked still checks its own render before it trims; the store diffs and the trims printed (with `--dry-run`, that is all); every
+machine with something to trim runs `yonder _reconcile-trim --probe` through `_exec`, so an
+unreachable machine or an older yonder stops it before anything is written; a record saved in
+`agents/reconcile/<id>/record.json` (the plan, each store file before and after); the store
+files written, and the store synced (always, even when the plan changes no store file, since a
+machine may still lack text an earlier reconcile wrote); then each machine trims, in process
+here and through `_exec` (`_reconcile-trim`, the request on stdin) elsewhere. The request names
+every store file that machine's trims rely on (`instructions.md` for shared and merged sections,
+its `machines/<m>/instructions.md` for per-machine ones), changed by this plan or not, with the
+hash it must have. A machine trims only when each is live there with that hash (not still on its
+way, not waiting for review), checked again right before each file is written; and only when the
+store text renders for the harnesses it will link (the same check link makes, without writing),
+so a section never comes out while its replacement can't render. Each file must still have the
+own-text hash gather read, and no folder on its way below the home, nor the file, may be a
+symlink: reconcile never writes through one, like link. It copies the file to
+`agents/reconcile/<id>/files/<path>` in its own state dir, takes the sections out
+(`TrimSections`: by the same keys gather made; yonder's block and the rest of the text stay as
+they were, except that where a cut joins two blank lines one goes), and records the hash of the
+user's own text after the cut in `trim.json`. Then it links: the harnesses linked there already
+(their saved set, unchanged), or, on a machine never linked, the ones it has. If linking fails,
+or leaves a file with its old text, every file it trimmed is put back and the machine reports a
+failure, so the moved text always arrives through yonder's block or not at all. A refused file
+counts as a failure too, and reconcile exits 1. A machine only takes a section out of a file
+whose harness is linked there (its saved set, or on a machine never linked, the ones it has):
+a file of any other harness would lose the text without getting the block, so it is left as it
+is, named, and counted as a failure. The last line then says the reconcile was NOT fully
+applied, with the undo line; "applied" only when every machine took everything. The output ends with the id and
+`yonder agents reconcile --undo <id>`.
+
+`--undo [id]` (default: the last one not undone, on the machine that applied it) runs
+`_reconcile-undo <id>` on each machine that trimmed, which puts each backup back when the
+user's own text is still what the trim left (compared without yonder's block, which link
+rewrites); a file changed since is left, with the backup's path. A file whose own text is
+already what it was before the reconcile counts as done. Then each store file that is still
+what the reconcile wrote goes back to what it was (or is deleted); one already back counts as
+done; and the store syncs. Anything left is named, and running undo again finishes it. Undo
+refuses a symlinked folder on the way too.
+
+Not reproduced, and guarded cheaply: the store lock is released between the readiness check and
+the trim, so a scheduled sync could change a store file in between. The trim checks the store
+hashes again right before each write.
+
+This replaced the 0.3 procedure of `agents import` plus trimming each file by hand with
+`yonder run`: the hand trim was the step people and agents got wrong, and it had no undo.
+
+When `enable agents`, or `init` with the layer on, finds that two or more machines have
+instructions that don't all agree, it prints how many sections differ and the next step twice:
+for a person (ask your agent to reconcile) and for an agent running setup (gather `--json`, the
+skill's procedure, apply only after the user says yes). It writes nothing.
 
 ### The other commands
 
@@ -1332,10 +1626,16 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   `yonder remove <lost> --lost --include-shared --yes`"; when `authorized_keys` or `~/.ssh` is a
   symlink the check reads through it and the fix says to delete the lines by hand);
   `secrets.Health()` when the secrets layer is on (a single PASS saying it is off otherwise); a
-  `layers` line. Mesh (below) for this machine's own file.
+  `layers` line; with the agents layer on, a `schedule` line (see The sync schedule: missing,
+  not yonder's, binary gone or not loaded is a FAIL or WARN with `yonder schedule install`; a last
+  run that failed or is over 2 hours old, or no lingering on Linux, is a WARN). Mesh (below) for
+  this machine's own file.
 - The agents store, when its layer is on: a PASS with the file count and the last sync per
   machine; a FAIL per file that can't sync; a WARN per conflict (fix `yonder sync --resolve <path>
-  --keep mine|theirs|<machine>`), per change waiting for review (fix `yonder agents accept`), per
+  --keep mine|theirs|<machine>`), one WARN for the changes waiting for review (the first five
+  paths, fix `yonder agents accept --all`, or `--all-machines` for every machine); a PASS note
+  when Codex is linked and the store gives it files, saying Codex asks to trust changed hooks again
+  with `/hooks`; a WARN per
   delete that lost to an edit in the last 7 days, per instructions file naming a path under this
   machine's home, per link entry that no longer matches or block with no end marker (fix `yonder agents
   link`), per harness whose rendered instructions are over 25 KB, and per machine last synced
@@ -1350,7 +1650,10 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   <m>`); record address matches the tailnet (FAIL, fix `yonder remove <m> && yonder add <m>`); ssh with the pinned host key, by running
   `yonder version` there (BatchMode, 5s connect timeout); same yonder version as here; stale
   record (`discovered_at` older than 7 days, fix `yonder refresh <m>`); skill state from
-  `yonder agents status --json`; its `authorized_keys` for lost machines' keys and for mesh.
+  `yonder agents status --json`; with the agents layer on, a WARN when changes wait for review
+  there (fix `yonder agents accept --all-machines`) and its sync schedule from the same reply
+  (fix `yonder schedule install <m>`; a yonder older than 0.4 has no `schedule` there, a WARN to
+  upgrade); its `authorized_keys` for lost machines' keys and for mesh.
 - Mesh, for each machine whose `authorized_keys` it reads (this one, and each online set-up
   peer): WARN when a fleet machine that mesh would hand keys out for has none of its `mesh_keys`
   in that file, "laptop can't ssh in: none of its keys on record are in ~/.ssh/authorized_keys",
@@ -1476,7 +1779,11 @@ way, such as the same LAN.
   receives, not only on what it sends, and decides review from its own state, not from fields
   the sender wrote.
 - Incoming hooks and executables wait for a person to accept them (see Agents store). Every change
-  records its origin, so `agents log` and `agents diff` say which machine changed what.
+  records its origin, so `agents log` and `agents diff` say which machine changed what. A version
+  a person reviewed on one machine carries that machine's name and doesn't wait again elsewhere;
+  an edit found by a scan never carries it (see Review). `accept --all-machines` takes its one
+  confirmation at the calling terminal, and each target accepts only the exact list it gave that
+  caller, once, within 10 minutes.
 - Output, the log and `jobs/<id>.json` scrub secret values, command text included. Values that
   overlap are replaced as one span named after all of them in order, like `[A+B]`, so no part
   of either shows.
