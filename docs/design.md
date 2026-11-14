@@ -15,7 +15,12 @@ no server, no account. Tailscale carries the network; plain OpenSSH carries the 
 - One owner. Yonder assumes a tailnet of one person's machines, with no nodes shared in from
   another tailnet.
 - Permissions belong to the harness. Yonder connects machines and records what crossed them.
-- Every interactive prompt has a flag, so an agent can run onboarding too.
+- Every interactive prompt has a flag, so an agent can run onboarding too. `SETUP.md` at the repo
+  root is the guide an agent follows when a person says "Set up Yonder for me" with the repo's
+  link; the README says so up front. `CLAUDE.md` (and `AGENTS.md`, a link to it) opens by
+  sending such an agent to `SETUP.md`, so it doesn't take the developer guide for setup steps.
+- Every error says what to do next, in a form an agent can act on: a command to run, or what to
+  ask the person to do.
 - Fail loud. `doctor` explains every broken or inert piece and prints the fix.
 
 ## Layout
@@ -395,6 +400,28 @@ nothing changes. For this machine, and for a pending peer (it holds no record of
 `add` finishes it with these values), the record is changed here and synced. It prints
 `set <m>: role server, notes "always on"`. An older peer without `set` gets "too old for set;
 upgrade it there".
+
+`yonder init --list [--json] [--no-probe] [--user u] [--allow-shared]` shows what init would
+offer and changes nothing: this machine (`sshd`: something answers on 127.0.0.1:22; `set_up`;
+`valid_name`), the layers, and every tailnet peer with `can_add`, `in_fleet`, `pending`,
+`owned`, a `note` (the same reasons init's list gives) and `add_flags` (its full name when the
+short one is shared, `--allow-shared`). For each online peer that can join or is in the fleet,
+unless `--no-probe`, it dials port 22 (3 s), and when that answers, runs `exit 0` over ssh the
+way `add` probes (BatchMode, the host key accepted into a temp known_hosts that is then
+deleted, so nothing is pinned): `ssh.port_open`, `ssh.key_auth`, and an `error` and `fix`
+(turn SSH on; `ssh-copy-id <user>@<ip>`, or `--identity`). Probes run in parallel. Without
+tailscale it prints `tailscale_error` and `next` and exits 1. The JSON:
+`{"self":{...},"tailscale_error","next","layers":{...},"peers":[{"name","dns_name","os",
+"tailscale_ip","online","last_seen","owned","in_fleet","pending","can_add","note","ssh",
+"add_flags"}]}`.
+
+Each question init asks has a flag: the layers (`--layers`), the peers (`--machines`), each
+machine's role and notes (`--role m=R`, `--notes m=TEXT`, repeatable, this machine included; a
+machine named that isn't this one or being added is a warning), a peer another account owns
+(`--allow-shared`), the skill on the peers (`--no-skill`), mesh (`--no-mesh`), the schedule
+(`--no-schedule`), a peer's ssh key (`--identity m=path`), and secrets (`--yes` prints the
+`yonder secret setup` lines instead of asking). A machine with `--role` or `--notes` isn't asked
+for either.
 
 `yonder init --yes` sets up only this machine unless `--machines a,b` names peers (short or full
 names, resolved like `add`). Its peer list shows a peer the account doesn't own with a note and

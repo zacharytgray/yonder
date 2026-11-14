@@ -1,3 +1,6 @@
+> To install and set up Yonder for a user, follow [SETUP.md](SETUP.md), not this file. This file
+> is for developing Yonder.
+
 # yonder
 
 Go CLI that connects a person's own machines over Tailscale and SSH. Module

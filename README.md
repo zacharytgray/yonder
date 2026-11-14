@@ -28,6 +28,14 @@
 
 </div>
 
+**Set it up with your agent.** Tell Claude Code, Codex or any coding agent:
+
+> Set up Yonder for me: https://github.com/zacharytgray/yonder
+
+It follows [SETUP.md](SETUP.md): it checks Tailscale and SSH, asks which machines join and what
+to turn on, runs the setup, and tells you the few steps only you can do. Or do it yourself with
+the [manual steps](#install).
+
 Your work is spread across computers. The slides are on the Mac mini, the project is on the
 desktop, and you're on your laptop. Each AI agent only knows the machine it runs on, so you end
 up copying files and re-explaining context by hand.
@@ -126,6 +134,8 @@ that, with its own permission modes.
 
 ## Install
 
+To have an agent do all of this, point it at [SETUP.md](SETUP.md) (above). By hand:
+
 You need [Tailscale](https://tailscale.com/download) on each machine, and SSH turned on for the
 machines you want to reach (on macOS: System Settings → General → Sharing → Remote Login).
 
@@ -175,7 +185,8 @@ lines that are no longer needed. `--no-mesh` skips it.
 Every prompt has a flag, so an agent can run setup too:
 
 ```sh
-yonder init --yes --machines mac-mini,pc
+yonder init --list --json      # what init would offer, and whether ssh works; changes nothing
+yonder init --yes --machines mac-mini,pc --layers agents --role pc=gpu --notes pc="sleeps at night"
 ```
 
 ## Send files

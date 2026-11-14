@@ -139,7 +139,7 @@ func (a *app) resolvePeer(st *tailnet.Status, arg string, allowShared, interacti
 	ps := st.Match(arg)
 	switch len(ps) {
 	case 0:
-		return tailnet.Peer{}, fmt.Errorf("%s is not a peer in this tailnet; `tailscale status` lists them", arg)
+		return tailnet.Peer{}, fmt.Errorf("%s is not a peer in this tailnet; `yonder init --list` shows the ones there are (log it in to the same Tailscale account if it's missing)", arg)
 	case 1:
 	default:
 		names := make([]string, len(ps))
