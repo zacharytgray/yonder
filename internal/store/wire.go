@@ -248,6 +248,7 @@ func ServeRecv(s *Store, in io.Reader, out io.Writer, from string) error {
 		case what == "pending":
 			res.Pending = append(res.Pending, p)
 			changed = append(changed, p)
+		case what == "vouched":
 		case what != "":
 			res.Applied = append(res.Applied, p)
 			changed = append(changed, p)

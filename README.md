@@ -409,9 +409,15 @@ How sync behaves:
   both versions are kept. The later one stays, and the other sits beside it as
   `<name>.conflict-<machine>-<date>.<ext>`. Settle it with
   `yonder sync --resolve <path> --keep mine|theirs`.
-- Hooks run code, so new or changed ones from another machine wait until you run
-  `yonder agents accept` in a terminal. So do executables and files linked into a harness's own
-  folder. `[sync] review` in `~/.config/yonder/config.toml` changes that: `executables` (the
+- Hooks run code, so new or changed ones from another machine wait until you accept them in a
+  terminal. So do executables and files linked into a harness's own folder. `yonder agents accept`
+  shows one summary of everything waiting, grouped into hooks, scripts and harness files, and one
+  yes accepts it all (`--show` pages through the full diffs first). `yonder agents accept
+  --all-machines` does every online machine from the terminal you're at. A change you already
+  accepted, or imported yourself in a terminal, doesn't ask again on your other machines; one an
+  agent made always does. `sync` and `doctor` print the command when something waits.
+- Codex also asks you to trust a changed hook before it runs it. After a hook in
+  `files/codex/` changes, open Codex and run `/hooks`. `[sync] review` in `~/.config/yonder/config.toml` changes that: `executables` (the
   default), `all` or `none`.
 - Secrets and settings never sync. Names like `.env`, `*.pem` or a harness's `settings.json` and
   `config.toml` are refused, and so are files that look like they hold a key, with the line

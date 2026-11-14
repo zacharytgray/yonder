@@ -465,3 +465,49 @@ func TestConflictName(t *testing.T) {
 		t.Errorf("second copy: %s", got)
 	}
 }
+
+// a change a person reviewed on one machine (imported at a terminal, or
+// accepted) doesn't wait again elsewhere; an edit found by a scan always does
+func TestReviewVouch(t *testing.T) {
+	a, b, c := newMachine(t, "laptop"), newMachine(t, "gpu-box"), newMachine(t, "server")
+	a.write("hooks/guard.sh", "#!/bin/sh\necho v1\n", a.now)
+	a.s.ReviewedHere = map[string]string{"hooks/guard.sh": hashOf([]byte("#!/bin/sh\necho v1\n"))}
+	a.locked(func() {})
+	a.s.ReviewedHere = nil
+	if r := a.sync(b); len(r.PeerPending) != 0 || b.read("hooks/guard.sh") != "#!/bin/sh\necho v1\n" {
+		t.Fatalf("an imported hook should go live on peers: %+v", r)
+	}
+	// an agent edits it on gpu-box: no person saw that
+	b.write("hooks/guard.sh", "#!/bin/sh\necho agent\n", b.now.Add(time.Minute))
+	if r := b.sync(a); len(r.PeerPending) != 1 {
+		t.Fatalf("an edit found by a scan must wait: %+v", r)
+	}
+	if r := b.sync(c); len(r.PeerPending) != 1 {
+		t.Fatalf("and wait on server too: %+v", r)
+	}
+	// the person accepts it on laptop; server takes the review mark and makes it live
+	must(t, a.s.Lock(time.Second))
+	must(t, a.s.Accept("hooks/guard.sh"))
+	must(t, a.s.Save())
+	a.s.Unlock()
+	a.sync(c)
+	if c.read("hooks/guard.sh") != "#!/bin/sh\necho agent\n" {
+		t.Fatal("a version accepted on laptop should go live on server")
+	}
+	if items, _ := c.s.PendingList(); len(items) != 0 {
+		t.Fatalf("still waiting: %+v", items)
+	}
+	// nothing more moves once both hold the mark
+	if r := a.sync(c); r.Changed() {
+		t.Fatalf("second sync: %+v", r)
+	}
+	// a mark that isn't a machine name is dropped
+	st, _ := c.s.State()
+	f := st.Files["hooks/guard.sh"]
+	if f.Reviewed != "laptop" {
+		t.Fatalf("server's mark: %q", f.Reviewed)
+	}
+	if validReviewer("../x") || !validReviewer("gpu-box") {
+		t.Fatal("reviewer check")
+	}
+}

@@ -264,7 +264,8 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 	}
 	gotAt := map[string]int{} // how many changes this machine had received when it synced each peer
 	failed := map[string]bool{}
-	received := 0
+	received, waitThere := 0, 0
+	var live []string
 	for pass := 0; pass < 2; pass++ {
 		for _, m := range peers {
 			if pass == 1 && (failed[m.Name] || gotAt[m.Name] == received) {
@@ -293,12 +294,30 @@ func (a *app) syncStore(name, self string, only []string, o syncOpts) bool {
 			}
 			received += len(rep.Got) + len(rep.Conflicts)
 			gotAt[m.Name] = received
+			waitThere += len(rep.PeerPending)
+			for _, g := range rep.Got {
+				if g.Action != "pending" && g.Action != "deleted" {
+					live = append(live, g.Path)
+				}
+			}
 			if !a.printReport(name, rep, o.quiet) {
 				ok = false
 			}
 		}
 		if o.dryRun {
 			break
+		}
+	}
+	if !o.dryRun {
+		here := 0
+		if items, err := s.PendingList(); err == nil {
+			here = len(items)
+		}
+		if h := acceptHint(here, waitThere); h != "" {
+			fmt.Fprintf(a.out, "%s: %s\n", name, h)
+		}
+		if codexHooks(live) {
+			fmt.Fprintf(a.out, "%s: %s\n", name, codexTrustNote)
 		}
 	}
 	return ok
@@ -332,6 +351,8 @@ func (a *app) printReport(name string, r store.Report, quiet bool) bool {
 			what = "deleted"
 		case "pending":
 			what = "waits for review:"
+		case "accepted":
+			what = "reviewed on " + agents.Printable(g.State.Reviewed) + ", now live:"
 		}
 		line("%s %s (%s)", what, agents.Printable(g.Path), originText(g.State.Origin))
 	}
@@ -343,7 +364,7 @@ func (a *app) printReport(name string, r store.Report, quiet bool) bool {
 		}
 	}
 	for _, p := range r.PeerPending {
-		line("sent %s; it waits for review on %s (`yonder agents accept` there)", p, r.Peer)
+		line("sent %s; it waits for review on %s", p, r.Peer)
 	}
 	for _, c := range r.Conflicts {
 		line("conflict at %s: kept %s's edit; %s's is at %s (yonder sync --resolve %s --keep mine|theirs)", c.Path, c.Winner, c.Loser, c.Copy, c.Path)

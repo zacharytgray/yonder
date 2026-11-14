@@ -128,5 +128,6 @@ func newRoot() *cobra.Command {
 		newScheduleCmd(),
 	)
 	root.AddCommand(hiddenCmds()...)
+	root.AddCommand(newAcceptListCmd(), newAcceptApplyCmd())
 	return root
 }

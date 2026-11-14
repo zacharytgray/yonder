@@ -113,8 +113,12 @@ instructions, skills, subagents and hooks, and syncs between machines:
   versions and ask which to keep, then `yonder sync --resolve <path> --keep mine|theirs`.
 - Never put a secret in the store. A FAIL line from `yonder sync` names the file and the line;
   take the value out and use a secret name instead.
-- Hooks from other machines wait for review. Only the user can run `yonder agents accept`, in a
-  terminal. Tell them when something waits.
+- Hooks from other machines wait for review. Only the user can accept them, in a terminal. When
+  `yonder sync` or `yonder doctor` says changes wait, tell the user to run
+  `yonder agents accept --all-machines` in their terminal: one summary, one yes, every machine.
+  Never try to accept for them.
+- Codex asks the user to trust a changed hook again before running it. After a Codex hook
+  (`files/codex/...`) changes, tell them to open Codex and run `/hooks`.
 - The first part of yonder's block in your instructions is the briefing about the user's
   machines. Its machine list comes from the records: change a role or note with
   `yonder set <machine> --role R --notes TEXT`, never by hand. The rest is `briefing.md` in the

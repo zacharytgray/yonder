@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/zacharytgray/yonder/internal/registry"
 )
 
 func (s *Store) livePath(rel string) string { return filepath.Join(s.Dir, filepath.FromSlash(rel)) }
@@ -156,7 +158,7 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string, loca
 		return "", errNotNewer
 	}
 	if known && next.Version.Compare(cur.Version) == Equal && next.sameContent(cur) {
-		return "", nil
+		return s.vouch(rel, cur, next.Reviewed, from)
 	}
 	if !s.liveAsRecorded(rel) {
 		return "", errEdited
@@ -216,7 +218,11 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string, loca
 	}
 	liveData, liveExec, liveExists := s.live(rel)
 	liveSame := liveExists && hashOf(liveData) == next.Hash && liveExec == next.Exec
-	if !liveSame && !local && s.Kind.Review != nil && s.Kind.Review(rel, next.Exec) {
+	if !validReviewer(next.Reviewed) {
+		next.Reviewed = ""
+	}
+	// a person reviewed this exact content on some machine: it doesn't wait again
+	if !liveSame && !local && next.Reviewed == "" && s.Kind.Review != nil && s.Kind.Review(rel, next.Exec) {
 		if err := writeAtomic(s.pendingPath(rel), data, 0o600); err != nil {
 			return "", err
 		}
@@ -247,6 +253,41 @@ func (s *Store) apply(rel string, next FileState, data []byte, from string, loca
 	s.logChange(rel, "edit", next, from)
 	return "updated", nil
 }
+
+// vouch takes a review mark for the version already held here. a change
+// that waits for review and is that exact content goes live: a person
+// reviewed it on the named machine. it returns "accepted" when one went
+// live, "vouched" when only the mark changed, "" for nothing.
+func (s *Store) vouch(rel string, cur FileState, by, from string) (string, error) {
+	if by == "" || cur.Reviewed != "" || cur.Deleted || !validReviewer(by) {
+		return "", nil
+	}
+	cur.Reviewed = by
+	s.st.Files[rel] = cur
+	if _, waiting := s.st.Pending[rel]; !waiting {
+		return "vouched", nil
+	}
+	if !s.liveAsRecorded(rel) {
+		return "vouched", nil // edited here since; the next scan replaces the waiting change
+	}
+	data, err := os.ReadFile(s.pendingPath(rel))
+	if err != nil || hashOf(data) != cur.Hash {
+		return "vouched", nil
+	}
+	if _, _, exists := s.live(rel); exists {
+		s.keepLive(rel, "replaced: reviewed on "+by)
+	}
+	if err := s.writeLive(rel, data, cur.Exec); err != nil {
+		return "", err
+	}
+	os.Remove(s.pendingPath(rel))
+	delete(s.st.Pending, rel)
+	s.logChange(rel, "accept", cur, from)
+	return "accepted", nil
+}
+
+// a reviewer is a machine name; anything else a peer sends is dropped
+func validReviewer(m string) bool { return m == "" || registry.ValidName(m) == nil }
 
 // caseTwin is another path held here that differs from rel only by case.
 func (s *Store) caseTwin(rel string) string {
@@ -315,6 +356,19 @@ func (s *Store) PendingData(rel string) (live, incoming []byte, err error) {
 	return live, incoming, err
 }
 
+// AcceptIf accepts rel only if what waits is still the content the person
+// was shown: that hash and exec bit. a change that arrived since keeps waiting.
+func (s *Store) AcceptIf(rel, hash string, exec bool) error {
+	st, err := s.State()
+	if err != nil {
+		return err
+	}
+	if f := st.Files[rel]; f.Hash != hash || f.Exec != exec {
+		return fmt.Errorf("%s changed since the summary was made; it still waits", rel)
+	}
+	return s.Accept(rel)
+}
+
 // Accept makes a waiting change live. callers hold the lock.
 func (s *Store) Accept(rel string) error {
 	st, err := s.State()
@@ -343,6 +397,9 @@ func (s *Store) Accept(rel string) error {
 	}
 	os.Remove(s.pendingPath(rel))
 	delete(st.Pending, rel)
+	// a person reviewed this content here; peers take it without asking again
+	f.Reviewed = s.Self
+	st.Files[rel] = f
 	s.logChange(rel, "accept", f, "")
 	return nil
 }

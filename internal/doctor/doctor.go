@@ -657,6 +657,11 @@ func peerChecks(e Env, m registry.Machine, fl fleet) peerResult {
 		add("skill", Warn, "can't read skill status (an older yonder?): "+err.Error(), "upgrade yonder on "+m.Name)
 	} else {
 		res.checks = append(res.checks, skillChecks(m.Name, factsOnly(r, m), "", "yonder agents install --all-machines")...)
+		if e.Layers[registry.LayerAgents] && r.Store != nil && len(r.Store.Pending) > 0 {
+			n := len(r.Store.Pending)
+			add("review", Warn, fmt.Sprintf("%s wait%s for review on %s", plural(n, "change", "changes"), map[bool]string{true: "s", false: ""}[n == 1], m.Name),
+				"yonder agents accept --all-machines  (in a terminal, here)")
+		}
 		if e.Layers[registry.LayerAgents] {
 			if r.Schedule == nil {
 				add("schedule", Warn, "can't read its sync schedule: yonder there is older than 0.4", "upgrade yonder on "+m.Name+", then `yonder schedule install "+m.Name+"`")

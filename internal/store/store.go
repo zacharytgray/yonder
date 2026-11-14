@@ -105,7 +105,11 @@ type FileState struct {
 	Deleted bool   `json:"deleted,omitempty"`
 	Origin  Origin `json:"origin"`
 	Allowed bool   `json:"allowed,omitempty"` // the secret check was waived for this content
-	Held    bool   `json:"held,omitempty"`    // in an offer: held back from the caller (see State.Held)
+	// Reviewed names the machine where a person reviewed this exact content:
+	// accepted it, or imported it at a terminal. a change that carries it
+	// doesn't wait for review again. a scan's new version never has it.
+	Reviewed string `json:"reviewed,omitempty"`
+	Held     bool   `json:"held,omitempty"` // in an offer: held back from the caller (see State.Held)
 }
 
 func (f FileState) sameContent(o FileState) bool {
@@ -160,6 +164,9 @@ type Store struct {
 	// StaleOK syncs files only one side knows even with a peer this machine
 	// hasn't synced with for longer than DeleteTTL
 	StaleOK bool
+	// ReviewedHere: path -> hash a person here put in at a terminal (import).
+	// the next scan marks that version reviewed by this machine.
+	ReviewedHere map[string]string
 
 	st   *State
 	lock *os.File

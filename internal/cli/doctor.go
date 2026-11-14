@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -179,6 +181,19 @@ func (d doctorRemote) AuthorizedKeys(m registry.Machine) (string, error) {
 	return out.String(), nil
 }
 
+// codexStoreHooks: codex is linked here and the store gives it files.
+func codexStoreHooks(r agents.StoreStatus, self string) bool {
+	if !slices.Contains(r.Linked, "codex") {
+		return false
+	}
+	for _, d := range []string{filepath.Join(r.Dir, "files", "codex"), filepath.Join(r.Dir, "machines", self, "files", "codex")} {
+		if es, err := os.ReadDir(d); err == nil && len(es) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // agentsChecks: the agents store here. files that can't sync fail; conflicts,
 // waiting reviews, lost deletes, broken links and home paths warn.
 func agentsChecks(self string) []doctor.Check {
@@ -207,8 +222,16 @@ func agentsChecks(self string) []doctor.Check {
 		add("conflict", doctor.Warn, c+" was edited on two machines at once; both versions are in the store",
 			"yonder sync --resolve "+c+" --keep mine|theirs|<machine>, or delete the .conflict- copy")
 	}
-	for _, p := range r.Pending {
-		add("review", doctor.Warn, p+" changed on another machine and waits for review here", "yonder agents accept (in a terminal)")
+	if n := len(r.Pending); n > 0 {
+		shown := r.Pending
+		if n > 5 {
+			shown = append(slices.Clone(r.Pending[:5]), fmt.Sprintf("and %d more", n-5))
+		}
+		add("review", doctor.Warn, fmt.Sprintf("%s from other machines wait%s for review here: %s", plural(n, "change"), verbS(n), strings.Join(shown, ", ")),
+			"yonder agents accept --all  (in a terminal; --all-machines reviews every machine from there)")
+	}
+	if codexStoreHooks(r, self) {
+		add("codex hooks", doctor.Pass, "Codex hooks come from the store; when they change, "+strings.ToLower(codexTrustNote[:1])+codexTrustNote[1:], "")
 	}
 	for _, n := range r.Notices {
 		add("delete", doctor.Warn, n.Path+": "+n.Detail, "delete it again if you meant to")

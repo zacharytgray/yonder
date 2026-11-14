@@ -197,6 +197,7 @@ func (s *Store) SyncWith(p Peer, dry bool) (Report, error) {
 				}
 				rep.Skipped = append(rep.Skipped, Skip{Path: x.path, Why: err.Error()})
 				continue
+			case what == "vouched":
 			case what != "":
 				rep.Got = append(rep.Got, Change{Path: x.path, State: *x.here, Action: what})
 				changed = append(changed, x.path)
@@ -347,6 +348,17 @@ func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time, flagged map[
 			steps = append(steps, step{path: path, here: ptr(r), needThere: !r.Deleted})
 		case Equal:
 			if l.sameContent(r) {
+				// the same version: only a review mark can differ, and it travels
+				switch {
+				case r.Reviewed != "" && l.Reviewed == "":
+					f := l
+					f.Reviewed = r.Reviewed
+					steps = append(steps, step{path: path, here: ptr(f), quiet: true})
+				case l.Reviewed != "" && r.Reviewed == "":
+					f := r
+					f.Reviewed = l.Reviewed
+					steps = append(steps, step{path: path, there: ptr(f), quiet: true})
+				}
 				continue
 			}
 			fallthrough // same counters, different content: treat as concurrent
@@ -357,6 +369,9 @@ func (s *Store) plan(rm Manifest, rep *Report, heldUntil time.Time, flagged map[
 				f := l
 				if r.Origin.Time.After(l.Origin.Time) {
 					f = r
+				}
+				if f.Reviewed == "" {
+					f.Reviewed = l.Reviewed + r.Reviewed // one is empty
 				}
 				f.Version = Max(l.Version, r.Version)
 				steps = append(steps, step{path: path, here: ptr(f), there: ptr(f)})

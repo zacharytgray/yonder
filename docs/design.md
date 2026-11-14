@@ -40,7 +40,8 @@ skill/yonder/SKILL.md  the agent skill (embedded into the binary)
 test/                  end-to-end tests against the built binary (+ docker integration)
 ```
 
-The hidden commands a caller runs on a target are `_exec`, `_job` (the detached supervisor),
+The hidden commands a caller runs on a target are `_accept-list` and `_accept-apply` (run
+through `_exec`; see Review), `_exec`, `_job` (the detached supervisor),
 `_jobs [id [--follow]]`, `_kill <id>`, `_send` and `_recv` (see Copying files), `_sync`, `_log`, `_facts`, `_init-self <name>` (prints `{"mesh_keys":[...]}`), `_store-offer`, `_store-send` and `_store-recv <store>` (see Store sync), and `_secret-probe [--verify]` and
 `_secret-provision <account> <vault> [--write] [--extra-vault V]...` (both run through `_exec`;
 see Secrets).
@@ -58,6 +59,7 @@ see Secrets).
 ~/.local/state/yonder/sync/<store>.log.jsonl    changes this machine recorded, with where each came from
 ~/.local/state/yonder/sync/history/<store>/     replaced and deleted versions
 ~/.local/state/yonder/sync/pending/<store>/     incoming changes waiting for review
+~/.local/state/yonder/sync/accept-tickets.json  lists this machine gave `accept --all-machines` callers, 10 minutes each
 ~/.local/state/yonder/sync/last.log             output of the last `yonder sync --background`
 ~/.local/state/yonder/sync/schedule.log         output of the scheduled syncs (cut back past 1 MB)
 ~/.local/state/yonder/sync/schedule.json        the last scheduled run: started, finished, exit, error
@@ -973,7 +975,10 @@ layer is on with every online, set-up peer (or the named ones), in order, then o
 peer synced before this machine received something, so one run relays changes between peers.
 Output is one line per peer and store (`agents: gpu-box: get 1, send 2`, or `up to date`), then a
 line per path received (with its origin), sent, waiting for review there, in conflict, or skipped,
-up to 20. `--dry-run` plans and prints without changing anything here (the peers still record their
+up to 20. When changes wait for review, here or on a peer it just sent to, a last line names the
+command: `yonder agents accept --all` for here, `--all-machines` for elsewhere; `add`, `refresh`
+and `enable` print it too. When a file under `files/codex/` went live, a line says Codex asks to
+trust changed hooks again with `/hooks`. `--dry-run` plans and prints without changing anything here (the peers still record their
 own edits when they scan). `--background` starts `yonder sync` in its own session with output in
 `sync/last.log` and returns at once; `YONDER_SYNC_BACKGROUND=off` turns those starts off. `--resolve <path> --keep mine|theirs|<machine>` settles a conflict first: the
 chosen version goes at the path (`mine` is this machine's, `theirs` the only other one), every
@@ -1130,10 +1135,70 @@ Hooks run code, so a new or changed hook from another machine waits for `yonder 
 before it is live here. Executable files count too, and so does everything under `files/`: a file
 linked into a harness's own folder (a hook or MCP config, a model catalog) can change what runs. The
 setting is `[sync] review` in `config.toml`: `"executables"` (default), `"all"` (every incoming
-change waits) or `"none"`. `accept [path...]` shows each waiting change as a line diff against
-what is live (a change to the exec bit as its own line; control, format and bidi characters
-shown escaped) and asks; it needs a terminal on stdin and stdout and refuses otherwise, so an agent
-can't accept on its own. `agents status`, `diff` and `doctor` show what waits.
+change waits) or `"none"`. `agents status`, `diff` and `doctor` show what waits.
+
+**One confirmation.** `accept` (or `accept --all`) prints one summary of everything waiting,
+grouped by kind: hooks (`hooks/`, `machines/<m>/hooks/`), harness files (`files/`,
+`machines/<m>/files/`), scripts (other executables) and other (with `review = "all"`). Each line
+is the path, the machine it came from with the harness when known, how long ago, and either
+"new, N lines, size" or "+a -r lines" against what is live, plus an exec-bit change. Paths,
+origins and diffs are shown escaped (control, format and bidi characters). Then one question:
+accept all, show the full diffs first (paged through `$PAGER`, else `less -R`; `--show` does it
+before asking), go through them one by one, or not now. `accept <path>...` asks per path, as
+before. Accepting takes only what the summary showed: each item carries the hash and exec bit
+listed, and a change that arrived since keeps waiting (`AcceptIf`). It needs a terminal on stdin
+and stdout and refuses otherwise, after printing the summary and the command for the person to
+run, so an agent can't accept on its own. One confirmation is still a person at a terminal,
+never none.
+
+**Changes a person already reviewed.** A version carries `reviewed: <machine>` when a person on
+that machine accepted it (`accept`) or imported it at a terminal (`agents import` with a
+terminal on stdin and stdout, which is how a person runs it and not how an agent's shell does).
+Such a version doesn't wait for review on other machines: a person has looked at that exact
+content once. The mark is tied to content: a scan that finds an edit makes a new version without
+it, so an agent's edit on any machine, or an agent's import, always waits everywhere else, as
+before. The mark travels with the version, and also on its own: two machines holding the same
+version where one has the mark pass it over without a new version (the plan's equal-counters
+case), and a machine where that version waits makes it live then (`accept` in its log, from the
+machine that sent the mark). A mark that isn't a valid machine name is dropped. This holds for
+`review = "all"` too. It is the same kind of claim as `allowed`: a peer writes it, and every
+fleet machine trusts every other fully (Trust model), so a hostile machine could forge it, as it
+could write the hook straight into `~/.claude/hooks` over ssh. What it can't do is turn an
+agent's edit into a reviewed one through any yonder command.
+
+**Every machine from one terminal.** `accept --all-machines` (implies `--all`) does the same
+summary for every set-up machine, one confirmation, and accepts on each:
+
+1. The terminal check runs first, at the caller; with no person there it refuses before asking
+   any machine anything.
+2. This machine lists in process. Each other online machine runs `yonder _accept-list` through
+   `_exec` (so it logs the call), which prints its waiting changes as JSON with a ticket: 16
+   random bytes, saved in `sync/accept-tickets.json` there with the caller's name (from
+   `SSH_CONNECTION`, the same check `_sync` uses), the time, and exactly the path, hash and exec
+   bit of each item listed. An offline machine or an older yonder is a line in the summary,
+   not a failure.
+3. The caller prints every machine's summary, under its name, and asks once. A reply speaks only
+   for the machine that sent it: its items are filed under the name the caller asked, whatever
+   the reply says.
+4. On yes, this machine accepts its own list in process, and each other machine gets
+   `_accept-apply` through `_exec` with its ticket and the items it listed. It accepts an item
+   only if the ticket exists there, is under 10 minutes old, was given to the same caller, and
+   lists that exact item, and the item still waits with that hash and exec bit. The ticket is
+   deleted on first use. It prints what it accepted and skipped.
+
+Why that is the design. No machine can prove to another that a person pressed a key: any fleet
+machine can already run any command on every other (Trust model), so no message format can stop
+a hostile one, and yonder doesn't pretend otherwise. What the design does guarantee:
+
+- The one yes comes from the calling terminal, after the same terminal check as a local accept,
+  and nothing is asked of any machine before that check passes. No reply from a peer is ever
+  taken as a yes.
+- A peer can't widen what the person saw. Each target accepts only what it listed itself, to that
+  caller, byte for byte; a forged, replayed or late request accepts nothing new, and a change that
+  arrived after the summary keeps waiting. One peer's reply can't name another machine's changes.
+- An agent has no ordinary way in: `accept` refuses without a terminal, `_accept-*` are hidden,
+  undocumented in the skill, and every call is logged on the target with the caller's name, so
+  `yonder log` shows what was accepted where and from which terminal's machine.
 
 ### Wiring the harnesses
 
@@ -1415,7 +1480,10 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   this machine's own file.
 - The agents store, when its layer is on: a PASS with the file count and the last sync per
   machine; a FAIL per file that can't sync; a WARN per conflict (fix `yonder sync --resolve <path>
-  --keep mine|theirs|<machine>`), per change waiting for review (fix `yonder agents accept`), per
+  --keep mine|theirs|<machine>`), one WARN for the changes waiting for review (the first five
+  paths, fix `yonder agents accept --all`, or `--all-machines` for every machine); a PASS note
+  when Codex is linked and the store gives it files, saying Codex asks to trust changed hooks again
+  with `/hooks`; a WARN per
   delete that lost to an edit in the last 7 days, per instructions file naming a path under this
   machine's home, per link entry that no longer matches or block with no end marker (fix `yonder agents
   link`), per harness whose rendered instructions are over 25 KB, and per machine last synced
@@ -1430,7 +1498,8 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   <m>`); record address matches the tailnet (FAIL, fix `yonder remove <m> && yonder add <m>`); ssh with the pinned host key, by running
   `yonder version` there (BatchMode, 5s connect timeout); same yonder version as here; stale
   record (`discovered_at` older than 7 days, fix `yonder refresh <m>`); skill state from
-  `yonder agents status --json`; with the agents layer on, its sync schedule from the same reply
+  `yonder agents status --json`; with the agents layer on, a WARN when changes wait for review
+  there (fix `yonder agents accept --all-machines`) and its sync schedule from the same reply
   (fix `yonder schedule install <m>`; a yonder older than 0.4 has no `schedule` there, a WARN to
   upgrade); its `authorized_keys` for lost machines' keys and for mesh.
 - Mesh, for each machine whose `authorized_keys` it reads (this one, and each online set-up
@@ -1558,7 +1627,11 @@ way, such as the same LAN.
   receives, not only on what it sends, and decides review from its own state, not from fields
   the sender wrote.
 - Incoming hooks and executables wait for a person to accept them (see Agents store). Every change
-  records its origin, so `agents log` and `agents diff` say which machine changed what.
+  records its origin, so `agents log` and `agents diff` say which machine changed what. A version
+  a person reviewed on one machine carries that machine's name and doesn't wait again elsewhere;
+  an edit found by a scan never carries it (see Review). `accept --all-machines` takes its one
+  confirmation at the calling terminal, and each target accepts only the exact list it gave that
+  caller, once, within 10 minutes.
 - Output, the log and `jobs/<id>.json` scrub secret values, command text included. Values that
   overlap are replaced as one span named after all of them in order, like `[A+B]`, so no part
   of either shows.
