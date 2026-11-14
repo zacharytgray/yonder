@@ -333,11 +333,10 @@ see them.
 Tell the person what is set up (machines, layers, the schedule), and give them something to try,
 in their own words, to any agent on any of their machines:
 
-> Shoot, I forgot to move my slides to my laptop. Can you send them over?
+> The Pi's disk is full, can you clean it up?
 
-The agent will find the file with `yonder run`, and copy it with
-`yonder cp ~/Documents/Talk.key laptop:~/Desktop/` (a destination ending in `/` is created if it
-is missing). Other ideas: "Which of my machines has the
+The agent will check the disk with `yonder run pi -- df -h /`, find what is using the space,
+and ask before it deletes anything. Other ideas: "Which of my machines has the
 most free disk?", "Run the tests on the PC", "Is my GPU box busy?"
 
 Also tell them:
