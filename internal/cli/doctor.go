@@ -14,6 +14,7 @@ import (
 	"github.com/zacharytgray/yonder/internal/agents"
 	"github.com/zacharytgray/yonder/internal/doctor"
 	"github.com/zacharytgray/yonder/internal/registry"
+	"github.com/zacharytgray/yonder/internal/schedule"
 	"github.com/zacharytgray/yonder/internal/secrets"
 	"github.com/zacharytgray/yonder/internal/tailnet"
 	"github.com/zacharytgray/yonder/internal/transport"
@@ -81,6 +82,8 @@ func (a *app) doctor() doctor.Report {
 	}
 	checks := doctor.Run(e)
 	if cfg.Self != "" && a.store.LayerOn(registry.LayerAgents) {
+		j := schedule.Here(cfg.Self)
+		checks = append(checks, doctor.ScheduleCheck("this machine", "", schedule.Check(j.OS, j.Home, j.StateDir), time.Now()))
 		checks = append(checks, agentsChecks(cfg.Self)...)
 		checks = append(checks, a.briefingChecks(cfg.Self)...)
 	}

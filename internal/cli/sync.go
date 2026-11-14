@@ -31,6 +31,7 @@ type syncOpts struct {
 	deletes    bool // let a scan delete most of a store
 	staleOK    bool // take files a long-absent machine brings back
 	quiet      bool // only problems: for syncs that ride on another command
+	scheduled  bool // run by the timer: record the result for doctor
 }
 
 func newSyncCmd() *cobra.Command {
@@ -54,8 +55,9 @@ haven't synced with each other for over 90 days hold back the old files only one
 has, since the other may have deleted them meanwhile; --stale-ok syncs them, and clears every
 hold this machine keeps, for every machine.
 
-There is no daemon. --background starts the sync and returns at once, for a
-session-start hook. --dry-run shows what would move and changes nothing here (the
+There is no daemon. With the agents layer on, a timer on each machine runs this every
+15 minutes, at login and on wake (` + "`yonder schedule`" + `). --background starts the sync and
+returns at once. --dry-run shows what would move and changes nothing here (the
 other machines still record their own edits).`,
 		Args: usageArgs(cobra.ArbitraryArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,6 +74,9 @@ other machines still record their own edits).`,
 			if o.background {
 				return a.syncBackground(only, args)
 			}
+			if o.scheduled {
+				return a.runScheduled(o)
+			}
 			return a.syncCommand(only, args, o)
 		},
 	}
@@ -81,6 +86,8 @@ other machines still record their own edits).`,
 	cmd.Flags().StringVar(&o.keep, "keep", "", "with --resolve: mine, theirs, or a machine name")
 	cmd.Flags().BoolVar(&o.deletes, "allow-deletes", false, "let this sync delete most or all of a store here (it stops otherwise)")
 	cmd.Flags().BoolVar(&o.staleOK, "stale-ok", false, "sync held-back files and clear every hold this machine keeps, for all machines")
+	cmd.Flags().BoolVar(&o.scheduled, "scheduled", false, "what the sync schedule runs: record the result for doctor")
+	_ = cmd.Flags().MarkHidden("scheduled")
 	return cmd
 }
 

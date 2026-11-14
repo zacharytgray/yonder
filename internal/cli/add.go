@@ -31,6 +31,7 @@ type addOpts struct {
 	interactive bool
 	allowShared bool   // take a peer another tailscale account owns
 	noMesh      bool   // don't authorize fleet keys to and from it
+	noSchedule  bool   // don't install the sync schedule there
 	pin         string // a host key held from before: checked strictly, never replaced
 }
 
@@ -65,6 +66,7 @@ account) is refused unless --allow-shared is given.`,
 	f.BoolVar(&o.allowShared, "allow-shared", false, "allow a peer another tailscale account owns (node sharing)")
 	f.BoolVar(&yes, "yes", false, "never prompt (and authorize fleet keys to and from it)")
 	f.BoolVar(&o.noMesh, "no-mesh", false, "don't add fleet machines' ssh keys to it, or its keys to them")
+	f.BoolVar(&o.noSchedule, "no-schedule", false, "don't install the 15-minute sync schedule there (agents layer only)")
 	return cmd
 }
 
@@ -114,6 +116,7 @@ func (a *app) addCommand(arg string, o addOpts) error {
 	a.syncFleet(self)
 	a.syncStoresQuiet(self)
 	a.offerMesh(self, m.Name, o)
+	a.scheduleMachines(self, []string{m.Name}, o.noSchedule)
 	return nil
 }
 

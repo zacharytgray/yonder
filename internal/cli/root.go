@@ -125,6 +125,7 @@ func newRoot() *cobra.Command {
 		newLayersCmd(),
 		newEnableCmd(),
 		newDisableCmd(),
+		newScheduleCmd(),
 	)
 	root.AddCommand(hiddenCmds()...)
 	return root

@@ -33,6 +33,7 @@ func newInitCmd() *cobra.Command {
 		noSkill  bool
 		shared   bool
 		noMesh   bool
+		noSched  bool
 		layers   []string
 	)
 	cmd := &cobra.Command{
@@ -67,7 +68,8 @@ unless --allow-shared is given. Two peers with one short name: pass the full dns
 			} else if picked == nil {
 				picked = []string{}
 			}
-			return a.initCommand(interactive, machines, user, ids, noSkill, shared, noMesh, picked)
+			return a.initCommand(initOpts{interactive: interactive, chosen: machines, user: user, ids: ids, noSkill: noSkill,
+				allowShared: shared, noMesh: noMesh, noSchedule: noSched, layers: picked})
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "never prompt")
@@ -75,6 +77,7 @@ unless --allow-shared is given. Two peers with one short name: pass the full dns
 	cmd.Flags().StringVar(&user, "user", "", "ssh user on the peers (default: the current user)")
 	cmd.Flags().BoolVar(&noSkill, "no-skill", false, "don't install the agent skill on any machine")
 	cmd.Flags().BoolVar(&noMesh, "no-mesh", false, "don't add the fleet machines' ssh keys to each other's authorized_keys")
+	cmd.Flags().BoolVar(&noSched, "no-schedule", false, "don't install the 15-minute sync schedule on the machines set up (agents layer only)")
 	cmd.Flags().BoolVar(&shared, "allow-shared", false, "allow peers another tailscale account owns (node sharing)")
 	cmd.Flags().StringSliceVar(&layers, "layers", nil, "optional layers to turn on for the fleet: "+strings.Join(registry.LayerNames(), ",")+" (or none)")
 	cmd.Flags().StringArrayVar(&idents, "identity", nil, "ssh key for a peer, as machine=path (repeatable, kept on this machine only)")
@@ -101,8 +104,20 @@ func parseIdentities(in []string) (map[string]string, error) {
 	return out, nil
 }
 
-// layers is nil when --layers wasn't given.
-func (a *app) initCommand(interactive bool, chosen []string, user string, ids map[string]string, noSkill, allowShared, noMesh bool, layers []string) error {
+type initOpts struct {
+	interactive bool
+	chosen      []string
+	user        string
+	ids         map[string]string
+	noSkill     bool
+	allowShared bool
+	noMesh      bool
+	noSchedule  bool
+	layers      []string // nil when --layers wasn't given
+}
+
+func (a *app) initCommand(io initOpts) error {
+	interactive, chosen, user, ids, noSkill, allowShared, noMesh, layers := io.interactive, io.chosen, io.user, io.ids, io.noSkill, io.allowShared, io.noMesh, io.layers
 	st, err := a.status()
 	if err != nil {
 		if errors.Is(err, tailnet.ErrNotInstalled) || errors.Is(err, tailnet.ErrNotRunning) {
@@ -182,6 +197,7 @@ func (a *app) initCommand(interactive bool, chosen []string, user string, ids ma
 	if len(added) > 0 {
 		a.offerMesh(self, "", addOpts{interactive: interactive, allowShared: allowShared, noMesh: noMesh})
 	}
+	a.scheduleMachines(self, append([]string{self}, added...), io.noSchedule)
 	if !noSkill {
 		a.installSkillOn(self, added, interactive)
 	}

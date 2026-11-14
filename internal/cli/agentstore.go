@@ -133,8 +133,8 @@ links follow on their own. Run it again any time.`,
 			if err := l.Link(hs); err != nil {
 				return err
 			}
-			if !dryRun {
-				fmt.Fprintln(a.out, "to sync at the start of each session, have the harness run `yonder sync --background` (for Claude Code, a SessionStart hook)")
+			if !dryRun && !scheduleHere() {
+				fmt.Fprintln(a.out, "no sync schedule runs here, so store edits arrive only when a sync runs; `yonder schedule install` adds one")
 			}
 			return nil
 		},

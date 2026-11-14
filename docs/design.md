@@ -34,6 +34,7 @@ internal/agents/       embedded SKILL.md and per-harness install; the agents sto
 internal/store/        store sync: manifests, version counters, bundles, history, review
 internal/doctor/       checks
 internal/mesh/         which fleet keys each machine's authorized_keys should hold; the sh that edits a peer's
+internal/schedule/     the launchd / systemd timer that runs `yonder sync` every 15 minutes
 internal/version/      version string, set with -ldflags
 skill/yonder/SKILL.md  the agent skill (embedded into the binary)
 test/                  end-to-end tests against the built binary (+ docker integration)
@@ -58,6 +59,12 @@ see Secrets).
 ~/.local/state/yonder/sync/history/<store>/     replaced and deleted versions
 ~/.local/state/yonder/sync/pending/<store>/     incoming changes waiting for review
 ~/.local/state/yonder/sync/last.log             output of the last `yonder sync --background`
+~/.local/state/yonder/sync/schedule.log         output of the scheduled syncs (cut back past 1 MB)
+~/.local/state/yonder/sync/schedule.json        the last scheduled run: started, finished, exit, error
+~/.local/state/yonder/schedule/declined         the person turned the schedule off here
+~/.local/state/yonder/schedule/backup/<ts>/     a hand-made job with yonder's label, taken over
+~/Library/LaunchAgents/com.yonder.sync.plist    macOS: the sync schedule
+~/.config/systemd/user/yonder-sync.{service,timer}  Linux: the sync schedule
 ~/.local/state/yonder/agents/links.json         what `agents link` made and what it replaced
 ~/.local/state/yonder/agents/backup/<ts>/       files and folders link moved out of the way
 ~/.local/state/yonder/log.jsonl        commands this machine received
@@ -594,7 +601,7 @@ Turning a layer off stops it and keeps its data:
   "the secrets layer is off, so --secret is refused; turn it on with `yonder enable secrets`".
   `secrets.toml`, provider settings and tokens stay. `doctor` skips the provider checks.
 - `agents` off: every machine unlinks its harnesses (`agents unlink`, which puts back what link
-  replaced) and marks its links paused; `_store-*` there refuse with exit 3 and the caller skips
+  replaced), marks its links paused, and removes its sync schedule; `_store-*` there refuse with exit 3 and the caller skips
   that machine ("the agents layer is off there"). The store and its history stay. A machine
   applies the setting when it arrives: in `_sync` on a peer, after the caller's own sync. Turning
   it back on links each paused machine again with the harnesses it had.
@@ -960,23 +967,93 @@ too, so this machine's own scans take it. Files
 are written through an `os.Root` on the store folder with a temp file and a rename, so no link in
 the store can send a write elsewhere.
 
-`yonder sync [store] [machine...]` syncs the registry, applies the layers, then each store whose
+`yonder sync [store] [machine...]` syncs the registry, applies the layers (and the sync
+schedule, below), then each store whose
 layer is on with every online, set-up peer (or the named ones), in order, then once more with any
 peer synced before this machine received something, so one run relays changes between peers.
 Output is one line per peer and store (`agents: gpu-box: get 1, send 2`, or `up to date`), then a
 line per path received (with its origin), sent, waiting for review there, in conflict, or skipped,
 up to 20. `--dry-run` plans and prints without changing anything here (the peers still record their
 own edits when they scan). `--background` starts `yonder sync` in its own session with output in
-`sync/last.log` and returns at once, for a session-start hook; `YONDER_SYNC_BACKGROUND=off` turns
-those starts off. `--resolve <path> --keep mine|theirs|<machine>` settles a conflict first: the
+`sync/last.log` and returns at once; `YONDER_SYNC_BACKGROUND=off` turns those starts off. `--resolve <path> --keep mine|theirs|<machine>` settles a conflict first: the
 chosen version goes at the path (`mine` is this machine's, `theirs` the only other one), every
 conflict copy is deleted, and the sync spreads it. `refresh`, `add` and `enable` sync the stores
 too, printing only what moved and what failed. Commands that change the agents store here
 (`import`, `restore`, `allow`) start a background sync.
 
-Two machines that are never awake at the same time only meet through a third machine, or a timer.
-A cron or launchd entry running `yonder sync` on an always-on machine is that timer; it is a
-timer, not a daemon.
+### The sync schedule
+
+Sync needs no action from the person. With the agents layer on, every machine runs `yonder sync`
+on a timer: every 15 minutes, at login, and on wake. It is a timer, not a daemon: nothing stays
+resident between runs.
+
+- macOS: a LaunchAgent, label `com.yonder.sync`, at `~/Library/LaunchAgents/com.yonder.sync.plist`,
+  loaded with `launchctl bootstrap gui/<uid>`. It uses `StartCalendarInterval` (four minutes an
+  hour) and `RunAtLoad`. launchd runs a calendar job that was missed during sleep once on wake, and
+  skips a missed `StartInterval`, so calendar it is. RunAtLoad runs it at login. With nobody logged
+  in to the desktop there is no `gui/<uid>` domain; the file is written and loads at the next login,
+  and install says so.
+- Linux: `yonder-sync.service` (oneshot) and `yonder-sync.timer` in `~/.config/systemd/user`, enabled
+  with `systemctl --user enable --now`. The timer is `OnCalendar=*:<m>/15` (a wall-clock timer whose
+  time passed during suspend fires on resume), `Persistent=true` (a run missed while off happens at
+  boot) and `OnStartupSec=1min` (the user manager starts at login). Without lingering the user
+  manager runs only while the person is logged in; install and doctor say `sudo loginctl
+  enable-linger <user>` for an always-on machine. No user manager at all (a container, no D-Bus) is a
+  warning: the files are written, nothing runs.
+- The job runs `<yonder> sync --scheduled`. `<yonder>` is the path a person would type (the PATH
+  entry when it is this binary); a binary inside a versioned Homebrew folder (`Cellar/`,
+  `Caskroom/`) becomes Homebrew's `bin/yonder` link, so an upgrade doesn't strand the job. Its
+  environment: a PATH starting with the binary's folder (launchd and systemd start jobs with a bare
+  one), `SHLVL=1` on macOS (the Tailscale app binary acts as its CLI only when `SHLVL` is set; yonder
+  also sets it itself when it runs that binary), and any `YONDER_HOME`, `XDG_*_HOME` or
+  `YONDER_SSH_IDENTITY` set at install time, so the job reads the same config and stores.
+- Its output goes to `sync/schedule.log` in yonder's state dir (launchd `StandardOutPath`, systemd
+  `StandardOutput=append:`). `--scheduled` cuts that log back when it passes 1 MB, writes
+  `sync/schedule.json` when it starts and again with its exit code when it ends, waits a random 0 to
+  30 seconds first (`YONDER_SCHEDULE_JITTER=off` skips it), and is otherwise a normal sync.
+- Machines don't all sync at the same minute: the minute in each 15 is a hash of the machine's name,
+  plus the random wait. Two machines syncing each other at once find each other busy and skip
+  (see the store lock above), so this keeps those skips rare.
+- Every file yonder writes holds `yonder:schedule v1`. A job with the same label or unit names
+  that lacks it was made by hand (people made `com.yonder.sync` and `yonder-sync.timer` before
+  0.4). An explicit install (`init`, `add`, `enable agents`, `yonder schedule install`) unloads it,
+  moves its files to `schedule/backup/<ts>/` and replaces them, so the two never run side by side;
+  on macOS a job loaded under that label from another plist under the home is moved aside too. A
+  sync never takes one over on its own, and `remove` never deletes one: doctor WARNs with the
+  install line instead.
+
+When it is installed and removed:
+
+- `init` installs it on this machine and every peer it added, `add` on the machine it added, and
+  `enable agents` on every online machine, when the agents layer is on. `--no-schedule` (init and
+  add) skips it and records a decline on those machines. Peers get it through `_exec`
+  (`yonder schedule install`), so they log it.
+- Every machine also keeps it in line with the layer whenever the layer setting is applied (after
+  each registry sync, in `_sync` on a peer): layer on and no job here, or yonder's job pointing at a
+  binary that is gone, installs it, unless declined; layer off removes yonder's job. So a machine
+  offline during `enable agents` gets it at its next sync, and `disable agents` removes it
+  everywhere as the setting arrives.
+- `yonder schedule remove [m...]` removes it and records the decline, so a sync doesn't put it
+  back; `yonder schedule install [m...]` clears the decline. `remove --forget-local` (what
+  `yonder remove <m>` runs on the machine leaving) removes it.
+- Under `YONDER_HOME` the files are written but launchctl and systemctl are never called, so tests
+  never touch the real service manager.
+
+`yonder schedule [status --json]` and doctor read the state: the job file is there and yonder's,
+its binary exists, the service manager has it loaded (`launchctl print gui/<uid>/com.yonder.sync`;
+`systemctl --user is-active yonder-sync.timer`), lingering on Linux, and the last run from
+`schedule.json`. `agents status --json` carries the same object as `schedule`, which is how doctor
+reads a peer's.
+
+**The session-start sync.** Before 0.4 the advice was a harness hook running `yonder sync
+--background` at session start. With the schedule it no longer matters: the schedule runs at
+login and on wake, and a session-start sync runs in the background anyway, so the session that
+started it loads the old text and only later sessions see what it fetched, which the schedule
+already covers within 15 minutes. `--background` stays for a machine with `--no-schedule`, and
+`agents link` mentions the schedule only where none is installed.
+
+Two machines that are never awake at the same time still only meet through a third machine,
+which every always-on machine's schedule now provides.
 
 **Refusals are loud.** A file a store won't sync is a FAIL line in `sync` output (exit 1) and in
 `doctor`, with the reason and the fix. Only regular files sync: a symlink, a folder entry yonder
@@ -1081,8 +1158,8 @@ The rules:
 
 - Yonder never edits a settings file (`settings.json`, `config.toml`, `config.yaml`). Claude Code
   hooks are linked into `~/.claude/hooks/`, so a `settings.json` entry for `~/.claude/hooks/x.sh`
-  keeps working; registering a new hook stays the user's step. So does a session-start hook
-  running `yonder sync --background`, which link suggests.
+  keeps working; registering a new hook stays the user's step. Link points at
+  `yonder schedule install` where no sync schedule is installed.
 - It edits a user's instructions file only inside the marked block: from the first line that is a
   begin marker (`<!-- yonder:begin ... -->`) to the first line after it that is
   `<!-- yonder:end -->`. Markers count only as whole lines, so text that mentions them (in
@@ -1332,7 +1409,10 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   `yonder remove <lost> --lost --include-shared --yes`"; when `authorized_keys` or `~/.ssh` is a
   symlink the check reads through it and the fix says to delete the lines by hand);
   `secrets.Health()` when the secrets layer is on (a single PASS saying it is off otherwise); a
-  `layers` line. Mesh (below) for this machine's own file.
+  `layers` line; with the agents layer on, a `schedule` line (see The sync schedule: missing,
+  not yonder's, binary gone or not loaded is a FAIL or WARN with `yonder schedule install`; a last
+  run that failed or is over 2 hours old, or no lingering on Linux, is a WARN). Mesh (below) for
+  this machine's own file.
 - The agents store, when its layer is on: a PASS with the file count and the last sync per
   machine; a FAIL per file that can't sync; a WARN per conflict (fix `yonder sync --resolve <path>
   --keep mine|theirs|<machine>`), per change waiting for review (fix `yonder agents accept`), per
@@ -1350,7 +1430,9 @@ one-line detail, and a fix under anything not passing. It exits 1 if any check f
   <m>`); record address matches the tailnet (FAIL, fix `yonder remove <m> && yonder add <m>`); ssh with the pinned host key, by running
   `yonder version` there (BatchMode, 5s connect timeout); same yonder version as here; stale
   record (`discovered_at` older than 7 days, fix `yonder refresh <m>`); skill state from
-  `yonder agents status --json`; its `authorized_keys` for lost machines' keys and for mesh.
+  `yonder agents status --json`; with the agents layer on, its sync schedule from the same reply
+  (fix `yonder schedule install <m>`; a yonder older than 0.4 has no `schedule` there, a WARN to
+  upgrade); its `authorized_keys` for lost machines' keys and for mesh.
 - Mesh, for each machine whose `authorized_keys` it reads (this one, and each online set-up
   peer): WARN when a fleet machine that mesh would hand keys out for has none of its `mesh_keys`
   in that file, "laptop can't ssh in: none of its keys on record are in ~/.ssh/authorized_keys",

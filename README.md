@@ -46,8 +46,8 @@ agent, every machine works like one computer.
 - **Shared secrets, kept safe.** API keys stay in 1Password or Bitwarden. Agents ask for a key by
   name, and Yonder keeps the value out of commands, logs and output.
 
-**Simple and lightweight.** It's one small program, with no server and nothing running in the
-background. It uses Tailscale and SSH. It works with Claude Code, Codex, Pi and Hermes.
+**Simple and lightweight.** It's one small program, with no server and no daemon. A timer runs
+a short sync every 15 minutes. It uses Tailscale and SSH. It works with Claude Code, Codex, Pi and Hermes.
 
 ```sh
 brew trust --cask zacharytgray/yonder/yonder
@@ -420,11 +420,16 @@ How sync behaves:
   `--allow-deletes`: a moved or missing folder looks like that. `yonder doctor` says so too.
 - Replaced and deleted versions are kept: `yonder agents restore <path>`. `yonder agents log`
   and `yonder agents diff` show which machine changed what.
-- There is no daemon. Sync runs on `yonder sync`, `refresh` and `add`, and after a change made
-  through yonder. To sync at the start of each agent session, have the harness run
-  `yonder sync --background`; for Claude Code, a SessionStart hook does it.
-- Two machines that are never awake at the same time only meet through a third one. A cron
-  entry running `yonder sync` on an always-on machine covers that.
+- Sync is automatic. With the `agents` layer on, every machine runs `yonder sync` every 15
+  minutes, at login and when it wakes: a launchd job (`com.yonder.sync`) on macOS, a systemd user
+  timer (`yonder-sync.timer`) on Linux. Nothing stays running in between. `init`, `add` and
+  `yonder enable agents` install it, `yonder disable agents` removes it, and `--no-schedule` skips
+  it. `yonder schedule` shows when it last ran and how that went; each run's output is in
+  `~/.local/state/yonder/sync/schedule.log`. If you made a `com.yonder.sync` job by hand,
+  `yonder schedule install` backs it up and takes it over. A session-start hook running
+  `yonder sync --background` is no longer needed.
+- On Linux the timer runs only while you're logged in, unless lingering is on. For an always-on
+  machine run `sudo loginctl enable-linger $USER`; `yonder doctor` reminds you.
 - Two machines that haven't synced with each other for more than 90 days hold back the old files
   only one of them has, since the other may have deleted them meanwhile. Files both know, and
   anything changed since, sync as usual. `yonder sync --stale-ok` syncs the held files (it clears every hold, for every machine).
@@ -448,6 +453,7 @@ How sync behaves:
 | `yonder agents install\|uninstall\|status` | Manage the skill in each agent harness. `--all-machines` does every machine |
 | `yonder layers` / `yonder enable\|disable <layer>` | See and switch the optional layers for the whole fleet |
 | `yonder sync [store] [machine...]` | Sync the registry and the stores of the layers that are on. `--resolve` settles a conflict |
+| `yonder schedule [install\|remove] [machine...]` | The timer that runs `yonder sync` every 15 minutes, at login and on wake |
 | `yonder agents import\|link\|unlink\|log\|diff\|accept\|restore\|allow` | Agent config: put it in the store, wire it into the harnesses, see and undo changes, review hooks |
 | `yonder agents briefing show\|review` | The briefing about your machines that every agent loads: print it, or list what to fix and a trimmed draft |
 | `yonder agents gather` | Compare each machine's own instructions files, for a reconcile with your agent |

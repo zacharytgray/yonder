@@ -104,7 +104,8 @@ With the `agents` layer on, `~/.local/share/yonder/agents` holds the user's shar
 instructions, skills, subagents and hooks, and syncs between machines:
 
 - To change shared instructions or a skill, edit the file in that folder, then run
-  `yonder sync`. Don't edit the links or rendered files in `~/.claude`, `~/.codex` or `~/.pi`;
+  `yonder sync`. A timer also syncs every machine every 15 minutes (`yonder schedule` shows it),
+  so you never need to set up a sync hook or cron entry. Don't edit the links or rendered files in `~/.claude`, `~/.codex` or `~/.pi`;
   they come from the store.
 - `yonder agents log` and `yonder agents diff <path>` show which machine changed what.
   `yonder agents restore <path>` puts an earlier version back.

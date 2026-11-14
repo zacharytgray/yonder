@@ -19,6 +19,7 @@ import (
 	"github.com/zacharytgray/yonder/internal/registry"
 	"github.com/zacharytgray/yonder/internal/remote"
 	"github.com/zacharytgray/yonder/internal/runlog"
+	"github.com/zacharytgray/yonder/internal/schedule"
 	"github.com/zacharytgray/yonder/internal/secrets"
 	"github.com/zacharytgray/yonder/internal/transport"
 )
@@ -477,6 +478,12 @@ func (a *app) forgetLocal(yes bool) error {
 	}
 	if err := a.store.Forget(); err != nil {
 		return err
+	}
+	j := schedule.Here("")
+	if res, err := schedule.Remove(j.OS, j.Home, j.StateDir, false); err != nil {
+		a.warnf("sync schedule: %v", err)
+	} else {
+		a.printSchedule(res, "")
 	}
 	fmt.Fprintln(a.out, "cleared this machine's registry copy and fleet name (other config kept)")
 	return nil

@@ -288,6 +288,10 @@ func Get(ctx context.Context) (*Status, error) {
 		defer cancel()
 		var stderr bytes.Buffer
 		cmd := exec.CommandContext(ctx, bin, "status", "--json")
+		if bin == macAppBinary && os.Getenv("SHLVL") == "" {
+			// the app binary acts as the cli only when SHLVL is set, and launchd sets none
+			cmd.Env = append(os.Environ(), "SHLVL=1")
+		}
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()
 		if err != nil && len(out) == 0 {
