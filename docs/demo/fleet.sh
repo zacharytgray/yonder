@@ -1,7 +1,8 @@
 #!/bin/sh
-# builds the fake fleet the demo's tables come from, then prints the real
-# `yonder ls`, `yonder layers`, the laptop's rendered CLAUDE.md, `yonder log` and
-# `yonder agents install` output.
+# builds the fake fleet the demo's terminal output comes from, then prints the
+# real `yonder ls`, `yonder layers`, the laptop's rendered CLAUDE.md, `yonder log`
+# and `yonder agents install` output, and the three scenes in the video: fix the
+# pi, a job on the pc, a key by name.
 # usage: docs/demo/fleet.sh [path/to/yonder]   (run `make build` first)
 set -eu
 yonder=$(cd "$(dirname "${1:-bin/yonder}")" && pwd)/$(basename "${1:-bin/yonder}")
@@ -76,24 +77,24 @@ name = 'NVIDIA GeForce RTX 4090'
 vendor = 'nvidia'
 memory_gb = 24.0
 EOF
-machine raspberry-pi linux arm64 100.64.0.4 other 'home automation'
-cat >> "$f/home/config/machines/raspberry-pi.toml" <<'EOF'
+machine pi linux arm64 100.64.0.4 other 'home automation'
+cat >> "$f/home/config/machines/pi.toml" <<'EOF'
 [facts]
-hostname = 'raspberry-pi'
+hostname = 'pi'
 os_version = 'Debian 12'
 cpu = 'Cortex-A76'
 memory_gb = 8.0
 EOF
 
 seen=$(date -u -v-2H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '2 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-tailnet() { # name, online for laptop and pc; raspberry-pi is always asleep
+tailnet() { # name, online for laptop and pc; pi is asleep in the ls table
   cat > "$f/ts-$1.json" <<EOF
 {"Version":"1.90.0","BackendState":"Running",
  "Self":{"ID":"nSelf","UserID":1,"HostName":"mac-mini","DNSName":"mac-mini.example.ts.net.","OS":"macOS","TailscaleIPs":["100.64.0.1"],"Online":true},
  "Peer":{
   "nodekey:a":{"UserID":1,"HostName":"laptop","DNSName":"laptop.example.ts.net.","OS":"macOS","TailscaleIPs":["100.64.0.2"],"Online":$2,"LastSeen":"$seen"},
   "nodekey:b":{"UserID":1,"HostName":"pc","DNSName":"pc.example.ts.net.","OS":"linux","TailscaleIPs":["100.64.0.3"],"Online":$2,"LastSeen":"$seen"},
-  "nodekey:c":{"UserID":1,"HostName":"raspberry-pi","DNSName":"raspberry-pi.example.ts.net.","OS":"linux","TailscaleIPs":["100.64.0.4"],"Online":false,"LastSeen":"$seen"}},
+  "nodekey:c":{"UserID":1,"HostName":"pi","DNSName":"pi.example.ts.net.","OS":"linux","TailscaleIPs":["100.64.0.4"],"Online":false,"LastSeen":"$seen"}},
  "CurrentTailnet":{"Name":"example.ts.net","MagicDNSSuffix":"example.ts.net"}}
 EOF
 }
@@ -141,3 +142,47 @@ echo '$ yonder log'
 run YONDER_TAILSCALE_JSON="$f/ts-false.json" "$yonder" log
 echo '$ yonder agents install'
 run YONDER_TAILSCALE_JSON="$f/ts-false.json" "$yonder" agents install
+
+# the video's scenes. a machine runs a command in-process when it is `self`:
+# the same _exec path an ssh call reaches. so each scene makes the target self
+# and runs from a home of its own.
+mkdir -p "$f/homes/pi/.cache/pip" "$f/homes/pi/.cache/thumbnails" "$f/homes/pi/.cache/fontconfig" "$f/homes/pc"
+dd if=/dev/zero of="$f/homes/pi/.cache/pip/wheels.bin" bs=1048576 count=2150 2>/dev/null
+dd if=/dev/zero of="$f/homes/pi/.cache/thumbnails/large.bin" bs=1048576 count=46 2>/dev/null
+dd if=/dev/zero of="$f/homes/pi/.cache/fontconfig/cache.bin" bs=1024 count=10 2>/dev/null
+cat > "$f/homes/pc/train.py" <<'EOF'
+import time
+for e in range(1, 21):
+    print(f"epoch {e}/20  loss {0.92 * 0.81 ** (e - 1):.3f}", flush=True)
+    time.sleep(1.5)
+EOF
+# stand-in for the 1password cli: fills each reference with a made-up value
+cat > "$f/bin/op" <<'EOF'
+#!/bin/sh
+[ "$1" = inject ] || exit 1
+sed -E 's/[{][{] op:[^}]* [}][}]/hf_xYz3kQ9mDemoValueNotReal/'
+EOF
+chmod +x "$f/bin/op"
+printf "HF_TOKEN = 'op://Agents/Hugging Face/credential'\n" > "$f/home/config/secrets.toml"
+on() { # machine, then yonder args: run as that machine, from its home
+  m=$1; shift
+  printf "self = '%s'\n[secrets]\nprovider = '1password'\nmode = 'desktop'\n" "$m" > "$f/home/config/config.toml"
+  (cd "$f/homes/$m" && run SHELL=/bin/sh YONDER_TAILSCALE_JSON="$f/ts-false.json" "$yonder" "$@")
+}
+echo '--- scene: fix the pi'
+echo "\$ yonder run pi -- 'du -sh .cache/* | sort -h'"
+on pi run --as hermes pi -- 'du -sh .cache/* | sort -h'
+echo "\$ yonder run pi -- 'rm -rf .cache/pip && du -sh .cache'"
+on pi run --as hermes pi -- 'rm -rf .cache/pip && du -sh .cache'
+echo '--- scene: a job on the pc'
+echo '$ yonder run pc --detach -- python3 train.py'
+on pc run --as hermes --detach pc -- python3 train.py >"$f/detach.txt" 2>&1
+cat "$f/detach.txt"
+id=$(head -1 "$f/detach.txt")
+sleep 3.4
+echo "\$ yonder jobs pc $id"
+on pc jobs pc "$id"
+on pc jobs pc "$id" --kill >/dev/null 2>&1 || true
+echo '--- scene: a key by name'
+echo "\$ yonder run pc --secret HF_TOKEN -- 'echo \$HF_TOKEN'"
+on pc run --as hermes --secret HF_TOKEN pc -- 'echo $HF_TOKEN'

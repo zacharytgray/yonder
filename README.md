@@ -21,10 +21,10 @@
 **[<kbd> <br> Design <br> </kbd>](docs/design.md)**
 
 <a href="docs/demo/yonder-demo.mp4">
-  <img src="docs/demo/hero.gif" width="100%" alt="Every computer you own, one agent. From a phone: Shoot, I forgot to move my slides to my laptop. Can you send them over? The agent on the Mac Mini runs yonder ls, finds Talk.key and copies it to the laptop's Desktop with yonder cp, then finds the thesis code on the PC with yonder run. yonder layers shows agent config syncing, and the laptop's CLAUDE.md holds the same map of every machine. A secret from 1Password prints as [HF_TOKEN], and yonder log records it by name. Then a Homebrew install, one binary with no server and no daemon, and the skill going into Claude Code, Codex, Pi and Hermes.">
+  <img src="docs/demo/hero.gif" width="100%" alt="Your work is on four computers. Your agent knows one. From a phone, to the agent on the Mac mini: The Pi's disk is full, can you clean it up? It runs yonder run pi to find 2.1 GB of old pip downloads and remove them. Run the training script on the PC: yonder run pc --detach starts it, and yonder jobs shows epoch 3 of 20 later. Use my Hugging Face token on the PC: yonder run --secret HF_TOKEN prints the value as [HF_TOKEN]. Then: Every computer you own, one agent. Tell your agent: Set up Yonder for me, with the repo link.">
 </a>
 
-**[▶ Watch the demo](docs/demo/yonder-demo.mp4)**
+**[▶ Watch the 22-second demo, with sound](docs/demo/yonder-demo.mp4)**
 
 </div>
 
