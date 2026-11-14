@@ -27,15 +27,18 @@
   #dusk { position: absolute; inset: 0; color: var(--cream); }
   #dusk svg { position: absolute; inset: 0; }
   .hook { position: absolute; left: 150px; transform-origin: 0 70%; }
-  #h1 { top: 190px; font-size: 132px; }
+  #h1 { top: 200px; font-size: 118px; }
   #h2 { top: 345px; font-size: 132px; color: var(--sun-dk); }
   .mlabel { position: absolute; top: 788px; font: 600 36px var(--sans); text-align: center; color: var(--cream); transform: translateX(-50%); white-space: nowrap; }
   .mlabel small { display: block; font: 500 20px var(--mono); color: var(--muted-dk); margin-top: 4px; }
   #agenttag { position: absolute; top: 676px; font: 600 22px var(--sans); color: var(--night); background: var(--sun-dk);
     border-radius: 999px; padding: 5px 14px; transform: translateX(-50%); white-space: nowrap; }
-  #lockup { position: absolute; left: 150px; top: 190px; width: 760px; transform-origin: 0 50%; }
-  #o1 { position: absolute; left: 150px; top: 420px; font-size: 76px; transform-origin: 0 70%; }
-  #o2 { position: absolute; left: 154px; top: 530px; font: 500 30px var(--mono); color: var(--muted-dk); }
+  #lockup { position: absolute; left: 150px; top: 120px; width: 600px; transform-origin: 0 50%; }
+  #o1 { position: absolute; left: 150px; top: 300px; font-size: 72px; transform-origin: 0 70%; }
+  #o3 { position: absolute; left: 154px; top: 400px; font: 500 28px var(--sans); color: var(--muted-dk); }
+  #o4 { position: absolute; left: 154px; top: 458px; font: 500 26px/1.5 var(--mono); color: var(--cream); white-space: pre; }
+  #o4 .p { color: var(--sun-dk); }
+  #o2 { position: absolute; left: 154px; top: 552px; font: 500 28px var(--mono); color: var(--muted-dk); }
 
   /* paper ground */
   #paper { position: absolute; inset: 0; background: var(--paper); color: var(--ink); }
@@ -92,7 +95,7 @@
   .a { color: var(--sun-dk); }
   .ln { display: block; }
   .hl { background: rgba(240,138,85,0.16); box-shadow: -10px 0 0 rgba(240,138,85,0.16), 10px 0 0 rgba(240,138,85,0.16); border-radius: 4px; }
-  .sec { display: inline-block; color: var(--night); background: var(--sun-dk); border-radius: 6px; padding: 0 6px; transform-origin: 30% 60%; }
+  .sec { display: inline-block; font-size: 1.6em; margin: 6px 0; color: var(--night); background: var(--sun-dk); border-radius: 6px; padding: 0 6px; transform-origin: 30% 60%; }
   .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--cream); vertical-align: -0.22em; }
 
   #caption { position: absolute; text-align: center; font-size: 50px;
@@ -137,11 +140,14 @@
     <div class="mlabel" id="lb-pi" style="left:1000px">Raspberry Pi<small>asleep · seen 2h ago</small></div>
     <div class="mlabel" id="lb-pc" style="left:1720px">PC</div>
     <div id="agenttag" style="left:620px">your agent</div>
-    <div class="hook disp" id="h1">Text one agent.</div>
-    <div class="hook disp" id="h2">Fix any machine.</div>
+    <div class="hook disp" id="h1">Every computer you own,</div>
+    <div class="hook disp" id="h2">one agent.</div>
     <img id="lockup" src="../brand/yonder-logo-dark.svg" alt="yonder">
-    <div class="disp" id="o1">Text one agent. Fix any machine.</div>
-    <div id="o2">github.com/zacharytgray/yonder  ·  macOS &amp; Linux  ·  MIT</div>
+    <div class="disp" id="o1">Every computer you own, one agent.</div>
+    <div id="o3">One small program&nbsp; · &nbsp;Claude Code, Codex, Pi, Hermes&nbsp; · &nbsp;macOS &amp; Linux&nbsp; · &nbsp;MIT</div>
+    <div id="o4"><span class="p">$</span> brew trust --cask zacharytgray/yonder/yonder
+<span class="p">$</span> brew install --cask zacharytgray/yonder/yonder</div>
+    <div id="o2">github.com/zacharytgray/yonder</div>
   </div>
 
   <div id="paper">
@@ -155,13 +161,18 @@
       </svg>
       <div id="chips">
         <div class="chip" id="c-laptop"><div class="dot"></div><div><div class="nm">Laptop</div><div class="rl" id="lap-rl">M3 Pro · 36 GB</div></div></div>
-        <div class="chip" id="c-mini"><div class="dot"></div><div><div class="nm">Mac Mini</div><div class="rl">M4 · 16 GB</div></div><div class="tag">agent here</div></div>
+        <div class="chip" id="c-mini"><div class="dot"></div><div><div class="nm">Mac Mini</div><div class="rl" id="mini-rl">M4 · 16 GB</div></div><div class="tag">agent here</div></div>
         <div class="chip" id="c-pc"><div class="dot"></div><div><div class="nm">PC</div><div class="rl" id="pc-rl">RTX 4090 · 64 GB</div></div></div>
-        <div class="chip" id="c-pi"><div class="dot"></div><div><div class="nm">Raspberry Pi</div><div class="rl">offline · 2h ago</div></div></div>
+        <div class="chip" id="c-pi"><div class="dot"></div><div><div class="nm">Raspberry Pi</div><div class="rl" id="pi-rl">offline · 2h ago</div></div></div>
       </div>
       <div class="pills" id="providers">
         <div class="pill"><i></i><b>1Password</b><span>Touch ID or a service account</span></div>
         <div class="pill"><i></i><b>Bitwarden</b><span>Secrets Manager</span></div>
+      </div>
+      <div class="pills" id="simple">
+        <div class="pill"><i></i><b>One binary</b><span>macOS and Linux</span></div>
+        <div class="pill"><i></i><b>No server</b><span>peer to peer over SSH</span></div>
+        <div class="pill"><i></i><b>No daemon</b><span>runs when called</span></div>
       </div>
       <div class="pills" id="harnesses">
         <div class="pill"><i></i><b>Claude Code</b></div>
@@ -178,10 +189,10 @@
       <div class="ph-status"><span>9:41</span><span>●●●</span></div>
       <div class="ph-head"><img class="avatar" src="../brand/yonder-icon.svg" alt=""><div class="ph-name">agent</div><div class="ph-sub">on mac-mini</div></div>
       <div id="thread">
-        <div class="bubble me" id="m1">I'm about to give a presentation but I forgot to download it on my laptop! It's on my Mac Mini. Can you send it over?</div>
-        <div class="bubble them" id="m2">Sent. Talk.key is on your laptop's Desktop.</div>
-        <div class="bubble me" id="m3">also start the fine-tune wherever there's a free GPU</div>
-        <div class="bubble them" id="m4">Started on the PC. Its RTX 4090 was free.</div>
+        <div class="bubble me" id="m1">Shoot, I forgot to move my slides to my laptop. Can you send them over?</div>
+        <div class="bubble them" id="m2">Done. Talk.key is on your laptop's Desktop.</div>
+        <div class="bubble me" id="m3">also, where did I leave my thesis code?</div>
+        <div class="bubble them" id="m4">On the PC, in ~/GitHub/thesis.</div>
         <div class="bubble them dots" id="typing"><i></i><i></i><i></i></div>
       </div>
       <div id="compose">Message</div>
@@ -210,7 +221,7 @@ function pop(el, t, t0, dur = 0.28, from = 0.7) {
   return k;
 }
 
-const DUSK_OUT = 4.0, DUSK_IN = 30.0;
+const DUSK_OUT = 4.0, DUSK_IN = 38.0;
 
 // terminal scenes: each step types a command, then its lines land
 const SCENES = [
@@ -221,6 +232,7 @@ const SCENES = [
       'mac-mini      server   <span class="a">this machine</span>    M4 · 16 GB              claude-code,hermes',
       'pc            desktop  <span class="g">online</span>          RTX 4090 24 GB · 64 GB  -',
       'raspberry-pi  other    <span class="d">offline 2h ago</span>  Cortex-A76 · 8 GB       -',
+      '<span class="d">layers: secrets on, agents on (yonder layers)</span>',
     ], hl: { line: 1, at: 6.5 } }] },
   { from: 8.0, title: 'hermes · mac-mini', steps: [
     { cmd: 'ls ~/Documents/*.key', type: 8.25, cps: 50, out: 8.75, lines: ['/Users/me/Documents/Talk.key'] },
@@ -228,57 +240,65 @@ const SCENES = [
       'copied Talk.key (folder, 23 files, 18.4 MB) to laptop:/Users/me/Desktop/Talk.key',
     ] }] },
   { from: 12.0, title: 'hermes · mac-mini', steps: [
-    { cmd: "yonder run pc --detach -- 'python train.py'", type: 12.75, cps: 60, out: 13.75, gap: 0.25, lines: [
-      '<span class="d">yonder: started on pc; output: yonder jobs pc 20261111-094112-a0</span>',
+    { cmd: 'yonder run pc -- ls ~/GitHub', type: 12.75, cps: 50, out: 13.75, gap: 0.2, lines: [
+      'dotfiles', 'thesis', 'website',
+    ], hl: { line: 1, at: 14.25 } }] },
+  { from: 16.0, title: 'hermes · mac-mini', wide: true, steps: [
+    { cmd: 'yonder layers', type: 16.5, cps: 40, out: 17.0, gap: 0.25, lines: [
+      'connect  on   always: reach, run on and copy between your machines',
+      'secrets  on   run commands with secrets from 1Password or Bitwarden <span class="d">(set just now by mac-mini)</span>',
+      'agents   on   sync agent instructions, skills, subagents and hooks between machines <span class="d">(set just now by mac-mini)</span>',
+    ], hl: { line: 2, at: 17.75 } }] },
+  { from: 19.0, title: 'claude code · laptop', wide: true, small: true, steps: [
+    { cmd: 'head -8 ~/.claude/CLAUDE.md', type: 19.25, cps: 50, out: 20.0, gap: 0.15, lines: [
+      '<span class="d">&lt;!-- yonder:begin (written by `yonder agents link`; edit the store, not this block) --&gt;</span>',
+      '<span class="a">## Yonder briefing</span>',
+      ' ',
+      'Machines (generated from yonder\'s records; live state: `yonder ls`, details: `yonder show &lt;machine&gt;`):',
+      '- `laptop` laptop, this machine · 100.64.0.2 · macOS 15.5 arm64 · M3 Pro, 36 GB RAM · travels',
+      '- `mac-mini` server · 100.64.0.1 · macOS 15.5 arm64 · M4, 16 GB RAM · always-on',
+      '- `pc` desktop · 100.64.0.3 · Ubuntu 24.04 amd64 · AMD Ryzen 9 7950X, RTX 4090 24 GB, 64 GB RAM',
+      '- `raspberry-pi` other · 100.64.0.4 · Debian 12 arm64 · Cortex-A76, 8 GB RAM',
     ] }] },
-  { from: 16.0, title: 'you · laptop', wide: true, steps: [
-    { cmd: 'yonder secret setup --yes', type: 16.5, cps: 60, out: 17.0, gap: 0.22, lines: [
-      '<span class="d">raspberry-pi: skipped, offline; later: yonder secret setup --machines raspberry-pi</span>',
-      'Agent secrets go in the 1Password vault "Yonder Agents". The agents on mac-mini, pc can read everything in it.',
-      '1Password asks you to approve once (Touch ID or your system password).',
-      'created the vault "Yonder Agents"',
-      'mac-mini: <span class="g">ok</span>, service account yonder-mac-mini reads "Yonder Agents", token in macOS Keychain',
-      'pc: <span class="g">ok</span>, service account yonder-pc reads "Yonder Agents", token in secret service (secret-tool)',
-      'laptop: 1password (desktop), you approve reads here with Touch ID or system auth',
-    ] }] },
-  { from: 20.0, title: 'hermes · mac-mini', wide: true, big: true, steps: [
-    { cmd: "yonder run pc --secret HF_TOKEN -- 'echo $HF_TOKEN'", type: 20.25, cps: 60, out: 21.5, gap: 0.25, lines: [
+  { from: 24.0, title: 'hermes · mac-mini', wide: true, steps: [
+    { cmd: "yonder run pc --secret HF_TOKEN -- 'echo $HF_TOKEN'", type: 24.25, cps: 60, out: 25.5, gap: 0.25, lines: [
       '<span class="sec" id="sec">[HF_TOKEN]</span>',
-    ] }] },
-  { from: 23.0, title: 'hermes · mac-mini', wide: true, small: true, steps: [
-    { cmd: 'yonder log', type: 23.25, cps: 40, out: 23.75, gap: 0.25, lines: [
-      '<span class="d">TIME                 FROM      TO      HARNESS  EXIT  MS    COMMAND</span>',
-      '2026-11-11 09:40:31  mac-mini  laptop  hermes   <span class="g">0</span>     1840  cp mac-mini:~/Documents/Talk.key -&gt; laptop:~/Desktop/  <span class="d">(23 files, 18.4 MB)</span>',
-      '2026-11-11 09:41:12  mac-mini  pc      hermes   <span class="a">bg</span>    140   python train.py',
+    ] },
+    { cmd: 'yonder log | tail -1', type: 27.0, cps: 40, out: 27.75, lines: [
       '2026-11-11 09:42:05  mac-mini  pc      hermes   <span class="g">0</span>     96    echo $HF_TOKEN  <span class="a">[secrets: [HF_TOKEN]]</span>',
     ] }] },
-  { from: 26.0, title: 'you · laptop', wide: true, steps: [
-    { cmd: 'brew trust --cask zacharytgray/yonder/yonder', type: 26.25, cps: 70, out: 26.95, lines: [] },
-    { cmd: 'brew install --cask zacharytgray/yonder/yonder', type: 27.0, cps: 70, out: 27.7, lines: [] },
-    { cmd: 'yonder agents install', type: 27.75, cps: 60, out: 28.25, gap: 0.25, lines: [
+  { from: 30.0, title: 'you · laptop', wide: true, steps: [
+    { cmd: 'brew trust --cask zacharytgray/yonder/yonder', type: 30.5, cps: 70, out: 31.2, lines: [] },
+    { cmd: 'brew install --cask zacharytgray/yonder/yonder', type: 31.25, cps: 70, out: 31.95, lines: [] },
+    { cmd: 'yonder version', type: 32.25, cps: 40, out: 32.75, lines: ['yonder v0.3.1 (darwin/arm64)'] },
+    { cmd: 'yonder agents install', type: 34.25, cps: 60, out: 34.75, gap: 0.25, lines: [
       'skill installed for claude-code: ~/.claude/skills/yonder',
       'skill installed for codex, pi: ~/.agents/skills/yonder',
       'skill installed for hermes: ~/.hermes/skills/yonder',
     ] }] },
 ];
-const SWITCHES = [8.0, 12.0, 16.0, 20.0, 23.0, 26.0];
+const SWITCHES = [8.0, 12.0, 16.0, 19.0, 24.0, 30.0];
 
 const CAPTIONS = [
-  { a: 4.5, b: 7.85, html: 'One agent sees <em>every machine</em>.' },
-  { a: 8.25, b: 11.85, html: 'It sends files <em>between your machines</em>.' },
-  { a: 12.25, b: 15.85, html: 'It picks the machine with <em>the free GPU</em>.' },
-  { a: 16.15, b: 17.85, html: 'Secrets stay in <em>1Password</em> or <em>Bitwarden</em>.' },
-  { a: 18.0, b: 19.85, html: '<em>One approval</em> sets up your machines.' },
-  { a: 20.25, b: 22.85, html: 'If a command prints a secret, you see <em class="m">[HF_TOKEN]</em>.' },
-  { a: 23.25, b: 25.85, html: 'Every command, <em>logged where it ran</em>.' },
-  { a: 26.25, b: 29.85, html: 'Install with Homebrew. Works in <em>Claude Code, Codex, Pi and Hermes</em>.' },
+  { a: 4.5, b: 7.85, html: 'Your agent sees <em>every computer you own</em>.' },
+  { a: 8.25, b: 11.85, html: 'It finds your slides and <em>sends them over</em>.' },
+  { a: 12.25, b: 13.6, html: '<em>Work from anywhere.</em>' },
+  { a: 13.75, b: 15.85, html: 'It finds your projects <em>on any machine</em>.' },
+  { a: 16.15, b: 18.85, html: '<em>Context stays in sync.</em>' },
+  { a: 19.15, b: 23.85, html: 'Your instructions, skills and machine map, <em>on every computer</em>.' },
+  { a: 24.15, b: 26.35, html: '<em>Shared secrets</em>, kept safe.' },
+  { a: 26.5, b: 29.85, html: 'Agents use names. Values stay out of <em>commands, logs and output</em>.' },
+  { a: 30.15, b: 33.85, html: '<em>Simple and lightweight.</em> One small program.' },
+  { a: 34.15, b: 37.85, html: 'Works in <em>Claude Code, Codex, Pi and Hermes</em>.' },
 ];
 
 const MSGS = [['m1', 4.25], ['m2', 10.75], ['m3', 12.0], ['m4', 14.5]];
 const TYPING = [[4.6, 10.75], [12.4, 14.5]];
 // remote commands: when they start and which chip the link from the mac mini runs to
-const RUNS = [[9.85, 'laptop'], [13.55, 'pc'], [21.2, 'pc']];
+const RUNS = [[9.85, 'laptop'], [13.55, 'pc']];
 const ROWS = { laptop: 5.25, mini: 5.5, pc: 5.75 };
+// context scene: the agents layer reaches each machine; the pi gets it at its next sync
+const SYNCED = [['laptop', 'lap-rl', 17.75], ['mini', 'mini-rl', 18.0], ['pc', 'pc-rl', 18.25]];
 
 const cursorOn = t => (t % 0.8) < 0.45;
 
@@ -296,7 +316,8 @@ function termBody(sc, t) {
       const hl = st.hl && st.hl.line === i && t >= st.hl.at ? ' hl' : '';
       html += `<span class="ln${hl}" style="opacity:${k};transform:translateX(${(1 - k) * -14}px)">${l}</span>`;
     });
-    if (last && t >= st.out + Math.max(0, st.lines.length - 1) * (st.gap || 0) + 0.3)
+    const done = t >= st.out + Math.max(0, st.lines.length - 1) * (st.gap || 0) + 0.3;
+    if (done && (last || t < sc.steps[si + 1].type))
       html += '<span class="ln"><span class="p">$</span> ' + (cursorOn(t) ? '<span class="cur"></span>' : '') + '</span>';
   });
   return html;
@@ -333,15 +354,17 @@ function renderDusk(t) {
     if (id === 'arc3') { p.style.strokeDasharray = k >= 1 ? '4 12' : `${L} ${L}`; if (k >= 1) p.style.strokeDashoffset = 0; }
   }
   $('h1').style.display = $('h2').style.display = outro ? 'none' : '';
-  $('lockup').style.display = $('o1').style.display = $('o2').style.display = outro ? '' : 'none';
+  for (const id of ['lockup', 'o1', 'o2', 'o3', 'o4']) $(id).style.display = outro ? '' : 'none';
   if (!outro) {
     pop($('h1'), t, 0.25, 0.32, 0.8);
     pop($('h2'), t, 1.0, 0.32, 0.8);
   } else {
-    pop($('lockup'), t, 30.1, 0.34, 0.85);
-    pop($('o1'), t, 30.45, 0.3, 0.85);
-    const k = eo((t - 30.85) / 0.3);
-    $('o2').style.opacity = k; $('o2').style.transform = `translateY(${(1 - k) * 12}px)`;
+    pop($('lockup'), t, 38.1, 0.34, 0.85);
+    pop($('o1'), t, 38.35, 0.3, 0.85);
+    for (const [id, at] of [['o3', 38.6], ['o4', 38.8], ['o2', 39.0]]) {
+      const k = eo((t - at) / 0.3);
+      $(id).style.opacity = k; $(id).style.transform = `translateY(${(1 - k) * 12}px)`;
+    }
   }
 }
 
@@ -353,7 +376,7 @@ function renderPaper(t) {
   const term = $('term');
   term.style.left = left + 'px'; term.style.width = width + 'px';
   // vertical layout: strip, terminal, caption, centered as a group
-  const th = lerp(345, 390, kw), top0 = (1080 - (92 + 28 + th + 40 + 60)) / 2;
+  const th = lerp(380, 400, kw), top0 = (1080 - (92 + 28 + th + 40 + 60)) / 2;
   term.style.top = (top0 + 120) + 'px'; term.style.height = th + 'px';
   $('strip').style.top = top0 + 'px';
   $('caption').style.top = (top0 + 120 + th + 34) + 'px';
@@ -367,7 +390,7 @@ function renderPaper(t) {
   $('tbody').style.opacity = bo;
   $('tbody').innerHTML = termBody(sc, t);
   const sec = $('sec');
-  if (sec) { const k = clamp((t - 21.5) / 0.3); sec.style.transform = `scale(${lerp(0.5, 1, back(k))})`; }
+  if (sec) { const k = clamp((t - 25.5) / 0.3); sec.style.transform = `scale(${lerp(0.5, 1, back(k))})`; }
 
   // phone pops in at 4.0 and slides off left at 16.0
   const ph = $('phone');
@@ -383,16 +406,18 @@ function renderPaper(t) {
   ty.style.display = TYPING.some(([a, b]) => t >= a && t < b) ? '' : 'none';
   [...ty.children].forEach((d, i) => { d.style.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI / 0.5 - i * 1.0)); });
 
-  // strip: fleet chips, provider pills (16-20) or harness pills (26-30)
+  // strip: fleet chips, provider pills (24-30), the small-program pills (30-34) or harness pills (34-38)
   const strip = $('strip');
   strip.style.left = left + 'px'; strip.style.width = width + 'px';
-  const mode = t >= 26 ? 'harnesses' : (t >= 16 && t < 20 ? 'providers' : 'chips');
+  const mode = t >= 34 ? 'harnesses' : t >= 30 ? 'simple' : t >= 24 ? 'providers' : 'chips';
   $('chips').style.display = mode === 'chips' ? '' : 'none';
   strip.querySelector('svg').style.display = mode === 'chips' ? '' : 'none';
   $('providers').style.display = mode === 'providers' ? '' : 'none';
   $('harnesses').style.display = mode === 'harnesses' ? '' : 'none';
-  [...$('providers').children].forEach((p, i) => pop(p, t, 16.25 + i * 0.25, 0.28, 0.6));
-  [...$('harnesses').children].forEach((p, i) => pop(p, t, [28.25, 28.5, 28.58, 28.75][i], 0.28, 0.6));
+  $('simple').style.display = mode === 'simple' ? '' : 'none';
+  [...$('simple').children].forEach((p, i) => pop(p, t, 30.5 + i * 0.5, 0.28, 0.6));
+  [...$('providers').children].forEach((p, i) => pop(p, t, 24.25 + i * 0.25, 0.28, 0.6));
+  [...$('harnesses').children].forEach((p, i) => pop(p, t, [34.75, 35.0, 35.08, 35.25][i], 0.28, 0.6));
   strip.style.opacity = eo((t - 4.05) / 0.25);
   const cw = 260, sp = (width - cw) / 3;
   const xs = [0, sp, 2 * sp, 3 * sp];
@@ -400,7 +425,7 @@ function renderPaper(t) {
   for (let i = 0; i < 3; i++) { const l = $('l-' + i); l.setAttribute('x1', xs[i] + cw); l.setAttribute('x2', xs[i + 1]); }
   const lon = $('l-on'), pkt = $('pkt');
   let lk = 0, run = null;
-  for (const r of RUNS) if (t >= r[0]) { lk = clamp((t - r[0]) / 0.25); run = r; }
+  for (const r of RUNS) if (t >= r[0] && t < 16.0) { lk = clamp((t - r[0]) / 0.25); run = r; }
   if (run) {
     const [x0, x1] = run[1] === 'laptop' ? [xs[1], xs[0] + cw] : [xs[1] + cw, xs[2]];
     lon.setAttribute('x1', x0); lon.setAttribute('x2', x0 + (x1 - x0) * eo(lk));
@@ -425,8 +450,16 @@ function renderPaper(t) {
   };
   if (t >= 10.0) chipState('laptop', 'lap-rl', '#d2602f', '<span style="color:#a3431a">Desktop/Talk.key</span>');
   else $('lap-rl').textContent = 'M3 Pro · 36 GB';
-  if (t >= 13.75) chipState('pc', 'pc-rl', '#d2602f', '<span style="color:#a3431a">training · RTX 4090</span>');
+  if (t >= 14.25) chipState('pc', 'pc-rl', '#d2602f', '<span style="color:#a3431a">~/GitHub/thesis</span>');
   else $('pc-rl').textContent = 'RTX 4090 · 64 GB';
+  $('mini-rl').textContent = 'M4 · 16 GB';
+  $('pi-rl').textContent = 'offline · 2h ago';
+  for (const [n, rl, at] of SYNCED) {
+    if (t < at) continue;
+    chipState(n, rl, '#4f6b42', '<span style="color:#4f6b42;font-weight:600">✓ in sync</span>');
+    $('c-' + n).style.transform = `scale(${lerp(1.08, 1, eo(clamp((t - at) / 0.25)))})`;
+  }
+  if (t >= 18.5) $('pi-rl').textContent = 'offline · at its next sync';
 
   // caption, centered under the terminal
   const cap = CAPTIONS.find(c => t >= c.a && t < c.b + 0.15);
@@ -448,7 +481,7 @@ function render(t) {
   if (dusk) renderDusk(t); else renderPaper(t);
 }
 
-window.DURATION = 33.0;
+window.DURATION = 41.0;
 window.render = render;
 render(Number(new URLSearchParams(location.search).get('t') || 0));
 </script>
