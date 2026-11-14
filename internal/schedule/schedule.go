@@ -112,9 +112,9 @@ func (j Job) env() map[string]string {
 // anything that moves its config, state or stores.
 func EnvFromProcess() map[string]string {
 	out := map[string]string{}
-	for _, k := range []string{"YONDER_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "YONDER_SSH_IDENTITY", "YONDER_TAILSCALE_JSON"} {
+	for _, k := range []string{"YONDER_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "YONDER_SSH_IDENTITY", "YONDER_TAILSCALE_JSON", "CODEX_HOME"} {
 		if v := os.Getenv(k); v != "" {
-			if k == "YONDER_HOME" {
+			if k == "YONDER_HOME" || k == "CODEX_HOME" {
 				if abs, err := filepath.Abs(v); err == nil {
 					v = abs
 				}
@@ -190,9 +190,30 @@ func (j Job) Plist() string {
 	return b.String()
 }
 
-// systemd quoting: a word in double quotes with \ and " escaped
+// systemd quoting: a word in double quotes with \ and " escaped, and % as
+// %% so a path holding %h stays a path
 func sdQuote(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "%", "%%").Replace(s) + `"`
+}
+
+// sdPath is a bare path in a unit file, % escaped.
+func sdPath(s string) string { return strings.ReplaceAll(s, "%", "%%") }
+
+// check refuses a job whose paths or carried variables hold control
+// characters: a newline would start a new line in the plist or unit.
+func (j Job) check() error {
+	vals := map[string]string{"yonder path": j.Bin, "home": j.Home, "state dir": j.StateDir}
+	for k, v := range j.Env {
+		vals[k] = v
+	}
+	for k, v := range vals {
+		for _, r := range v {
+			if r < 0x20 || r == 0x7f {
+				return fmt.Errorf("%s holds a control character, so it can't go in the job file; fix it and run `yonder schedule install`", k)
+			}
+		}
+	}
+	return nil
 }
 
 // Service is the oneshot unit the timer starts.
@@ -201,13 +222,13 @@ func (j Job) Service() string {
 	b.WriteString("# " + Marker + ": written by yonder; `yonder schedule remove` takes it out\n")
 	b.WriteString("[Unit]\nDescription=yonder sync: the registry and the agents store with every online machine\n\n[Service]\nType=oneshot\n")
 	b.WriteString("ExecStart=" + sdQuote(j.Bin) + " sync --scheduled\n")
-	b.WriteString("WorkingDirectory=" + j.Home + "\n")
+	b.WriteString("WorkingDirectory=" + sdPath(j.Home) + "\n")
 	env := j.env()
 	for _, k := range sortedKeys(env) {
 		b.WriteString("Environment=" + sdQuote(k+"="+env[k]) + "\n")
 	}
 	log := LogPath(j.StateDir)
-	b.WriteString("StandardOutput=append:" + log + "\nStandardError=append:" + log + "\n")
+	b.WriteString("StandardOutput=append:" + sdPath(log) + "\nStandardError=append:" + sdPath(log) + "\n")
 	return b.String()
 }
 
@@ -259,7 +280,7 @@ func ExecLine(goos, home string) ([]string, error) {
 		if rest, ok := strings.CutPrefix(l, "ExecStart="); ok {
 			bin, args, _ := strings.Cut(rest, `" `)
 			bin = strings.TrimPrefix(bin, `"`)
-			return append([]string{strings.NewReplacer(`\"`, `"`, `\\`, `\`).Replace(bin)}, strings.Fields(args)...), nil
+			return append([]string{strings.NewReplacer(`\"`, `"`, `\\`, `\`, "%%", "%").Replace(bin)}, strings.Fields(args)...), nil
 		}
 	}
 	return nil, errors.New("no ExecStart")
@@ -364,6 +385,9 @@ func Install(j Job) (Result, error) {
 	if j.Bin == "" || !filepath.IsAbs(j.Bin) {
 		return res, fmt.Errorf("the yonder binary path %q is not absolute", j.Bin)
 	}
+	if err := j.check(); err != nil {
+		return res, err
+	}
 	_ = os.Remove(declinedPath(j.StateDir))
 	if err := os.MkdirAll(filepath.Join(j.StateDir, "sync"), 0o700); err != nil {
 		return res, err
@@ -381,11 +405,16 @@ func Install(j Job) (Result, error) {
 		}
 		return os.Rename(p, filepath.Join(bdir, filepath.Base(p)))
 	}
-	// unload first: a running definition with this label, ours or not
+	// unload first: a running definition with this label, ours or not. which
+	// plist it came from is read before the bootout, which forgets it
 	if manage() {
+		other := ""
+		if j.OS == "darwin" && !noManager(j.OS) {
+			other = loadedPath()
+		}
 		res.Lines = append(res.Lines, unload(j)...)
 		if j.OS == "darwin" {
-			if other := loadedPath(); other != "" && other != Files(j.OS, j.Home)[0] && strings.HasPrefix(other, j.Home+"/") {
+			if other != "" && other != Files(j.OS, j.Home)[0] && strings.HasPrefix(other, j.Home+"/") {
 				if _, err := os.Stat(other); err == nil {
 					if err := backup(other); err != nil {
 						return res, err
@@ -463,6 +492,10 @@ func loadedPath() string {
 	if err != nil {
 		return ""
 	}
+	return loadedFrom(out)
+}
+
+func loadedFrom(out string) string {
 	for _, l := range strings.Split(out, "\n") {
 		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "path = "); ok {
 			return strings.TrimSpace(v)
@@ -617,7 +650,9 @@ func Check(goos, home, stateDir string) Status {
 	loaded := false
 	if goos == "darwin" {
 		out, err := command("launchctl", "print", "gui/"+uid()+"/"+Label)
-		if err == nil {
+		if err == nil && loadedFrom(out) != "" && loadedFrom(out) != s.Files[0] {
+			s.LoadError = "launchd has the label loaded from " + loadedFrom(out) + ", not yonder's plist"
+		} else if err == nil {
 			loaded = true
 			for _, l := range strings.Split(out, "\n") {
 				if v, ok := strings.CutPrefix(strings.TrimSpace(l), "last exit code = "); ok {

@@ -239,9 +239,6 @@ func (s *Store) Scan() (changed []string, refused []Refusal, err error) {
 			Origin: Origin{Machine: s.Self, Harness: s.Harness, Time: t},
 		}
 		next.Allowed = st.Allow[rel] == d.hash
-		if h, ok := s.ReviewedHere[rel]; ok && h == d.hash {
-			next.Reviewed = s.Self
-		}
 		st.Files[rel] = next
 		changed = append(changed, rel)
 		s.logChange(rel, "edit", next, "")

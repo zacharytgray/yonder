@@ -170,6 +170,10 @@ func (a *app) reconcileApply(planPath string, dryRun bool) error {
 			}
 		}
 	}
+	// the new text must render for every harness before the store gets it
+	if err := renderCheck(self, s, rc); err != nil {
+		return err
+	}
 	for _, m := range r.Machines {
 		if m.Error != "" {
 			fmt.Fprintf(a.out, "%s: not read (%s); its files are left as they are; reconcile again once it is online\n", m.Name, m.Error)
@@ -240,15 +244,15 @@ func (a *app) reconcileApply(planPath string, dryRun bool) error {
 			return err
 		}
 		fmt.Fprintf(a.out, "\nwrote %s to the store\n", strings.Join(sortedKeys(rc.Store), ", "))
-		a.syncStore(agents.StoreName, self, nil, syncOpts{quiet: true})
 	}
+	// always: a machine may still lack store text this plan didn't change
+	a.syncStore(agents.StoreName, self, nil, syncOpts{quiet: true})
 	failed := false
 	for _, m := range machines {
+		// every store file this machine's trims rely on, changed by this plan or not
 		req := trimRequest{ID: id, Trims: rc.Trims[m], Store: map[string]string{}}
-		for rel, text := range rc.Store {
-			if rel == "instructions.md" || rel == "machines/"+m+"/instructions.md" {
-				req.Store[rel] = hashHex(text)
-			}
+		for rel, text := range rc.Needs[m] {
+			req.Store[rel] = hashHex(text)
 		}
 		var d trimDone
 		if m == self {
@@ -264,11 +268,91 @@ func (a *app) reconcileApply(planPath string, dryRun bool) error {
 	if err := saveRecord(rec); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "\nreconcile %s applied. To put every file back: yonder agents reconcile --undo %s\n", id, id)
 	if failed {
+		fmt.Fprintf(a.out, "\nreconcile %s NOT fully applied: a machine above refused or failed, and its files are unchanged. The store has the new text. Fix what is named above and run the plan again (gather first), or put every file back: yonder agents reconcile --undo %s\n", id, id)
 		return quietExit(ExitError)
 	}
+	fmt.Fprintf(a.out, "\nreconcile %s applied. To put every file back: yonder agents reconcile --undo %s\n", id, id)
 	return nil
+}
+
+// renderCheck renders the store as the plan leaves it, in a temp copy, for
+// this machine and every machine the plan touches, with every harness. a
+// section whose text won't render (a {{model:...}} with no name, say) is
+// refused before anything is written.
+func renderCheck(self string, s *store.Store, rc agents.Reconcile) error {
+	if len(rc.Store) == 0 {
+		return nil
+	}
+	tmp, err := os.MkdirTemp("", "yonder-render-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	// a store moved into a dotfiles repo and linked back is the same store
+	dir := s.Dir
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	// only what renders into instructions: the texts, the briefing, render.toml
+	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, p)
+		top := !strings.Contains(rel, string(filepath.Separator))
+		inMachine := strings.HasPrefix(rel, "machines"+string(filepath.Separator)) && strings.Count(rel, string(filepath.Separator)) == 2
+		text := strings.HasSuffix(rel, ".md") || strings.HasSuffix(rel, ".toml")
+		if (!top && !inMachine) || !text {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		return writeUnder(tmp, rel, data)
+	})
+	if err != nil {
+		return err
+	}
+	for rel, text := range rc.Store {
+		if err := writeUnder(tmp, filepath.FromSlash(rel), []byte(text)); err != nil {
+			return err
+		}
+	}
+	machines := []string{self}
+	for m := range rc.Trims {
+		if !slices.Contains(machines, m) {
+			machines = append(machines, m)
+		}
+	}
+	for rel := range rc.Store {
+		if m, ok := strings.CutPrefix(rel, "machines/"); ok {
+			if m, _, _ = strings.Cut(m, "/"); !slices.Contains(machines, m) {
+				machines = append(machines, m)
+			}
+		}
+	}
+	sort.Strings(machines)
+	for _, m := range machines {
+		l := agents.NewLinker(m, io.Discard)
+		l.StoreDir = tmp
+		// the harnesses linked here and those render.toml names: a tier named
+		// only for claude and codex must not refuse a plan for pi nobody uses
+		probs := l.RenderProblems(l.CheckHarnesses())
+		for _, p := range sortedKeys(probs) {
+			return fmt.Errorf("the plan's text wouldn't render on %s (%s: %w); nothing was written. Change that section's text in the plan, or add the name to render.toml in the store", m, agents.Tilde(p, agents.Home()), probs[p])
+		}
+	}
+	return nil
+}
+
+func writeUnder(root, rel string, data []byte) error {
+	p := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(p, data, 0o600)
 }
 
 func randHex(n int) string {
@@ -316,49 +400,79 @@ func (a *app) trimOn(m, self string, req trimRequest) trimDone {
 }
 
 // trimHere takes the moved sections out of this machine's own files, after
-// checking the store text they moved to is live here, then links.
+// checking that the store text they moved to is live here and renders, then
+// links. if linking fails, every file it trimmed goes back.
 func (a *app) trimHere(self string, req trimRequest) trimDone {
 	d := trimDone{Trimmed: []trimmedFile{}, Skipped: []skip{}}
+	if !validID(req.ID) {
+		d.Error = "bad reconcile id"
+		return d
+	}
 	s, err := store.Open(agents.StoreName, self)
 	if err != nil {
 		d.Error = err.Error()
 		return d
 	}
-	if err := s.Lock(30 * time.Second); err != nil {
+	storeReady := func() error {
+		if err := s.Lock(30 * time.Second); err != nil {
+			return err
+		}
+		defer s.Unlock()
+		pending, _ := s.PendingList()
+		for rel, h := range req.Store {
+			live, ok := s.Live(rel)
+			waits := slices.ContainsFunc(pending, func(it store.PendingItem) bool { return it.Path == rel })
+			if waits || !ok || hashHex(string(live)) != h {
+				return errors.New("the store's " + rel + " isn't the text this reconcile needs here yet (not synced, changed since, or waiting for review); nothing was taken out. Run `yonder sync`, accept it if it waits, then gather and reconcile again")
+			}
+		}
+		return nil
+	}
+	if err := storeReady(); err != nil {
 		d.Error = err.Error()
 		return d
 	}
-	pending, _ := s.PendingList()
-	for rel, h := range req.Store {
-		live, ok := s.Live(rel)
-		waits := slices.ContainsFunc(pending, func(it store.PendingItem) bool { return it.Path == rel })
-		if waits || !ok || hashHex(string(live)) != h {
-			s.Unlock()
-			d.Error = "the new " + rel + " isn't live here yet (not synced, or it waits for review); its files are unchanged. Run `yonder sync`, accept it if it waits, then gather and reconcile again"
-			return d
-		}
+	home := agents.Home()
+	// the harnesses linked here keep their choice; a machine never linked gets what it has
+	l := agents.NewLinker(self, io.Discard)
+	hs, relink := []string(nil), false
+	if st, err := l.State(); err == nil && len(st.Harnesses) > 0 && !st.Paused {
+		hs, relink = st.Harnesses, true
+	} else {
+		hs, _ = pickHarnesses(nil)
 	}
-	s.Unlock()
-	if !validID(req.ID) {
-		d.Error = "bad reconcile id"
+	// the store text must render for each harness before anything comes out
+	for p, err := range l.RenderProblems(hs) {
+		d.Error = fmt.Sprintf("%s wouldn't render from the store (%v); nothing was taken out. Fix the store text, then reconcile again", agents.Tilde(p, home), err)
 		return d
 	}
-	home := agents.Home()
 	dir := filepath.Join(reconcileDir(), req.ID)
 	var tr trimRecord
+	type undo struct {
+		path string
+		data []byte
+		mode os.FileMode
+	}
+	var undos []undo
 	for _, t := range req.Trims {
-		if store.ValidRel(t.Path) != nil || !slices.ContainsFunc(agents.GatherFiles, func(g agents.GatherFile) bool { return g.Path == t.Path }) {
+		gi := slices.IndexFunc(agents.GatherFiles, func(g agents.GatherFile) bool { return g.Path == t.Path })
+		if store.ValidRel(t.Path) != nil || gi < 0 {
 			d.Skipped = append(d.Skipped, skip{t.Path, "not an instructions file yonder reads"})
 			continue
 		}
-		p := filepath.Join(home, t.Path)
+		// only a harness that gets the store's text loses its own copy
+		if h := agents.GatherFiles[gi].Harness; !slices.Contains(hs, h) {
+			d.Skipped = append(d.Skipped, skip{t.Path, h + " isn't linked here, so the store's text wouldn't reach it; nothing taken out. Link it (`yonder agents link --harness " + h + "`), then gather and reconcile again"})
+			continue
+		}
+		p := agents.InstructionsPath(home, t.Path)
+		if err := noSymlinkOnWay(home, p); err != nil {
+			d.Skipped = append(d.Skipped, skip{t.Path, err.Error() + "; take out " + strings.Join(t.Remove, ", ") + " by hand"})
+			continue
+		}
 		st, err := os.Lstat(p)
 		if err != nil {
 			d.Skipped = append(d.Skipped, skip{t.Path, err.Error()})
-			continue
-		}
-		if st.Mode()&os.ModeSymlink != 0 {
-			d.Skipped = append(d.Skipped, skip{t.Path, "it is a symlink, which yonder never writes through; take out " + strings.Join(t.Remove, ", ") + " by hand"})
 			continue
 		}
 		data, err := os.ReadFile(p)
@@ -366,8 +480,8 @@ func (a *app) trimHere(self string, req trimRequest) trimDone {
 			d.Skipped = append(d.Skipped, skip{t.Path, err.Error()})
 			continue
 		}
-		if hashHex(string(data)) != t.Hash {
-			d.Skipped = append(d.Skipped, skip{t.Path, "it changed since gather read it; nothing taken out"})
+		if ownHash(string(data)) != t.Hash {
+			d.Skipped = append(d.Skipped, skip{t.Path, "your own text in it changed since gather read it; nothing taken out"})
 			continue
 		}
 		next, removed, err := agents.TrimSections(string(data), t.Remove)
@@ -383,6 +497,10 @@ func (a *app) trimHere(self string, req trimRequest) trimDone {
 		if err == nil {
 			err = os.WriteFile(backup, data, 0o600)
 		}
+		// the store may have moved on since the check above: look again right before writing
+		if err == nil {
+			err = storeReady()
+		}
 		// never change the file without its backup
 		if err == nil {
 			err = writeKeepMode(p, []byte(next), st.Mode().Perm())
@@ -391,31 +509,73 @@ func (a *app) trimHere(self string, req trimRequest) trimDone {
 			d.Skipped = append(d.Skipped, skip{t.Path, err.Error()})
 			continue
 		}
+		undos = append(undos, undo{p, data, st.Mode().Perm()})
 		tr.Files = append(tr.Files, trimFile{Path: t.Path, Before: t.Hash, After: ownHash(next), Backup: backup})
 		d.Trimmed = append(d.Trimmed, trimmedFile{Path: t.Path, Removed: removed, Backup: agents.Tilde(backup, home)})
 	}
-	if len(tr.Files) > 0 {
-		data, _ := json.MarshalIndent(tr, "", "  ")
-		if err := os.WriteFile(filepath.Join(dir, "trim.json"), data, 0o600); err != nil {
-			d.Error = "trimmed, but couldn't save the undo record: " + err.Error()
+	if len(tr.Files) == 0 {
+		return d
+	}
+	putBack := func(why string) trimDone {
+		for _, u := range undos {
+			_ = writeKeepMode(u.path, u.data, u.mode)
 		}
+		return trimDone{Trimmed: []trimmedFile{}, Skipped: d.Skipped, Error: why + "; every file it trimmed was put back"}
 	}
 	// the moved text now comes from the store, through yonder's block
-	if hs, _ := pickHarnesses(nil); len(hs) > 0 {
-		var lo bytes.Buffer
-		if err := agents.NewLinker(self, &lo).Link(hs); err != nil {
-			d.Linked = "linking the store in failed: " + err.Error() + "; run `yonder agents link` there"
-		} else {
-			d.Linked = "linked the store into " + strings.Join(hs, ", ")
+	var lo bytes.Buffer
+	lk := agents.NewLinker(self, &lo)
+	var lerr error
+	if relink {
+		lerr = lk.Link(nil)
+	} else if len(hs) > 0 {
+		lerr = lk.Link(hs)
+	}
+	if lerr == nil {
+		for p, err := range lk.Blocked() {
+			lerr = fmt.Errorf("%s keeps its old text: %w", agents.Tilde(p, home), err)
+			break
 		}
+	}
+	if lerr != nil {
+		return putBack("linking the store in failed (" + lerr.Error() + ")")
+	}
+	data, _ := json.MarshalIndent(tr, "", "  ")
+	if err := os.WriteFile(filepath.Join(dir, "trim.json"), data, 0o600); err != nil {
+		return putBack("couldn't save the undo record: " + err.Error())
+	}
+	if len(hs) > 0 {
+		d.Linked = "linked the store into " + strings.Join(hs, ", ")
 	}
 	return d
 }
 
-// ownHash is the hash of the user's own text: the file without yonder's block.
-func ownHash(text string) string {
-	return hashHex(agents.OwnNorm([]byte(text)))
+// noSymlinkOnWay refuses a path with a symlink anywhere below home, the file
+// included: reconcile never writes through one, the same rule link follows.
+func noSymlinkOnWay(home, p string) error {
+	rel, err := filepath.Rel(home, p)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("%s is outside the home folder", p)
+	}
+	cur := home
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		cur = filepath.Join(cur, part)
+		st, err := os.Lstat(cur)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if st.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symlink, and yonder never writes through one", agents.Tilde(cur, home))
+		}
+	}
+	return nil
 }
+
+// ownHash is the hash of the user's own text: the file without yonder's block.
+func ownHash(text string) string { return agents.OwnHash([]byte(text)) }
 
 func validID(id string) bool {
 	if id == "" || len(id) > 64 {
@@ -443,7 +603,8 @@ func writeKeepMode(p string, data []byte, mode os.FileMode) error {
 }
 
 // undoHere puts this machine's trimmed files back, each only if it is still
-// what the reconcile wrote.
+// what the reconcile wrote. a file already back counts as done, so a retry
+// finishes a partial undo.
 func undoHere(id string) acceptDone {
 	d := acceptDone{Accepted: []string{}, Skipped: []skip{}}
 	if !validID(id) {
@@ -465,12 +626,19 @@ func undoHere(id string) acceptDone {
 	}
 	home := agents.Home()
 	for _, f := range tr.Files {
-		p := filepath.Join(home, f.Path)
+		p := agents.InstructionsPath(home, f.Path)
+		if err := noSymlinkOnWay(home, p); err != nil {
+			d.Skipped = append(d.Skipped, skip{f.Path, err.Error() + "; the backup is at " + agents.Tilde(f.Backup, home)})
+			continue
+		}
 		cur, err := os.ReadFile(p)
 		st, serr := os.Lstat(p)
 		switch {
 		case err != nil || serr != nil:
 			d.Skipped = append(d.Skipped, skip{f.Path, "can't read it; the backup is at " + agents.Tilde(f.Backup, home)})
+			continue
+		case ownHash(string(cur)) == f.Before:
+			d.Accepted = append(d.Accepted, f.Path) // already back
 			continue
 		case ownHash(string(cur)) != f.After:
 			d.Skipped = append(d.Skipped, skip{f.Path, "it changed since the reconcile, so it is left as it is; the backup is at " + agents.Tilde(f.Backup, home)})
@@ -552,6 +720,9 @@ func (a *app) reconcileUndo(id string) error {
 		for _, rel := range sortedKeys(rec.Store) {
 			e := rec.Store[rel]
 			cur, ok := s.Live(rel)
+			if (e.Before == nil && !ok) || (e.Before != nil && ok && string(cur) == *e.Before) {
+				continue // already back
+			}
 			if !ok || string(cur) != e.After {
 				fmt.Fprintf(a.out, "store %s changed since the reconcile; left as it is\n", rel)
 				failed = true

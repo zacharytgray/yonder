@@ -44,6 +44,9 @@ type Trim struct {
 // Reconcile is what applying a plan does.
 type Reconcile struct {
 	Store map[string]string // store path -> its new text, only files that change
+	// Needs: machine -> store path -> the text that must be live there before
+	// that machine's sections come out, changed by this plan or not
+	Needs map[string]map[string]string
 	Trims map[string][]Trim // machine -> its files to trim
 	Lines []string          // one line per section, for people
 }
@@ -52,7 +55,15 @@ type Reconcile struct {
 // files and the trims. current reads a store file as it is now. it writes
 // nothing.
 func BuildReconcile(r GatherReport, p Plan, current func(rel string) (string, bool)) (Reconcile, error) {
-	out := Reconcile{Store: map[string]string{}, Trims: map[string][]Trim{}}
+	out := Reconcile{Store: map[string]string{}, Trims: map[string][]Trim{}, Needs: map[string]map[string]string{}}
+	needs := map[string]map[string]bool{} // machine -> store paths its trims depend on
+	need := func(file, rel string) {
+		m, _, _ := strings.Cut(file, ":")
+		if needs[m] == nil {
+			needs[m] = map[string]bool{}
+		}
+		needs[m][rel] = true
+	}
 	if p.V != 1 {
 		return out, fmt.Errorf("plan version %d; this yonder reads version 1 (\"v\": 1)", p.V)
 	}
@@ -124,6 +135,7 @@ func BuildReconcile(r GatherReport, p Plan, current func(rel string) (string, bo
 			shared = append(shared, keyText{ps.Key, withHeading(v.Text)})
 			for _, f := range allFiles() {
 				trim(f, ps.Key)
+				need(f, "instructions.md")
 			}
 			out.Lines = append(out.Lines, fmt.Sprintf("%s: shared, %s's version, into instructions.md; taken out of %s", ps.Key, ps.From, strings.Join(allFiles(), ", ")))
 		case ActMerge:
@@ -137,6 +149,7 @@ func BuildReconcile(r GatherReport, p Plan, current func(rel string) (string, bo
 			shared = append(shared, keyText{ps.Key, t})
 			for _, f := range allFiles() {
 				trim(f, ps.Key)
+				need(f, "instructions.md")
 			}
 			out.Lines = append(out.Lines, fmt.Sprintf("%s: merged into instructions.md; taken out of %s", ps.Key, strings.Join(allFiles(), ", ")))
 		case ActPerMachine:
@@ -161,6 +174,7 @@ func BuildReconcile(r GatherReport, p Plan, current func(rel string) (string, bo
 				perMachine[m] = append(perMachine[m], keyText{ps.Key, withHeading(vs[0].Text)})
 				for _, f := range filesOn(vs, m) {
 					trim(f, ps.Key)
+					need(f, "machines/"+m+"/instructions.md")
 				}
 			}
 			out.Lines = append(out.Lines, fmt.Sprintf("%s: kept per machine, in machines/<m>/instructions.md for %s", ps.Key, strings.Join(ms, ", ")))
@@ -189,6 +203,20 @@ func BuildReconcile(r GatherReport, p Plan, current func(rel string) (string, bo
 	put("instructions.md", shared)
 	for m, adds := range perMachine {
 		put("machines/"+m+"/instructions.md", adds)
+	}
+	for m, rels := range needs {
+		out.Needs[m] = map[string]string{}
+		for rel := range rels {
+			text, changed := out.Store[rel]
+			if !changed {
+				cur, ok := current(rel)
+				if !ok {
+					return out, fmt.Errorf("the store has no %s, which %s's trim needs", rel, m)
+				}
+				text = cur
+			}
+			out.Needs[m][rel] = text
+		}
 	}
 	for m, files := range trims {
 		for path, keys := range files {
@@ -294,27 +322,29 @@ func TrimSections(data string, keys []string) (string, []string, error) {
 	if len(removed) == 0 {
 		return data, nil, nil
 	}
+	// the rest stays as it was; only where a cut joins two blank lines does
+	// one go, so a cut leaves one blank line, not two
 	keep := func(from, to int) []string {
 		var out []string
-		blank := false
+		cut := false
 		for i := from; i < to; i++ {
 			if drop[i] {
+				cut = true
 				continue
 			}
-			b := strings.TrimSpace(lines[i]) == ""
-			if b && blank {
-				continue // a cut leaves one blank line, not a run
+			blank := strings.TrimSpace(lines[i]) == ""
+			if blank && cut && (len(out) == 0 || strings.TrimSpace(out[len(out)-1]) == "") {
+				continue
 			}
-			blank = b
+			if !blank {
+				cut = false
+			}
 			out = append(out, lines[i])
 		}
 		return out
 	}
 	var b strings.Builder
 	head := keep(0, nb)
-	for len(head) > 0 && strings.TrimSpace(head[0]) == "" {
-		head = head[1:]
-	}
 	for _, l := range head {
 		b.WriteString(l + "\n")
 	}

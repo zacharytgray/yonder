@@ -240,11 +240,22 @@ not the instructions:
 
 ```sh
 yonder agents import ~/.claude --kind skills --kind subagents --kind commands --kind hooks
+yonder agents import ~/.agents --kind skills    # skills Codex and Pi use, if they have any
 ```
 
+When the import holds hooks or other scripts, it prints them on one screen: they would wait for
+review on the person's other machines, and nothing you ran can approve them. Show the person that
+list. If they want them live everywhere, ask them to run, in their own terminal once the next
+sync has delivered them (step 9):
+
+    yonder agents accept --all-machines
+
+One command, one yes. Someone who wants no review at all can set `[sync] review = "none"` in
+`~/.config/yonder/config.toml` on each machine; say so only if they ask.
+
 On another machine: `yonder run <m> -- yonder agents import '~/.claude' --kind skills ...`.
-Codex hook configs go in with `yonder agents import ~/.codex/hooks.json --kind files --harness
-codex`. Claude Code hook scripts arrive in `~/.claude/hooks/` on every machine, but Yonder never
+Codex hook configs go in with `yonder agents import <codex folder>/hooks.json --kind files
+--harness codex`, where the Codex folder is `$CODEX_HOME` if the person set it, else `~/.codex`. Claude Code hook scripts arrive in `~/.claude/hooks/` on every machine, but Yonder never
 edits `settings.json`, so the `hooks` entry that runs them stays the person's to add on each
 machine (tell them which scripts arrived).
 
@@ -275,8 +286,15 @@ section (action `shared`, `from` that machine), show the dry run, and apply it t
 Where each harness gets it: Claude Code reads the instructions from a marked block in
 `~/.claude/CLAUDE.md` and the skills from `~/.claude/skills/`. Codex reads `~/.codex/AGENTS.md`
 (the whole file when Codex had none, else a marked block in the person's own file) and the
-skills from `~/.agents/skills/`, which Pi shares. Both start with the same short briefing about
-the machines. Skills, subagents and commands that only Claude Code understands (`claude/agents`,
+skills from `~/.agents/skills/`, which Pi shares. If they use `$CODEX_HOME`, run
+`yonder agents link` with it set: Yonder remembers that folder and keeps rendering there, also in
+the scheduled sync. A `CODEX_HOME` outside their home folder isn't supported; link refuses it, so
+tell them. If Codex has an `AGENTS.override.md` with text, it reads that instead and never sees
+Yonder's text: `yonder agents link` and `yonder doctor` warn about it. Tell the person, and ask
+whether to move its text into the shared instructions; Yonder never writes into that file. Both
+start with the same short briefing about the machines. Reconcile only takes a section out of a
+harness's file when that harness is linked on the machine, so its text arrives through Yonder's
+block; a file of an unlinked harness is left as it is, and reconcile says so and exits 1. Skills, subagents and commands that only Claude Code understands (`claude/agents`,
 `claude/commands`) only reach Claude Code; a Codex hook config goes in `files/codex/`.
 
 Reconcile links the store into each machine's harnesses. If you skipped reconcile, link each
@@ -297,7 +315,7 @@ and it should. If `yonder sync` or `yonder doctor` says changes wait for review,
 > It shows one summary for all your machines and asks once: type `y` and press Enter to accept
 > everything, or `s` to read the full diffs first.
 
-What the person imported or accepted at a terminal themselves doesn't ask again on their other
+What the person accepted, or imported at a terminal and said yes to, doesn't ask again on their other
 machines; what you imported does, once.
 
 If they use Codex: Codex also asks before running a hook that changed. Tell them to open Codex
@@ -333,9 +351,9 @@ see them.
 Tell the person what is set up (machines, layers, the schedule), and give them something to try,
 in their own words, to any agent on any of their machines:
 
-> The Pi's disk is full, can you clean it up?
+> The Raspberry Pi's disk is full, can you clean it up?
 
-The agent will check the disk with `yonder run pi -- df -h /`, find what is using the space,
+The agent will check the disk with `yonder run raspberry-pi -- df -h /`, find what is using the space,
 and ask before it deletes anything. Other ideas: "Which of my machines has the
 most free disk?", "Run the tests on the PC", "Is the PC busy?"
 

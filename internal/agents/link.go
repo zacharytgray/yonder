@@ -69,6 +69,11 @@ type LinkState struct {
 	Harnesses []string `json:"harnesses"`
 	Paused    bool     `json:"paused,omitempty"` // the layer is off; link again when it is back on
 	Entries   []Entry  `json:"entries"`
+	// CodexHome is the Codex folder an explicit link found ($CODEX_HOME or
+	// ~/.codex). relinks, gather and reconcile use it, so a sync run without
+	// CODEX_HOME in its environment (the timer, a peer's ssh) doesn't move
+	// Codex's files back to ~/.codex
+	CodexHome string `json:"codex_home,omitempty"`
 }
 
 // Linker wires the agents store into the harnesses on this machine.
@@ -117,7 +122,7 @@ func (l *Linker) save(st LinkState) error {
 	if l.DryRun {
 		return nil
 	}
-	if len(st.Entries) == 0 && len(st.Harnesses) == 0 {
+	if len(st.Entries) == 0 && len(st.Harnesses) == 0 && st.CodexHome == "" {
 		err := os.Remove(l.statePath())
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -277,7 +282,7 @@ func (l *Linker) wants(harnesses []string) plan {
 		if w.instructions != "" {
 			// the text itself, never an @import: claude code asks once per project
 			// before importing a file outside it, which a headless session can't answer
-			p := filepath.Join(l.Home, w.instructions)
+			p := InstructionsPath(l.Home, w.instructions)
 			text, briefErr, err := l.renderText(w.key)
 			_, statErr := os.Lstat(p)
 			if err == nil && briefErr != nil && (text != "" || !w.mustExist || statErr == nil) {
@@ -313,7 +318,7 @@ func (l *Linker) wants(harnesses []string) plan {
 		}
 		if w.files != "" {
 			for _, it := range l.items(filepath.Join("files", w.key), false) {
-				add(want{path: filepath.Join(l.Home, w.files, it.name), kind: kindLink, target: it.path})
+				add(want{path: filepath.Join(InstructionsPath(l.Home, w.files), it.name), kind: kindLink, target: it.path})
 			}
 		}
 		if w.note != "" {
@@ -328,7 +333,23 @@ func (l *Linker) wants(harnesses []string) plan {
 // hook and passthrough file. settings files are never touched. anything in the
 // way is backed up first, and unlink puts it back. it is safe to run again.
 func (l *Linker) Link(harnesses []string) error {
-	return l.locked(func() error { return l.link(harnesses) })
+	return l.locked(func() error {
+		if harnesses != nil && !l.DryRun {
+			// an explicit link decides where Codex's folder is, from this
+			// environment; a relink or a layer coming back on keeps it
+			st, err := l.State()
+			if err != nil {
+				return err
+			}
+			if ch := codexHomeFromEnv(l.Home); ch != st.CodexHome {
+				st.CodexHome = ch
+				if err := l.save(st); err != nil {
+					return err
+				}
+			}
+		}
+		return l.link(harnesses)
+	})
 }
 
 func (l *Linker) link(harnesses []string) error {
@@ -468,7 +489,7 @@ func (l *Linker) parentOK(p string, st *LinkState) error {
 	dir := filepath.Dir(p)
 	rel, err := filepath.Rel(l.Home, dir)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("%s is outside the home folder", dir)
+		return fmt.Errorf("%s is outside the home folder, and yonder links only below it (a CODEX_HOME outside the home isn't supported; unset it and run `yonder agents link` again)", dir)
 	}
 	cur := l.Home
 	for _, part := range strings.Split(rel, string(filepath.Separator)) {
@@ -1040,6 +1061,16 @@ func upToDate(data, kind, content string) bool {
 
 // Blocked is the instruction files linked here that can't render now, with
 // why (a briefing over its cap, an unknown placeholder). they keep what they had.
+// RenderProblems is what Blocked would say after linking these harnesses,
+// worked out without writing anything: a dry check before a change that
+// relies on the store's text rendering.
+func (l *Linker) RenderProblems(harnesses []string) map[string]error {
+	if len(harnesses) == 0 {
+		return nil
+	}
+	return l.wants(harnesses).blocked
+}
+
 func (l *Linker) Blocked() map[string]error {
 	st, err := l.State()
 	if err != nil || st.Paused || len(st.Harnesses) == 0 {

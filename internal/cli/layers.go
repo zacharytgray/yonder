@@ -153,7 +153,7 @@ func (a *app) setLayers(names []string, on bool) error {
 			for _, m := range ms {
 				names = append(names, m.Name)
 			}
-			a.scheduleMachines(self, names, false)
+			a.scheduleMachines(self, names, true) // a machine where it was turned off stays off
 		}
 	}
 	word := "off"

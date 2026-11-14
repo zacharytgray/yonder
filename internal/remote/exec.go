@@ -12,6 +12,8 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -98,6 +100,11 @@ func runCommand(ctx context.Context, env Envelope, stdin io.Reader, out, errw io
 	}
 	// provider tokens stay out unless asked for by name with --secret
 	cmd.Env = secrets.WithoutProviderVars(os.Environ())
+	// who asked, for the commands that must know: never inherited, always from this envelope
+	cmd.Env = slices.DeleteFunc(cmd.Env, func(kv string) bool {
+		return strings.HasPrefix(kv, "YONDER_EXEC_HARNESS=") || strings.HasPrefix(kv, "YONDER_EXEC_FROM=")
+	})
+	cmd.Env = append(cmd.Env, "YONDER_EXEC_HARNESS="+env.Harness, "YONDER_EXEC_FROM="+env.From)
 	for _, name := range env.SecretNames() {
 		cmd.Env = append(cmd.Env, name+"="+env.Secrets[name])
 	}

@@ -117,7 +117,10 @@ instructions, skills, subagents and hooks, and syncs between machines:
   `yonder sync` or `yonder doctor` says changes wait, tell the user to run
   `yonder agents accept --all-machines` in their terminal: one summary, they type `y` once, every
   machine.
-  Never try to accept for them.
+  Never try to accept for them, and never run the hidden `yonder _accept-*` commands.
+- When `yonder agents import` lists hooks or scripts that would wait on the other machines, show
+  the user that list. Your import doesn't approve them; the user does, with
+  `yonder agents accept --all-machines` in their own terminal.
 - Codex asks the user to trust a changed hook again before running it. After a Codex hook
   (`files/codex/...`) changes, tell them to open Codex and run `/hooks`.
 - The first part of yonder's block in your instructions is the briefing about the user's

@@ -1055,16 +1055,22 @@ resident between runs.
 - Every file yonder writes holds `yonder:schedule v1`. A job with the same label or unit names
   that lacks it was made by hand (people made `com.yonder.sync` and `yonder-sync.timer` before
   0.4). An explicit install (`init`, `add`, `enable agents`, `yonder schedule install`) unloads it,
-  moves its files to `schedule/backup/<ts>/` and replaces them, so the two never run side by side;
-  on macOS a job loaded under that label from another plist under the home is moved aside too. A
-  sync never takes one over on its own, and `remove` never deletes one: doctor WARNs with the
-  install line instead.
+  moves its files to `schedule/backup/<ts>/` and replaces them, so the two never run side by side.
+  On macOS a job loaded under that label from another plist under the home is moved aside too:
+  install reads which plist launchd loaded before the bootout, which forgets it. Doctor counts the
+  job as loaded only when launchd loaded it from yonder's plist. A sync never takes one over on
+  its own, and `remove` never deletes one: doctor WARNs with the install line instead.
+- Paths and carried variables with a control character (a newline would start a new line in the
+  plist or unit) are refused at install. In unit files `%` is written `%%`, so a path holding
+  `%h` stays a path.
 
 When it is installed and removed:
 
 - `init` installs it on this machine and every peer it added, `add` on the machine it added, and
-  `enable agents` on every online machine, when the agents layer is on. `--no-schedule` (init and
-  add) skips it and records a decline on those machines. Peers get it through `_exec`
+  `enable agents` on every online machine, when the agents layer is on. `enable agents` uses
+  `schedule install --unless-declined`, so a machine where the person turned it off stays off.
+  `--no-schedule` (init and add) records the decline on each machine before the first sync that
+  applies the layer there, so nothing is installed first. Peers get it through `_exec`
   (`yonder schedule install`), so they log it.
 - Every machine also keeps it in line with the layer whenever the layer setting is applied (after
   each registry sync, in `_sync` on a peer): layer on and no job here, or yonder's job pointing at a
@@ -1188,10 +1194,15 @@ run, so an agent can't accept on its own. One confirmation is still a person at 
 never none.
 
 **Changes a person already reviewed.** A version carries `reviewed: <machine>` when a person on
-that machine accepted it (`accept`) or imported it at a terminal (`agents import` with a
-terminal on stdin and stdout, which is how a person runs it and not how an agent's shell does).
-Such a version doesn't wait for review on other machines: a person has looked at that exact
-content once. The mark is tied to content: a scan that finds an edit makes a new version without
+that machine typed a yes for it: `accept` at a terminal there (`--all`, a path, or the caller's
+own part of `--all-machines`), or `agents import` at a terminal, which shows the hooks and other
+files that would wait on the other machines on one screen and asks "Make these live on every
+machine?". Only a typed `y` marks them. An import with no terminal (an agent's) marks nothing:
+it prints the same summary and says the person approves them with `yonder agents accept
+--all-machines` in their own terminal. A ticket accept on another machine (`_accept-apply`) makes
+the change live there but doesn't mark it: the person's yes was typed at the caller, so a machine
+that was offline then asks its own person later. Such a marked version doesn't wait for review
+on other machines: a person has looked at that exact content once. The mark is tied to content: a scan that finds an edit makes a new version without
 it, so an agent's edit on any machine, or an agent's import, always waits everywhere else, as
 before. The mark travels with the version, and also on its own: two machines holding the same
 version where one has the mark pass it over without a new version (the plan's equal-counters
@@ -1199,8 +1210,9 @@ case), and a machine where that version waits makes it live then (`accept` in it
 machine that sent the mark). A mark that isn't a valid machine name is dropped. This holds for
 `review = "all"` too. It is the same kind of claim as `allowed`: a peer writes it, and every
 fleet machine trusts every other fully (Trust model), so a hostile machine could forge it, as it
-could write the hook straight into `~/.claude/hooks` over ssh. What it can't do is turn an
-agent's edit into a reviewed one through any yonder command.
+could write the hook straight into `~/.claude/hooks` over ssh. A typed yes at a terminal is a
+person as far as yonder can tell; an agent that drives a terminal (a pty) can type one too, which
+no check can rule out. People who want no review at all set `[sync] review = "none"`.
 
 **Every machine from one terminal.** `accept --all-machines` (implies `--all`) does the same
 summary for every set-up machine, one confirmation, and accepts on each:
@@ -1232,9 +1244,14 @@ a hostile one, and yonder doesn't pretend otherwise. What the design does guaran
 - A peer can't widen what the person saw. Each target accepts only what it listed itself, to that
   caller, byte for byte; a forged, replayed or late request accepts nothing new, and a change that
   arrived after the summary keeps waiting. One peer's reply can't name another machine's changes.
-- An agent has no ordinary way in: `accept` refuses without a terminal, `_accept-*` are hidden,
-  undocumented in the skill, and every call is logged on the target with the caller's name, so
-  `yonder log` shows what was accepted where and from which terminal's machine.
+- The hidden commands aren't a way around the terminal. `_accept-list` and `_accept-apply` refuse
+  a local call (no `SSH_CONNECTION`), and refuse a caller whose `_exec` envelope names an agent
+  harness (`claude-code`, `codex`, `pi`, `hermes`): `_exec` passes the envelope's harness and
+  caller to the command as `YONDER_EXEC_HARNESS` and `YONDER_EXEC_FROM`, set from the envelope
+  and never inherited. `shell` and unknown names pass, so a person running `--all-machines` over
+  ssh still works. The harness check is advisory, since an agent can hide its markers; the real
+  gate stays the caller's terminal and the single-use ticket. Every call is logged on the target
+  with the caller's name, so `yonder log` shows what was accepted where.
 
 ### Wiring the harnesses
 
@@ -1244,9 +1261,28 @@ harness found here (the same detection as the skill install), or the ones named:
 | Harness | Instructions | Skills | Other |
 |---|---|---|---|
 | Claude Code | A marked block in `~/.claude/CLAUDE.md` holding the briefing, then the text of `instructions.md`, `instructions.claude.md` and the machine's two, where they exist, joined with blank lines. The user's own text stays. | One link per skill in `~/.claude/skills/<name>`. | One link per file in `~/.claude/agents/`, `~/.claude/commands/` and `~/.claude/hooks/`; `files/claude/*` into `~/.claude/`. |
-| Codex | `~/.codex/AGENTS.md` rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/`. |
+| Codex | `~/.codex/AGENTS.md` (or the saved `$CODEX_HOME` folder, below) rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/` (or that folder). |
 | Pi | Same as Codex, into `~/.pi/agent/AGENTS.md`. | `~/.agents/skills` (shared with Codex). | `files/pi/*` into `~/.pi/agent/`. |
 | Hermes | A marked block in `~/.hermes/SOUL.md`, only when that file exists, holding the briefing and `instructions.hermes.md` (and the machine's), not the shared `instructions.md`. Hermes is a messaging gateway with its own persona, so coding-agent rules stay out of it unless `[shared] hermes = true` in `agents/render.toml` (then the shared text and the machine's come after the briefing, as for the others). Hermes loads SOUL.md from its home in every session, whatever the working folder; its AGENTS.md, CLAUDE.md and `.hermes.md` come from the working folder only, so none of those is global. It seeds a default SOUL.md when there is none, so yonder never creates it; link says to run Hermes once first. Its fleet lines outside the block are the user's to drop; doctor flags any that repeat the briefing. | Not wired: link prints that the store's skills folder can be added to `skills.external_dirs` in its config. | `files/hermes/*` into `~/.hermes/`. |
+
+Codex's folder is decided at an explicit `agents link`: `$CODEX_HOME` when that is set, else
+`~/.codex`. It is saved in `links.json` (`codex_home`), and every later relink, gather, reconcile
+and doctor uses the saved folder, whatever their own environment holds, so a sync run by the
+timer, by a peer over ssh or from another shell never moves Codex's files. A peer's gather is a
+shell script, so it reads `codex_home` from that machine's `links.json` itself (in
+`$YONDER_HOME/state`, else `$XDG_STATE_HOME/yonder`, else `~/.local/state/yonder`), then falls
+back to `$CODEX_HOME` and `~/.codex`. Only an explicit `agents link` changes the saved folder; a
+relink, or the agents layer coming back on, keeps it. The saved folder belongs to the user's own
+home: code given any other home (a test fixture) never reads it. Before any link the
+environment decides. The schedule job also carries `CODEX_HOME` when it is set at install. A
+`CODEX_HOME` outside the home folder is not supported: link and reconcile write only below the
+home, with no symlink on the way, and refuse it. `CODEX_HOME` applies only to this user's real
+home (or the test home under `YONDER_HOME`, where it counts only inside it), never to a fixture
+folder. When `AGENTS.override.md` in that folder has text, Codex reads it instead of
+`AGENTS.md`, so it sees none of yonder's text or briefing. Yonder never writes into the override
+file: `agents link` prints a WARNING when it links Codex there, and doctor WARNs while it has
+text, with the fix (move its text into the store or `AGENTS.md`, then delete it). Yonder doesn't
+claim Codex gets the shared instructions in that case.
 
 The text is copied in, never `@`-imported. Claude Code asks once per project before it imports a
 file outside the project, and keeps the import off if declined; a headless session can't answer,
@@ -1463,7 +1499,12 @@ text. Each section is then:
 `--json`: `{"machines":[{"name","files":[{"path","harness","bytes","yonder","rendered","hash"}],"error"}],
 "sections":[{"key","heading","status","machines","versions":[{"machines","files","text","diff"}]}],
 "summary":{"same","differs","some","only"},"fingerprint"}`. A machine offline or not set up is
-listed with an `error` and no files. `hash` is the sha256 of the whole file as read. `diff` is a
+listed with an `error` and no files. `hash` is the sha256 of the user's own text (`OwnCanon`):
+the file without yonder's block and without the blank lines at the block's edges and the file's
+end, which link adds; every other byte counts, whitespace too. So a block re-rendered after
+gather (which happens at every registry sync) doesn't make a file look edited or a plan's
+fingerprint stale. Sections don't split at a `#` line inside a code fence (three or more
+backticks or tildes), and a fenced block keeps its own spacing. `diff` is a
 line diff of that version against the first one (versions after the first only). `fingerprint`
 is 16 hex characters over every machine's file paths and hashes.
 
@@ -1495,27 +1536,52 @@ replaced in place, a new one appended, the rest of the file kept. The new store 
 the store's check (secrets and the rest) first.
 
 Applying, in order: a fresh gather (a machine offline now is named and left as it is); the plan
-checked against it; the store diffs and the trims printed (with `--dry-run`, that is all); every
+checked against it; the store as the plan leaves it rendered in a temp copy (following a
+symlinked store folder), for this machine and each machine the plan touches, so text that won't
+render (a `{{model:...}}` with no name, say) is refused before anything is written. It renders
+for the harnesses linked here and every harness `render.toml` has names for (all of them when
+neither applies), so a tier named only for Claude Code and Codex doesn't refuse a plan for Pi.
+A peer with another harness linked still checks its own render before it trims; the store diffs and the trims printed (with `--dry-run`, that is all); every
 machine with something to trim runs `yonder _reconcile-trim --probe` through `_exec`, so an
 unreachable machine or an older yonder stops it before anything is written; a record saved in
 `agents/reconcile/<id>/record.json` (the plan, each store file before and after); the store
-files written and synced; then each machine trims, in process here and through `_exec`
-(`_reconcile-trim`, the request on stdin) elsewhere. A machine trims only when the new store
-files it needs are live there with the hashes the caller sent (not still on their way, not
-waiting for review), and each file only when it still has the hash gather read; it refuses a
-symlink, like link. It copies the file to `agents/reconcile/<id>/files/<path>` in its own state
-dir, takes the sections out (`TrimSections`: by the same keys gather made, yonder's block and the
-rest of the text kept byte for byte, a cut leaving one blank line), records the hash of the
-user's own text after the cut in `trim.json`, and runs link for the harnesses it has, so the
-moved text arrives through yonder's block. The output ends with the id and
+files written, and the store synced (always, even when the plan changes no store file, since a
+machine may still lack text an earlier reconcile wrote); then each machine trims, in process
+here and through `_exec` (`_reconcile-trim`, the request on stdin) elsewhere. The request names
+every store file that machine's trims rely on (`instructions.md` for shared and merged sections,
+its `machines/<m>/instructions.md` for per-machine ones), changed by this plan or not, with the
+hash it must have. A machine trims only when each is live there with that hash (not still on its
+way, not waiting for review), checked again right before each file is written; and only when the
+store text renders for the harnesses it will link (the same check link makes, without writing),
+so a section never comes out while its replacement can't render. Each file must still have the
+own-text hash gather read, and no folder on its way below the home, nor the file, may be a
+symlink: reconcile never writes through one, like link. It copies the file to
+`agents/reconcile/<id>/files/<path>` in its own state dir, takes the sections out
+(`TrimSections`: by the same keys gather made; yonder's block and the rest of the text stay as
+they were, except that where a cut joins two blank lines one goes), and records the hash of the
+user's own text after the cut in `trim.json`. Then it links: the harnesses linked there already
+(their saved set, unchanged), or, on a machine never linked, the ones it has. If linking fails,
+or leaves a file with its old text, every file it trimmed is put back and the machine reports a
+failure, so the moved text always arrives through yonder's block or not at all. A refused file
+counts as a failure too, and reconcile exits 1. A machine only takes a section out of a file
+whose harness is linked there (its saved set, or on a machine never linked, the ones it has):
+a file of any other harness would lose the text without getting the block, so it is left as it
+is, named, and counted as a failure. The last line then says the reconcile was NOT fully
+applied, with the undo line; "applied" only when every machine took everything. The output ends with the id and
 `yonder agents reconcile --undo <id>`.
 
 `--undo [id]` (default: the last one not undone, on the machine that applied it) runs
 `_reconcile-undo <id>` on each machine that trimmed, which puts each backup back when the
 user's own text is still what the trim left (compared without yonder's block, which link
-rewrites); a file changed since is left, with the backup's path. Then each store file that is
-still what the reconcile wrote goes back to what it was (or is deleted), and the store syncs.
-Anything left is named, and running undo again finishes it.
+rewrites); a file changed since is left, with the backup's path. A file whose own text is
+already what it was before the reconcile counts as done. Then each store file that is still
+what the reconcile wrote goes back to what it was (or is deleted); one already back counts as
+done; and the store syncs. Anything left is named, and running undo again finishes it. Undo
+refuses a symlinked folder on the way too.
+
+Not reproduced, and guarded cheaply: the store lock is released between the readiness check and
+the trim, so a scheduled sync could change a store file in between. The trim checks the store
+hashes again right before each write.
 
 This replaced the 0.3 procedure of `agents import` plus trimming each file by hand with
 `yonder run`: the hand trim was the step people and agents got wrong, and it had no undo.

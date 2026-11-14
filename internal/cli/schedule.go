@@ -45,22 +45,23 @@ Each run writes its output to ~/.local/state/yonder/sync/schedule.log.`,
 		},
 	}
 	status.Flags().BoolVar(&asJSON, "json", false, "print JSON")
-	var allInstall, allRemove bool
+	var allInstall, allRemove, unlessDeclined bool
 	install := &cobra.Command{
 		Use:   "install [machine...] [--all-machines]",
 		Short: "Install the sync schedule here, or on the machines named",
 		Args:  usageArgs(cobra.ArbitraryArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return newApp(cmd).scheduleOn("install", args, allInstall)
+			return newApp(cmd).scheduleOn("install", args, allInstall, unlessDeclined)
 		},
 	}
 	install.Flags().BoolVar(&allInstall, "all-machines", false, "every online fleet machine, this one too")
+	install.Flags().BoolVar(&unlessDeclined, "unless-declined", false, "skip a machine where the schedule was turned off with `schedule remove` or --no-schedule")
 	remove := &cobra.Command{
 		Use:   "remove [machine...] [--all-machines]",
 		Short: "Remove the sync schedule and keep it off until install",
 		Args:  usageArgs(cobra.ArbitraryArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return newApp(cmd).scheduleOn("remove", args, allRemove)
+			return newApp(cmd).scheduleOn("remove", args, allRemove, false)
 		},
 	}
 	remove.Flags().BoolVar(&allRemove, "all-machines", false, "every online fleet machine, this one too")
@@ -97,7 +98,7 @@ func (a *app) scheduleStatus(asJSON bool) error {
 }
 
 // scheduleOn installs or removes the schedule here and on the named machines.
-func (a *app) scheduleOn(sub string, names []string, all bool) error {
+func (a *app) scheduleOn(sub string, names []string, all, unlessDeclined bool) error {
 	self, err := a.selfName()
 	if err != nil {
 		return err
@@ -123,7 +124,7 @@ func (a *app) scheduleOn(sub string, names []string, all bool) error {
 		if _, err := a.machine(n); err != nil {
 			return err
 		}
-		if !a.scheduleOne(self, n, sub, all) {
+		if !a.scheduleOne(self, n, sub, all, unlessDeclined) {
 			ok = false
 		}
 	}
@@ -136,10 +137,14 @@ func (a *app) scheduleOn(sub string, names []string, all bool) error {
 // scheduleOne runs `schedule install|remove` on one machine: here in
 // process, elsewhere through _exec. skipOffline: an offline machine is a
 // note, not a failure.
-func (a *app) scheduleOne(self, name, sub string, skipOffline bool) bool {
+func (a *app) scheduleOne(self, name, sub string, skipOffline, unlessDeclined bool) bool {
 	if name == self {
 		var res schedule.Result
 		var err error
+		if sub == "install" && unlessDeclined && schedule.Declined(registry.StateDir()) {
+			fmt.Fprintln(a.out, "sync schedule: left off here, as asked earlier; `yonder schedule install` turns it on")
+			return true
+		}
 		if sub == "install" {
 			res, err = schedule.Install(schedule.Here(self))
 		} else {
@@ -159,7 +164,11 @@ func (a *app) scheduleOne(self, name, sub string, skipOffline bool) bool {
 		return false
 	}
 	var out strings.Builder
-	code, err := a.execOn(m, self, yonderCmd(m, "schedule", sub), nil, &out, &out)
+	args := []string{"schedule", sub}
+	if sub == "install" && unlessDeclined {
+		args = append(args, "--unless-declined")
+	}
+	code, err := a.execOn(m, self, yonderCmd(m, args...), nil, &out, &out)
 	switch {
 	case err != nil && ExitCode(err) == ExitTempErr && skipOffline:
 		fmt.Fprintf(a.out, "%s: skipped (%v); it gets the schedule at its next sync\n", name, err)
@@ -188,19 +197,22 @@ func (a *app) printSchedule(res schedule.Result, prefix string) {
 	}
 }
 
-// scheduleMachines installs (or, with no, declines) the schedule on the
-// machines a setup command just set up. failures are warnings.
-func (a *app) scheduleMachines(self string, names []string, no bool) {
+// scheduleMachines installs the schedule on the machines a setup command just
+// set up. keepDecline leaves off a machine where it was turned off. failures
+// are warnings.
+func (a *app) scheduleMachines(self string, names []string, keepDecline bool) {
 	if !a.store.LayerOn(registry.LayerAgents) {
 		return
 	}
-	sub := "install"
-	if no {
-		sub = "remove"
-	}
 	for _, n := range names {
-		a.scheduleOne(self, n, sub, true)
+		a.scheduleOne(self, n, "install", true, keepDecline)
 	}
+}
+
+// declineSchedule is --no-schedule: recorded on the machine before any sync
+// applies the agents layer there, so nothing is installed first.
+func (a *app) declineSchedule(self, name string) {
+	a.scheduleOne(self, name, "remove", true, false)
 }
 
 // runScheduled is `yonder sync --scheduled`, what the timer runs: a short

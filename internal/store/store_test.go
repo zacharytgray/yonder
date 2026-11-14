@@ -337,7 +337,7 @@ func TestReviewTier(t *testing.T) {
 	if err := b.s.Lock(time.Second); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.s.Accept("hooks/guard.sh"); err != nil {
+	if err := b.s.Accept("hooks/guard.sh", true); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.s.Save(); err != nil {
@@ -471,9 +471,12 @@ func TestConflictName(t *testing.T) {
 func TestReviewVouch(t *testing.T) {
 	a, b, c := newMachine(t, "laptop"), newMachine(t, "gpu-box"), newMachine(t, "server")
 	a.write("hooks/guard.sh", "#!/bin/sh\necho v1\n", a.now)
-	a.s.ReviewedHere = map[string]string{"hooks/guard.sh": hashOf([]byte("#!/bin/sh\necho v1\n"))}
 	a.locked(func() {})
-	a.s.ReviewedHere = nil
+	a.locked(func() {
+		if !a.s.MarkReviewed("hooks/guard.sh", hashOf([]byte("#!/bin/sh\necho v1\n"))) {
+			t.Fatal("mark")
+		}
+	})
 	if r := a.sync(b); len(r.PeerPending) != 0 || b.read("hooks/guard.sh") != "#!/bin/sh\necho v1\n" {
 		t.Fatalf("an imported hook should go live on peers: %+v", r)
 	}
@@ -487,7 +490,7 @@ func TestReviewVouch(t *testing.T) {
 	}
 	// the person accepts it on laptop; server takes the review mark and makes it live
 	must(t, a.s.Lock(time.Second))
-	must(t, a.s.Accept("hooks/guard.sh"))
+	must(t, a.s.Accept("hooks/guard.sh", true))
 	must(t, a.s.Save())
 	a.s.Unlock()
 	a.sync(c)

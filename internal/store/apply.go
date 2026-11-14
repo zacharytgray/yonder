@@ -356,9 +356,25 @@ func (s *Store) PendingData(rel string) (live, incoming []byte, err error) {
 	return live, incoming, err
 }
 
+// MarkReviewed marks the version held at rel as reviewed by a person here,
+// if it is still that content. callers hold the lock and save.
+func (s *Store) MarkReviewed(rel, hash string) bool {
+	st, err := s.State()
+	if err != nil {
+		return false
+	}
+	f, ok := st.Files[rel]
+	if !ok || f.Deleted || f.Hash != hash {
+		return false
+	}
+	f.Reviewed = s.Self
+	st.Files[rel] = f
+	return true
+}
+
 // AcceptIf accepts rel only if what waits is still the content the person
 // was shown: that hash and exec bit. a change that arrived since keeps waiting.
-func (s *Store) AcceptIf(rel, hash string, exec bool) error {
+func (s *Store) AcceptIf(rel, hash string, exec, person bool) error {
 	st, err := s.State()
 	if err != nil {
 		return err
@@ -366,11 +382,12 @@ func (s *Store) AcceptIf(rel, hash string, exec bool) error {
 	if f := st.Files[rel]; f.Hash != hash || f.Exec != exec {
 		return fmt.Errorf("%s changed since the summary was made; it still waits", rel)
 	}
-	return s.Accept(rel)
+	return s.Accept(rel, person)
 }
 
-// Accept makes a waiting change live. callers hold the lock.
-func (s *Store) Accept(rel string) error {
+// Accept makes a waiting change live. callers hold the lock. person says a
+// person typed the yes here; only then is the version marked reviewed.
+func (s *Store) Accept(rel string, person bool) error {
 	st, err := s.State()
 	if err != nil {
 		return err
@@ -398,8 +415,10 @@ func (s *Store) Accept(rel string) error {
 	os.Remove(s.pendingPath(rel))
 	delete(st.Pending, rel)
 	// a person reviewed this content here; peers take it without asking again
-	f.Reviewed = s.Self
-	st.Files[rel] = f
+	if person {
+		f.Reviewed = s.Self
+		st.Files[rel] = f
+	}
 	s.logChange(rel, "accept", f, "")
 	return nil
 }

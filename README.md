@@ -38,8 +38,8 @@ Send your agent a plain message, from any of your machines:
 
 - **"Pick up where I left off on the thesis repo."** The repo is on your desktop. The agent on
   your laptop finds it there and works on it with `yonder run`.
-- **"The Pi's disk is full, can you clean it up?"** The agent looks at what is using the space,
-  then frees it on the Pi.
+- **"The Raspberry Pi's disk is full, can you clean it up?"** The agent looks at what is using
+  the space, then frees it on the Raspberry Pi.
 - **"Run the training script on the PC."** It runs there, detached. You check on it later with
   `yonder jobs`. Yonder only runs the command. It doesn't host models.
 - **"Send the slides on my Mac mini to my laptop."** `yonder cp` copies the file over.
@@ -81,24 +81,24 @@ yonder init
 
 ## What it does
 
-The Pi example, run from the laptop:
+The Raspberry Pi example, run from the laptop:
 
 ```
-you    The Pi's disk is full, can you clean it up?
+you    The Raspberry Pi's disk is full, can you clean it up?
 
 agent  $ yonder ls
-       NAME      ROLE     STATE         HARDWARE                HARNESSES
-       laptop    laptop   this machine  M3 Pro · 36 GB          claude-code,codex
-       mac-mini  server   online        M4 · 16 GB              claude-code,hermes
-       pc        desktop  online        RTX 4090 24 GB · 64 GB  codex
-       pi        other    online        Cortex-A76 · 8 GB       -
+       NAME          ROLE     STATE         HARDWARE                HARNESSES
+       laptop        laptop   this machine  M3 Pro · 36 GB          claude-code,codex
+       mac-mini      server   online        M4 · 16 GB              claude-code,hermes
+       pc            desktop  online        RTX 4090 24 GB · 64 GB  codex
+       raspberry-pi  other    online        Cortex-A76 · 8 GB       -
        layers: secrets on, agents on (yonder layers)
 
-       $ yonder run pi -- df -h /
+       $ yonder run raspberry-pi -- df -h /
        Filesystem      Size  Used Avail Use% Mounted on
        /dev/mmcblk0p2   29G   29G  120M 100% /
 
-       $ yonder run pi -- 'du -sh ~/* | sort -h | tail -2'
+       $ yonder run raspberry-pi -- 'du -sh ~/* | sort -h | tail -2'
        2.1G    /home/me/backups
        19G     /home/me/camera
 
@@ -107,11 +107,11 @@ agent  $ yonder ls
 
 you    yes
 
-agent  $ yonder run pi -- 'find ~/camera -type f -mtime +30 -delete && df -h /'
+agent  $ yonder run raspberry-pi -- 'find ~/camera -type f -mtime +30 -delete && df -h /'
        Filesystem      Size  Used Avail Use% Mounted on
        /dev/mmcblk0p2   29G   11G   17G  40% /
 
-       Done. The Pi has 17 GB free.
+       Done. The Raspberry Pi has 17 GB free.
 ```
 
 <table>
@@ -358,7 +358,7 @@ it. Without prompts:
 
 ```sh
 yonder secret setup --yes                       # the default machines
-yonder secret setup --machines pi               # one machine, e.g. one that was offline
+yonder secret setup --machines laptop           # one machine, e.g. one that was offline
 yonder secret setup --machines pc --replace     # give it a new token
 ```
 
@@ -456,11 +456,18 @@ How sync behaves:
   shows one summary of everything waiting, grouped into hooks, scripts and harness files, and you
   type `y` once to accept it all (`s` or `--show` pages through the full diffs first). `yonder agents accept
   --all-machines` does every online machine from the terminal you're at. A change you already
-  accepted, or imported yourself in a terminal, doesn't ask again on your other machines; one an
-  agent made always does. `sync` and `doctor` print the command when something waits.
+  accepted, or imported yourself in a terminal and said yes to, doesn't ask again on your other
+  machines; one an agent made or imported always does. `sync` and `doctor` print the command
+  when something waits. `[sync] review` in `~/.config/yonder/config.toml` sets what waits:
+  `executables` (the default), `all` or `none` (no review at all).
 - Codex also asks you to trust a changed hook before it runs it. After a hook in
-  `files/codex/` changes, open Codex and run `/hooks`. `[sync] review` in `~/.config/yonder/config.toml` changes that: `executables` (the
-  default), `all` or `none`.
+  `files/codex/` changes, open Codex and run `/hooks`.
+- Codex: Yonder renders `~/.codex/AGENTS.md`. If you use `$CODEX_HOME`, run
+  `yonder agents link` with it set: Yonder remembers that folder and keeps using it, including
+  for the scheduled sync. A `CODEX_HOME` outside your home folder isn't supported; link refuses
+  it. If Codex has an `AGENTS.override.md` with text, Codex reads that instead of `AGENTS.md` and
+  doesn't see Yonder's instructions; `link` and `doctor` warn about it, and Yonder never writes
+  into it.
 - Secrets and settings never sync. Names like `.env`, `*.pem` or a harness's `settings.json` and
   `config.toml` are refused, and so are files that look like they hold a key, with the line
   number.
@@ -530,7 +537,7 @@ Tailscale cannot tell a sleeping laptop from one that is switched off, so Yonder
 It says `offline`, shows when the machine was last seen, and adds your notes:
 
 ```
-yonder: pi is offline (last seen 2h ago) — notes: sleeps at night
+yonder: raspberry-pi is offline (last seen 2h ago) — notes: sleeps at night
 ```
 
 If a laptop is lost or stolen, first remove it from your tailnet in the Tailscale admin console.
