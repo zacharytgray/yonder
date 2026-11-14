@@ -170,6 +170,10 @@ func (a *app) reconcileApply(planPath string, dryRun bool) error {
 			}
 		}
 	}
+	// the new text must render for every harness before the store gets it
+	if err := renderCheck(self, s, rc); err != nil {
+		return err
+	}
 	for _, m := range r.Machines {
 		if m.Error != "" {
 			fmt.Fprintf(a.out, "%s: not read (%s); its files are left as they are; reconcile again once it is online\n", m.Name, m.Error)
@@ -264,11 +268,84 @@ func (a *app) reconcileApply(planPath string, dryRun bool) error {
 	if err := saveRecord(rec); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "\nreconcile %s applied. To put every file back: yonder agents reconcile --undo %s\n", id, id)
 	if failed {
+		fmt.Fprintf(a.out, "\nreconcile %s NOT fully applied: a machine above refused or failed, and its files are unchanged. The store has the new text. Fix what is named above and run the plan again (gather first), or put every file back: yonder agents reconcile --undo %s\n", id, id)
 		return quietExit(ExitError)
 	}
+	fmt.Fprintf(a.out, "\nreconcile %s applied. To put every file back: yonder agents reconcile --undo %s\n", id, id)
 	return nil
+}
+
+// renderCheck renders the store as the plan leaves it, in a temp copy, for
+// this machine and every machine the plan touches, with every harness. a
+// section whose text won't render (a {{model:...}} with no name, say) is
+// refused before anything is written.
+func renderCheck(self string, s *store.Store, rc agents.Reconcile) error {
+	if len(rc.Store) == 0 {
+		return nil
+	}
+	tmp, err := os.MkdirTemp("", "yonder-render-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	// only what renders into instructions: the texts, the briefing, render.toml
+	err = filepath.WalkDir(s.Dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(s.Dir, p)
+		top := !strings.Contains(rel, string(filepath.Separator))
+		inMachine := strings.HasPrefix(rel, "machines"+string(filepath.Separator)) && strings.Count(rel, string(filepath.Separator)) == 2
+		text := strings.HasSuffix(rel, ".md") || strings.HasSuffix(rel, ".toml")
+		if (!top && !inMachine) || !text {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		return writeUnder(tmp, rel, data)
+	})
+	if err != nil {
+		return err
+	}
+	for rel, text := range rc.Store {
+		if err := writeUnder(tmp, filepath.FromSlash(rel), []byte(text)); err != nil {
+			return err
+		}
+	}
+	machines := []string{self}
+	for m := range rc.Trims {
+		if !slices.Contains(machines, m) {
+			machines = append(machines, m)
+		}
+	}
+	for rel := range rc.Store {
+		if m, ok := strings.CutPrefix(rel, "machines/"); ok {
+			if m, _, _ = strings.Cut(m, "/"); !slices.Contains(machines, m) {
+				machines = append(machines, m)
+			}
+		}
+	}
+	sort.Strings(machines)
+	for _, m := range machines {
+		l := agents.NewLinker(m, io.Discard)
+		l.StoreDir = tmp
+		probs := l.RenderProblems(agents.Names())
+		for _, p := range sortedKeys(probs) {
+			return fmt.Errorf("the plan's text wouldn't render on %s (%s: %w); nothing was written. Change that section's text in the plan, or add the name to render.toml in the store", m, agents.Tilde(p, agents.Home()), probs[p])
+		}
+	}
+	return nil
+}
+
+func writeUnder(root, rel string, data []byte) error {
+	p := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(p, data, 0o600)
 }
 
 func randHex(n int) string {
@@ -371,8 +448,14 @@ func (a *app) trimHere(self string, req trimRequest) trimDone {
 	}
 	var undos []undo
 	for _, t := range req.Trims {
-		if store.ValidRel(t.Path) != nil || !slices.ContainsFunc(agents.GatherFiles, func(g agents.GatherFile) bool { return g.Path == t.Path }) {
+		gi := slices.IndexFunc(agents.GatherFiles, func(g agents.GatherFile) bool { return g.Path == t.Path })
+		if store.ValidRel(t.Path) != nil || gi < 0 {
 			d.Skipped = append(d.Skipped, skip{t.Path, "not an instructions file yonder reads"})
+			continue
+		}
+		// only a harness that gets the store's text loses its own copy
+		if h := agents.GatherFiles[gi].Harness; !slices.Contains(hs, h) {
+			d.Skipped = append(d.Skipped, skip{t.Path, h + " isn't linked here, so the store's text wouldn't reach it; nothing taken out. Link it (`yonder agents link --harness " + h + "`), then gather and reconcile again"})
 			continue
 		}
 		p := agents.InstructionsPath(home, t.Path)

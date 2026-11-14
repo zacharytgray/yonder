@@ -85,3 +85,49 @@ func TestReconcileLocal(t *testing.T) {
 		t.Fatal("a second undo should say there is nothing to undo")
 	}
 }
+
+// recheck leftover 2: a plan whose text won't render writes nothing, and a
+// run where a machine refuses says so in its last line
+func TestReconcileRefusesBeforeWriting(t *testing.T) {
+	f := newFleet(t, "testdata/fleet.json")
+	f.must("init", "--yes", "--no-skill", "--layers", "agents", "--no-schedule")
+	home := filepath.Join(f.home, "yonder", "home")
+	put := func(rel, body string) {
+		p := filepath.Join(home, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(".claude/CLAUDE.md", "# Style\nbe brief\n")
+	put(".codex/AGENTS.md", "# Style\nbe brief\n")
+	f.must("agents", "link", "--harness", "claude-code")
+	plan := filepath.Join(f.home, "plan.json")
+	store := filepath.Join(f.home, "yonder", "data", "agents", "instructions.md")
+
+	if err := os.WriteFile(plan, []byte(`{"v":1,"sections":[{"key":"# style","action":"merge","text":"# Style\nuse {{model:fast}}"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := f.run("", "agents", "reconcile", "--plan", plan)
+	if r.code == 0 || !strings.Contains(r.stderr, "wouldn't render") {
+		t.Fatalf("unrenderable plan: %+v", r)
+	}
+	if _, err := os.Stat(store); err == nil {
+		t.Fatal("the store got text that can't render")
+	}
+
+	// codex isn't linked here: its file stays, and the last line says not applied
+	if err := os.WriteFile(plan, []byte(`{"v":1,"sections":[{"key":"# style","action":"shared","from":"laptop:~/.claude/CLAUDE.md"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = f.run("", "agents", "reconcile", "--plan", plan)
+	lines := strings.Split(strings.TrimSpace(r.stdout), "\n")
+	if r.code == 0 || !strings.Contains(lines[len(lines)-1], "NOT fully applied") {
+		t.Fatalf("last line: %+v", r)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, ".codex/AGENTS.md")); string(b) != "# Style\nbe brief\n" {
+		t.Fatalf("codex's file changed: %q", b)
+	}
+}

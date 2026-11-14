@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,11 +9,36 @@ import (
 	"github.com/zacharytgray/yonder/internal/registry"
 )
 
-// CodexHome is the folder Codex reads its config and AGENTS.md from:
-// $CODEX_HOME when set, else ~/.codex. under YONDER_HOME a CODEX_HOME counts
-// only inside it, so a test never reaches a real one.
+// CodexHome is the folder Codex reads its config and AGENTS.md from: the
+// one the last explicit `agents link` here found, so a sync whose environment
+// differs (the timer, a peer's ssh, another shell) never moves Codex's files;
+// before any link, $CODEX_HOME when set, else ~/.codex.
 func CodexHome(home string) string {
-	if c := os.Getenv("CODEX_HOME"); c != "" {
+	if saved := savedCodexHome(); saved != "" {
+		return saved
+	}
+	return codexHomeFromEnv(home)
+}
+
+// savedCodexHome is the Codex folder recorded in links.json, or "".
+func savedCodexHome() string {
+	data, err := os.ReadFile(filepath.Join(registry.StateDir(), "agents", "links.json"))
+	if err != nil {
+		return ""
+	}
+	var st struct {
+		CodexHome string `json:"codex_home"`
+	}
+	if json.Unmarshal(data, &st) != nil {
+		return ""
+	}
+	return st.CodexHome
+}
+
+// codexHomeFromEnv is $CODEX_HOME, else ~/.codex. under YONDER_HOME a
+// CODEX_HOME counts only inside it, so a test never reaches a real one.
+func codexHomeFromEnv(home string) string {
+	if c := os.Getenv("CODEX_HOME"); c != "" && realHome(home) {
 		if abs, err := filepath.Abs(c); err == nil {
 			c = abs
 		}
@@ -21,6 +47,16 @@ func CodexHome(home string) string {
 		}
 	}
 	return filepath.Join(home, ".codex")
+}
+
+// realHome: home is this user's home (or the test home under YONDER_HOME).
+// CODEX_HOME belongs to that home only, never to a fixture folder.
+func realHome(home string) bool {
+	if os.Getenv("YONDER_HOME") != "" {
+		return home == registry.UserHome()
+	}
+	h, err := os.UserHomeDir()
+	return err == nil && filepath.Clean(h) == filepath.Clean(home)
 }
 
 // InstructionsPath is where a harness file named under ~ really is: Codex's

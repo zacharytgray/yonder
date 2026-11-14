@@ -69,6 +69,11 @@ type LinkState struct {
 	Harnesses []string `json:"harnesses"`
 	Paused    bool     `json:"paused,omitempty"` // the layer is off; link again when it is back on
 	Entries   []Entry  `json:"entries"`
+	// CodexHome is the Codex folder an explicit link found ($CODEX_HOME or
+	// ~/.codex). relinks, gather and reconcile use it, so a sync run without
+	// CODEX_HOME in its environment (the timer, a peer's ssh) doesn't move
+	// Codex's files back to ~/.codex
+	CodexHome string `json:"codex_home,omitempty"`
 }
 
 // Linker wires the agents store into the harnesses on this machine.
@@ -336,6 +341,15 @@ func (l *Linker) link(harnesses []string) error {
 	if err != nil {
 		return err
 	}
+	if harnesses != nil && !l.DryRun {
+		// an explicit link decides where Codex's folder is, from this environment
+		if ch := codexHomeFromEnv(l.Home); ch != st.CodexHome {
+			st.CodexHome = ch
+			if err := l.save(st); err != nil {
+				return err
+			}
+		}
+	}
 	if harnesses == nil {
 		// a relink: decided under the lock, so a layer-off unlink that got
 		// there first stays unlinked
@@ -468,7 +482,7 @@ func (l *Linker) parentOK(p string, st *LinkState) error {
 	dir := filepath.Dir(p)
 	rel, err := filepath.Rel(l.Home, dir)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("%s is outside the home folder", dir)
+		return fmt.Errorf("%s is outside the home folder, and yonder links only below it (a CODEX_HOME outside the home isn't supported; unset it and run `yonder agents link` again)", dir)
 	}
 	cur := l.Home
 	for _, part := range strings.Split(rel, string(filepath.Separator)) {

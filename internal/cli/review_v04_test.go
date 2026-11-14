@@ -350,3 +350,36 @@ func TestUndoRetryFinishes(t *testing.T) {
 		}
 	}
 }
+
+// Astra's recheck blocker: with only Claude Code linked, a shared section is
+// taken out of CLAUDE.md, never out of Codex's AGENTS.md, which the store's
+// text wouldn't reach
+func TestTrimSkipsUnlinkedHarness(t *testing.T) {
+	storeText := "# Style\nKEEP_RULE_SENTINEL\n"
+	a, _, home := trimSetup(t, storeText, map[string]string{
+		".claude/CLAUDE.md": "# Style\nKEEP_RULE_SENTINEL\n",
+		".codex/AGENTS.md":  "# Style\nKEEP_RULE_SENTINEL\n",
+	})
+	if err := agents.NewLinker("laptop", io.Discard).Link([]string{"claude-code"}); err != nil {
+		t.Fatal(err)
+	}
+	req := trimReq(t, home, ".claude/CLAUDE.md", []string{"# style"}, map[string]string{"instructions.md": storeText})
+	req.Trims = append(req.Trims, trimReq(t, home, ".codex/AGENTS.md", []string{"# style"}, nil).Trims...)
+	d := a.trimHere("laptop", req)
+	if len(d.Trimmed) != 1 || d.Trimmed[0].Path != ".claude/CLAUDE.md" {
+		t.Fatalf("trimmed: %+v", d)
+	}
+	if len(d.Skipped) != 1 || !strings.Contains(d.Skipped[0].Why, "isn't linked here") {
+		t.Fatalf("skipped: %+v", d.Skipped)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, ".codex/AGENTS.md")); string(b) != "# Style\nKEEP_RULE_SENTINEL\n" {
+		t.Fatalf("Codex's file changed: %q", b)
+	}
+	if a.printTrim("laptop", d) {
+		t.Fatal("a skipped file must count as a failure")
+	}
+	st, _ := agents.NewLinker("laptop", io.Discard).State()
+	if !slices.Equal(st.Harnesses, []string{"claude-code"}) {
+		t.Fatalf("saved harnesses changed: %v", st.Harnesses)
+	}
+}

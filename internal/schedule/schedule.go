@@ -112,9 +112,9 @@ func (j Job) env() map[string]string {
 // anything that moves its config, state or stores.
 func EnvFromProcess() map[string]string {
 	out := map[string]string{}
-	for _, k := range []string{"YONDER_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "YONDER_SSH_IDENTITY", "YONDER_TAILSCALE_JSON"} {
+	for _, k := range []string{"YONDER_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "YONDER_SSH_IDENTITY", "YONDER_TAILSCALE_JSON", "CODEX_HOME"} {
 		if v := os.Getenv(k); v != "" {
-			if k == "YONDER_HOME" {
+			if k == "YONDER_HOME" || k == "CODEX_HOME" {
 				if abs, err := filepath.Abs(v); err == nil {
 					v = abs
 				}

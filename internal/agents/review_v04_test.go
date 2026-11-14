@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,5 +122,44 @@ func TestCodexHomeAndOverride(t *testing.T) {
 	}
 	if _, ok := CodexOverride(home); !ok || !strings.Contains(CodexOverrideNote(home), "never writes into it") {
 		t.Fatal("override not seen")
+	}
+}
+
+// recheck leftover 1: once linked, Codex's folder doesn't move with the
+// environment of a later sync (the timer, a peer's ssh, another shell)
+func TestCodexHomeSticksAcrossRelink(t *testing.T) {
+	yh := t.TempDir()
+	t.Setenv("YONDER_HOME", yh)
+	home := filepath.Join(yh, "home")
+	storeDir := filepath.Join(yh, "data", StoreName)
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "instructions.md"), []byte("## Style\nKEEP_RULE\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	custom := filepath.Join(home, "custom-codex")
+	t.Setenv("CODEX_HOME", custom)
+	if err := NewLinker("laptop", io.Discard).Link([]string{"codex"}); err != nil {
+		t.Fatal(err)
+	}
+	inCustom := filepath.Join(custom, "AGENTS.md")
+	if !strings.Contains(read(inCustom), "KEEP_RULE") {
+		t.Fatalf("not rendered in CODEX_HOME: %q", read(inCustom))
+	}
+	for _, env := range []string{"", filepath.Join(home, "other-codex")} {
+		t.Setenv("CODEX_HOME", env)
+		if err := NewLinker("laptop", io.Discard).Link(nil); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(read(inCustom), "KEEP_RULE") {
+			t.Fatalf("CODEX_HOME=%q: the relink moved Codex's file away: %q", env, read(inCustom))
+		}
+		if _, err := os.Stat(filepath.Join(home, ".codex", "AGENTS.md")); err == nil {
+			t.Fatalf("CODEX_HOME=%q: rendered into ~/.codex", env)
+		}
+		if got := CodexHome(home); got != custom {
+			t.Fatalf("CodexHome = %s, want the linked %s", got, custom)
+		}
 	}
 }

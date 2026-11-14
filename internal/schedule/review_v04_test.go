@@ -97,3 +97,21 @@ func TestUnitEscapesPercentAndRefusesNewline(t *testing.T) {
 		t.Fatalf("a newline in a carried variable must be refused: %v", err)
 	}
 }
+
+// recheck leftover 1: the job carries CODEX_HOME, so the timer's syncs see the same Codex folder
+func TestJobCarriesCodexHome(t *testing.T) {
+	t.Setenv("CODEX_HOME", "/home/me/custom-codex")
+	env := EnvFromProcess()
+	if env["CODEX_HOME"] != "/home/me/custom-codex" {
+		t.Fatalf("env: %v", env)
+	}
+	j := testJob(t, "darwin")
+	j.Env = env
+	if p := j.Plist(); !strings.Contains(p, "<key>CODEX_HOME</key>\n\t\t<string>/home/me/custom-codex</string>") {
+		t.Fatalf("plist:\n%s", p)
+	}
+	j.OS = "linux"
+	if s := j.Service(); !strings.Contains(s, `Environment="CODEX_HOME=/home/me/custom-codex"`) {
+		t.Fatalf("unit:\n%s", s)
+	}
+}

@@ -254,8 +254,8 @@ One command, one yes. Someone who wants no review at all can set `[sync] review 
 `~/.config/yonder/config.toml` on each machine; say so only if they ask.
 
 On another machine: `yonder run <m> -- yonder agents import '~/.claude' --kind skills ...`.
-Codex hook configs go in with `yonder agents import ~/.codex/hooks.json --kind files --harness
-codex`. Claude Code hook scripts arrive in `~/.claude/hooks/` on every machine, but Yonder never
+Codex hook configs go in with `yonder agents import <codex folder>/hooks.json --kind files
+--harness codex`, where the Codex folder is `$CODEX_HOME` if the person set it, else `~/.codex`. Claude Code hook scripts arrive in `~/.claude/hooks/` on every machine, but Yonder never
 edits `settings.json`, so the `hooks` entry that runs them stays the person's to add on each
 machine (tell them which scripts arrived).
 
@@ -285,12 +285,16 @@ section (action `shared`, `from` that machine), show the dry run, and apply it t
 
 Where each harness gets it: Claude Code reads the instructions from a marked block in
 `~/.claude/CLAUDE.md` and the skills from `~/.claude/skills/`. Codex reads `~/.codex/AGENTS.md`
-(the whole file when Codex had none, else a marked block in the person's own file), or the same
-file in `$CODEX_HOME` when they set that, and the skills from `~/.agents/skills/`, which Pi
-shares. If Codex has an `AGENTS.override.md` with text, it reads that instead and never sees
+(the whole file when Codex had none, else a marked block in the person's own file) and the
+skills from `~/.agents/skills/`, which Pi shares. If they use `$CODEX_HOME`, run
+`yonder agents link` with it set: Yonder remembers that folder and keeps rendering there, also in
+the scheduled sync. A `CODEX_HOME` outside their home folder isn't supported; link refuses it, so
+tell them. If Codex has an `AGENTS.override.md` with text, it reads that instead and never sees
 Yonder's text: `yonder agents link` and `yonder doctor` warn about it. Tell the person, and ask
-whether to move its text into the shared instructions; Yonder never writes into that file. Both start with the same short briefing about
-the machines. Skills, subagents and commands that only Claude Code understands (`claude/agents`,
+whether to move its text into the shared instructions; Yonder never writes into that file. Both
+start with the same short briefing about the machines. Reconcile only takes a section out of a
+harness's file when that harness is linked on the machine, so its text arrives through Yonder's
+block; a file of an unlinked harness is left as it is, and reconcile says so and exits 1. Skills, subagents and commands that only Claude Code understands (`claude/agents`,
 `claude/commands`) only reach Claude Code; a Codex hook config goes in `files/codex/`.
 
 Reconcile links the store into each machine's harnesses. If you skipped reconcile, link each

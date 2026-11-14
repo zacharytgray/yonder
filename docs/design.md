@@ -1261,13 +1261,19 @@ harness found here (the same detection as the skill install), or the ones named:
 | Harness | Instructions | Skills | Other |
 |---|---|---|---|
 | Claude Code | A marked block in `~/.claude/CLAUDE.md` holding the briefing, then the text of `instructions.md`, `instructions.claude.md` and the machine's two, where they exist, joined with blank lines. The user's own text stays. | One link per skill in `~/.claude/skills/<name>`. | One link per file in `~/.claude/agents/`, `~/.claude/commands/` and `~/.claude/hooks/`; `files/claude/*` into `~/.claude/`. |
-| Codex | `~/.codex/AGENTS.md` (in `$CODEX_HOME` when set) rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/` (or `$CODEX_HOME`). |
+| Codex | `~/.codex/AGENTS.md` (or the saved `$CODEX_HOME` folder, below) rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/` (or that folder). |
 | Pi | Same as Codex, into `~/.pi/agent/AGENTS.md`. | `~/.agents/skills` (shared with Codex). | `files/pi/*` into `~/.pi/agent/`. |
 | Hermes | A marked block in `~/.hermes/SOUL.md`, only when that file exists, holding the briefing and `instructions.hermes.md` (and the machine's), not the shared `instructions.md`. Hermes is a messaging gateway with its own persona, so coding-agent rules stay out of it unless `[shared] hermes = true` in `agents/render.toml` (then the shared text and the machine's come after the briefing, as for the others). Hermes loads SOUL.md from its home in every session, whatever the working folder; its AGENTS.md, CLAUDE.md and `.hermes.md` come from the working folder only, so none of those is global. It seeds a default SOUL.md when there is none, so yonder never creates it; link says to run Hermes once first. Its fleet lines outside the block are the user's to drop; doctor flags any that repeat the briefing. | Not wired: link prints that the store's skills folder can be added to `skills.external_dirs` in its config. | `files/hermes/*` into `~/.hermes/`. |
 
-Codex's folder is `$CODEX_HOME` when that is set, else `~/.codex`; link, gather, reconcile and
-doctor all follow it. Under `YONDER_HOME` a `CODEX_HOME` counts only inside it, so a test never
-reaches a real one. When `AGENTS.override.md` in that folder has text, Codex reads it instead of
+Codex's folder is decided at an explicit `agents link`: `$CODEX_HOME` when that is set, else
+`~/.codex`. It is saved in `links.json` (`codex_home`), and every later relink, gather, reconcile
+and doctor uses the saved folder, whatever their own environment holds, so a sync run by the
+timer, by a peer over ssh or from another shell never moves Codex's files. Before any link the
+environment decides. The schedule job also carries `CODEX_HOME` when it is set at install. A
+`CODEX_HOME` outside the home folder is not supported: link and reconcile write only below the
+home, with no symlink on the way, and refuse it. `CODEX_HOME` applies only to this user's real
+home (or the test home under `YONDER_HOME`, where it counts only inside it), never to a fixture
+folder. When `AGENTS.override.md` in that folder has text, Codex reads it instead of
 `AGENTS.md`, so it sees none of yonder's text or briefing. Yonder never writes into the override
 file: `agents link` prints a WARNING when it links Codex there, and doctor WARNs while it has
 text, with the fix (move its text into the store or `AGENTS.md`, then delete it). Yonder doesn't
@@ -1525,7 +1531,9 @@ replaced in place, a new one appended, the rest of the file kept. The new store 
 the store's check (secrets and the rest) first.
 
 Applying, in order: a fresh gather (a machine offline now is named and left as it is); the plan
-checked against it; the store diffs and the trims printed (with `--dry-run`, that is all); every
+checked against it; the store as the plan leaves it rendered in a temp copy, for this machine and
+each machine the plan touches, with every harness, so text that won't render (a
+`{{model:...}}` with no name, say) is refused before anything is written; the store diffs and the trims printed (with `--dry-run`, that is all); every
 machine with something to trim runs `yonder _reconcile-trim --probe` through `_exec`, so an
 unreachable machine or an older yonder stops it before anything is written; a record saved in
 `agents/reconcile/<id>/record.json` (the plan, each store file before and after); the store
@@ -1547,7 +1555,11 @@ user's own text after the cut in `trim.json`. Then it links: the harnesses linke
 (their saved set, unchanged), or, on a machine never linked, the ones it has. If linking fails,
 or leaves a file with its old text, every file it trimmed is put back and the machine reports a
 failure, so the moved text always arrives through yonder's block or not at all. A refused file
-counts as a failure too, and reconcile exits 1. The output ends with the id and
+counts as a failure too, and reconcile exits 1. A machine only takes a section out of a file
+whose harness is linked there (its saved set, or on a machine never linked, the ones it has):
+a file of any other harness would lose the text without getting the block, so it is left as it
+is, named, and counted as a failure. The last line then says the reconcile was NOT fully
+applied, with the undo line; "applied" only when every machine took everything. The output ends with the id and
 `yonder agents reconcile --undo <id>`.
 
 `--undo [id]` (default: the last one not undone, on the machine that applied it) runs
