@@ -41,7 +41,8 @@ test/                  end-to-end tests against the built binary (+ docker integ
 ```
 
 The hidden commands a caller runs on a target are `_accept-list` and `_accept-apply` (run
-through `_exec`; see Review), `_exec`, `_job` (the detached supervisor),
+through `_exec`; see Review), `_reconcile-trim [--probe]` and `_reconcile-undo <id>` (through
+`_exec`; see Machines whose instructions differ), `_exec`, `_job` (the detached supervisor),
 `_jobs [id [--follow]]`, `_kill <id>`, `_send` and `_recv` (see Copying files), `_sync`, `_log`, `_facts`, `_init-self <name>` (prints `{"mesh_keys":[...]}`), `_store-offer`, `_store-send` and `_store-recv <store>` (see Store sync), and `_secret-probe [--verify]` and
 `_secret-provision <account> <vault> [--write] [--extra-vault V]...` (both run through `_exec`;
 see Secrets).
@@ -69,6 +70,7 @@ see Secrets).
 ~/.config/systemd/user/yonder-sync.{service,timer}  Linux: the sync schedule
 ~/.local/state/yonder/agents/links.json         what `agents link` made and what it replaced
 ~/.local/state/yonder/agents/backup/<ts>/       files and folders link moved out of the way
+~/.local/state/yonder/agents/reconcile/<id>/    a reconcile: record.json where it was applied; trim.json and files/ where files were trimmed
 ~/.local/state/yonder/log.jsonl        commands this machine received
 ~/.local/state/yonder/jobs/<id>.log    output of detached runs (scrubbed)
 ~/.local/state/yonder/jobs/<id>.json   detached run status: pid, pgid, state, exit
@@ -1424,20 +1426,70 @@ text. Each section is then:
 - `some`: one version, on more than one machine but not all.
 - `only`: on one machine only.
 
-`--json`: `{"machines":[{"name","files":[{"path","harness","bytes","yonder","rendered"}],"error"}],
-"sections":[{"key","heading","status","machines","versions":[{"machines","files","text"}]}],
-"summary":{"same","differs","some","only"}}`. A machine offline or not set up is listed with an
-`error` and no files.
+`--json`: `{"machines":[{"name","files":[{"path","harness","bytes","yonder","rendered","hash"}],"error"}],
+"sections":[{"key","heading","status","machines","versions":[{"machines","files","text","diff"}]}],
+"summary":{"same","differs","some","only"},"fingerprint"}`. A machine offline or not set up is
+listed with an `error` and no files. `hash` is the sha256 of the whole file as read. `diff` is a
+line diff of that version against the first one (versions after the first only). `fingerprint`
+is 16 hex characters over every machine's file paths and hashes.
 
-The yonder skill has the reconcile procedure for the agent: sort each section into shared,
-machine-only or conflicting; ask the user about each conflict; show the result as a diff; after
-approval, write `instructions.md` and `machines/<m>/instructions.md` with `agents import` (no new
-apply step is needed: `import --kind instructions --machine <m>` writes an overlay); then trim
-what moved out of each machine's own file, backing each up first.
+**Applying a plan.** An agent turns the gather into a plan with the user (the skill's
+procedure), and `yonder agents reconcile --plan plan.json [--dry-run]` applies it:
 
-When `enable agents`, or `init` with the layer on and machines added, finds that two or more
-machines have instructions that don't all agree, it says so and names the procedure. It writes
-nothing.
+```json
+{"v": 1, "fingerprint": "<from gather --json>", "sections": [
+  {"key": "## style",  "action": "shared", "from": "laptop"},
+  {"key": "## gpu",    "action": "per-machine", "machines": ["gpu-box"]},
+  {"key": "## models", "action": "merge", "text": "## Models\n..."},
+  {"key": "## old",    "action": "drop"},
+  {"key": "## mine",   "action": "leave"}]}
+```
+
+- `shared`: the version `from` names (a machine with one version of it, or `machine:~/path`)
+  goes in `instructions.md`; it is taken out of every file that has any version of it.
+- `per-machine`: an intentional difference. Each machine (all that have it, or `machines`)
+  gets its own version in `machines/<m>/instructions.md`, and it is taken out of that machine's
+  files. A machine with two different versions of it is refused: merge them, or pick one.
+- `merge`: `text` (the agent's merged text, heading included) goes in `instructions.md`, and the
+  section is taken out everywhere.
+- `drop`: taken out everywhere. `leave`, and any section the plan doesn't name: left as it is.
+
+Unknown keys, a key twice, an unknown action, a merge with no text or with yonder's marker, a
+plan version other than 1, and a fingerprint that differs from a fresh gather are refused before
+anything happens. A store file is written section by section: a section with the same key is
+replaced in place, a new one appended, the rest of the file kept. The new store text must pass
+the store's check (secrets and the rest) first.
+
+Applying, in order: a fresh gather (a machine offline now is named and left as it is); the plan
+checked against it; the store diffs and the trims printed (with `--dry-run`, that is all); every
+machine with something to trim runs `yonder _reconcile-trim --probe` through `_exec`, so an
+unreachable machine or an older yonder stops it before anything is written; a record saved in
+`agents/reconcile/<id>/record.json` (the plan, each store file before and after); the store
+files written and synced; then each machine trims, in process here and through `_exec`
+(`_reconcile-trim`, the request on stdin) elsewhere. A machine trims only when the new store
+files it needs are live there with the hashes the caller sent (not still on their way, not
+waiting for review), and each file only when it still has the hash gather read; it refuses a
+symlink, like link. It copies the file to `agents/reconcile/<id>/files/<path>` in its own state
+dir, takes the sections out (`TrimSections`: by the same keys gather made, yonder's block and the
+rest of the text kept byte for byte, a cut leaving one blank line), records the hash of the
+user's own text after the cut in `trim.json`, and runs link for the harnesses it has, so the
+moved text arrives through yonder's block. The output ends with the id and
+`yonder agents reconcile --undo <id>`.
+
+`--undo [id]` (default: the last one not undone, on the machine that applied it) runs
+`_reconcile-undo <id>` on each machine that trimmed, which puts each backup back when the
+user's own text is still what the trim left (compared without yonder's block, which link
+rewrites); a file changed since is left, with the backup's path. Then each store file that is
+still what the reconcile wrote goes back to what it was (or is deleted), and the store syncs.
+Anything left is named, and running undo again finishes it.
+
+This replaced the 0.3 procedure of `agents import` plus trimming each file by hand with
+`yonder run`: the hand trim was the step people and agents got wrong, and it had no undo.
+
+When `enable agents`, or `init` with the layer on, finds that two or more machines have
+instructions that don't all agree, it prints how many sections differ and the next step twice:
+for a person (ask your agent to reconcile) and for an agent running setup (gather `--json`, the
+skill's procedure, apply only after the user says yes). It writes nothing.
 
 ### The other commands
 

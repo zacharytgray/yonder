@@ -138,27 +138,46 @@ instructions, skills, subagents and hooks, and syncs between machines:
 
 ## Reconcile machines whose instructions differ
 
-When `yonder enable agents` or `yonder agents gather` says the machines' instructions differ,
-yonder has picked nothing. Do this with the user:
+When `yonder init`, `yonder enable agents` or `yonder agents gather` says the machines'
+instructions don't match, yonder has picked nothing. The user decides each difference; you
+explain it and write the plan.
 
-1. Run `yonder agents gather --json`. Each section is `same`, `differs`, `some` or `only`, with
-   every version's text and the files it is in.
-2. Sort each section as shared (meant for every machine), machine-only (about one machine) or
-   conflicting (versions differ). A section that differs between one machine's CLAUDE.md and
-   AGENTS.md may belong in `instructions.claude.md` or `instructions.codex.md`.
-3. Ask the user about each conflict, one at a time. Show the versions and which machines have
-   them. Never pick one yourself.
-4. Show the result as a diff: the new `instructions.md`, each `machines/<m>/instructions.md`,
-   and what each machine's own file keeps. Write nothing until the user approves.
-5. Write the approved text to files in a temp folder, then
-   `yonder agents import <file> --kind instructions` for the shared text and
-   `yonder agents import <file> --kind instructions --machine <m>` for each machine's.
-   Use `--replace` only if the user agreed to replace a store file. Then `yonder sync`.
-6. Trim each machine's own file, one machine at a time. First back it up:
-   `yonder run <m> -- cp ~/.claude/CLAUDE.md ~/.claude/CLAUDE.md.bak-<yyyymmdd>`. Remove only
-   the sections that moved into the store, and keep the rest. Then run
-   `yonder run <m> -- yonder agents link` so the block arrives there.
-7. Run `yonder agents gather` again. What is left in each machine's own text should be its own.
+1. Run `yonder agents gather --json`. Each section has a `key`, a `status` (`same`, `differs`,
+   `some`, `only`), the machines that have it, and every version's `text`, its `files` and a
+   `diff` against the first version. Keep the `fingerprint`.
+2. Skip sections that are `same` everywhere: those become shared with no question (action
+   `shared`, `from` any machine).
+3. For each other section, one at a time, tell the user in plain words what differs and where.
+   For example: "Your laptop's CLAUDE.md says to use the big model for planning; the gpu-box says
+   the small one. The desktop doesn't mention it." Quote the lines that differ, not the whole
+   file. Then ask how to settle it:
+   - share one version on every machine (which one?),
+   - keep each machine's own version, because the difference is on purpose (it goes in that
+     machine's own overlay),
+   - merge them (you write the merged text, and show it),
+   - drop it everywhere, or
+   - leave it as it is for now.
+   A section on one machine only is usually about that machine: suggest keeping it per machine,
+   but ask. Never decide a difference yourself.
+4. Write the plan as JSON (actions `shared` with `from`, `per-machine`, `merge` with `text`,
+   `drop`, `leave`; the exact `key` from gather; `"v": 1` and the `fingerprint`):
+   ```json
+   {"v": 1, "fingerprint": "...", "sections": [
+     {"key": "## style", "action": "shared", "from": "laptop"},
+     {"key": "## gpu notes", "action": "per-machine"},
+     {"key": "## models", "action": "merge", "text": "## Models\n..."},
+     {"key": "## scratch", "action": "drop"}]}
+   ```
+   If a machine has two versions of a section (its CLAUDE.md and AGENTS.md differ), `from` takes
+   one file: `"from": "laptop:~/.codex/AGENTS.md"`.
+5. Save it to a temp file and run `yonder agents reconcile --plan <file> --dry-run`. Show the user
+   the result: the new shared `instructions.md`, each machine's overlay, and what comes out of
+   each machine's own file. Ask "Apply this?" and wait for a clear yes.
+6. Only then run `yonder agents reconcile --plan <file>`. It backs up every file it changes,
+   syncs, and links the store in on each machine. Tell the user the undo line it prints
+   (`yonder agents reconcile --undo <id>`).
+7. If it says the files changed since the gather, or a machine was offline, gather again and
+   go over only what is new.
 
 ## Other commands
 

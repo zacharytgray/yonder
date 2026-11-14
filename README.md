@@ -396,8 +396,12 @@ own persona. `[shared] hermes = true` in `render.toml` in the store adds them.
 
 If your machines already have different `CLAUDE.md` or `AGENTS.md` files, `yonder agents gather`
 shows which sections are the same, which differ, and which only one machine has. Yonder doesn't
-merge them. The yonder skill walks your agent through it with you: it asks about each conflict,
-shows the result as a diff, imports it, and trims each machine's file after a backup.
+pick for you. Ask your agent to "reconcile my yonder instructions": the yonder skill has it point
+out each difference in plain words and ask you whether to share one version, keep each machine's
+own (on purpose), merge them, or drop it. It shows you the resulting plan, and only after you say
+yes applies it with `yonder agents reconcile --plan plan.json`. That writes the shared and
+per-machine files, takes what moved out of each machine's own file after a backup, and links the
+store in. `yonder agents reconcile --undo` puts every file back.
 
 For rules that name models, write a tier like `{{model:top}}` and give each harness its name for
 it in `render.toml` in the store, under `[claude]`, `[codex]`, `[pi]` or `[hermes]`. A rule that
@@ -463,6 +467,7 @@ How sync behaves:
 | `yonder agents import\|link\|unlink\|log\|diff\|accept\|restore\|allow` | Agent config: put it in the store, wire it into the harnesses, see and undo changes, review hooks |
 | `yonder agents briefing show\|review` | The briefing about your machines that every agent loads: print it, or list what to fix and a trimmed draft |
 | `yonder agents gather` | Compare each machine's own instructions files, for a reconcile with your agent |
+| `yonder agents reconcile --plan <file> \| --undo` | Apply the reconcile plan your agent made with you, or undo it |
 | `yonder remove <machine> [--lost]` | Take a machine out of the fleet |
 
 ## How agents learn it

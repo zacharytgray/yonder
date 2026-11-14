@@ -201,7 +201,7 @@ func (a *app) initCommand(io initOpts) error {
 	if !noSkill {
 		a.installSkillOn(self, added, interactive)
 	}
-	if a.store.LayerOn(registry.LayerAgents) && len(added) > 0 {
+	if a.store.LayerOn(registry.LayerAgents) {
 		a.warnDiverged(self)
 	}
 	if len(failed) > 0 {

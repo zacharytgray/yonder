@@ -22,8 +22,9 @@ machines, or on some or one machine only.
 
 Yonder never merges the text. To turn differing files into the shared store, ask your
 agent to run the reconcile procedure in the yonder skill: it asks you about each
-conflict and shows the result as a diff before anything is written. --json has the full
-text of every version.`,
+difference, shows the plan, and applies it with ` + "`yonder agents reconcile --plan`" + ` only after
+you say yes. --json has every version's text, the diffs between versions, each file's hash
+and a fingerprint for the plan.`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a := newApp(cmd)
@@ -114,11 +115,25 @@ func printGather(a *app, r agents.GatherReport) {
 		fmt.Fprintf(a.out, "%-8s %-40s %s\n", sec.Status, clipText(orStr(sec.Heading, sec.Key), 40), where)
 	}
 	if r.Diverged() {
-		fmt.Fprintln(a.out, "\n"+reconcileHint)
+		fmt.Fprintln(a.out, "\n"+divergedText(r, ""))
 	}
 }
 
-const reconcileHint = "the machines' instructions differ; yonder won't pick one. Ask your agent to run the reconcile procedure in the yonder skill (`yonder agents gather --json` has every version)"
+// divergedText says the machines differ and what to do next, for a person
+// and for an agent running setup.
+func divergedText(r agents.GatherReport, indent string) string {
+	s := r.Summary
+	var parts []string
+	if n := s[agents.Differs]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d differ", n))
+	}
+	if n := s[agents.OnSome] + s[agents.OnOne]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d are on some machines only", n))
+	}
+	return indent + "Your machines' agent instructions don't match (" + strings.Join(parts, ", ") + " of " + plural(len(r.Sections), "section") + "). Yonder won't pick for you.\n" +
+		indent + "Next step, if you are a person: ask your agent to \"reconcile my yonder instructions\". `yonder agents gather` shows the differences.\n" +
+		indent + "Next step, if you are an agent: run `yonder agents gather --json`, then follow \"Reconcile machines whose instructions differ\" in the yonder skill; apply the plan with `yonder agents reconcile --plan` only after the user says yes."
+}
 
 func clipText(s string, n int) string {
 	if len(s) <= n {
@@ -134,5 +149,5 @@ func (a *app) warnDiverged(self string) {
 	if err != nil || !r.Diverged() {
 		return
 	}
-	fmt.Fprintf(a.out, "  %s\n", reconcileHint)
+	fmt.Fprintln(a.out, divergedText(r, "  "))
 }

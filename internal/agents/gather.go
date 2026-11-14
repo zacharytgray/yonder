@@ -2,6 +2,8 @@ package agents
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -121,16 +123,26 @@ func OwnText(data []byte) (string, bool) {
 	return text, false
 }
 
+// OwnNorm is the user's own text, normalized: what stays the same when link
+// adds or rewrites its block around it.
+func OwnNorm(data []byte) string {
+	own, _ := OwnText(data)
+	return normText(own)
+}
+
 // a section of one file: a heading and what follows it up to the next heading,
-// or, where there are no headings, a paragraph
+// or, where there are no headings, a paragraph. lines are its line numbers in
+// the text it came from, so it can be cut out again.
 type section struct {
 	key, heading, text string
+	lines              []int
 }
 
 func splitSections(text string) []section {
 	var out []section
 	var cur *section
 	var para []string
+	var paraLines []int
 	keys := map[string]int{}
 	addKey := func(k string) string {
 		keys[k]++
@@ -141,10 +153,10 @@ func splitSections(text string) []section {
 	}
 	flushPara := func() {
 		t := normText(strings.Join(para, "\n"))
-		para = nil
 		if t != "" {
-			out = append(out, section{key: addKey("¶ " + clip(firstLineOf(t), 60)), text: t})
+			out = append(out, section{key: addKey("¶ " + clip(firstLineOf(t), 60)), text: t, lines: paraLines})
 		}
+		para, paraLines = nil, nil
 	}
 	flushHead := func() {
 		if cur != nil {
@@ -153,16 +165,17 @@ func splitSections(text string) []section {
 			cur = nil
 		}
 	}
-	for _, line := range strings.Split(text, "\n") {
+	for i, line := range strings.Split(text, "\n") {
 		if isHeading(line) {
 			flushPara()
 			flushHead()
 			h := strings.TrimSpace(line)
-			cur = &section{key: addKey(strings.ToLower(strings.Join(strings.Fields(h), " "))), heading: h}
+			cur = &section{key: addKey(strings.ToLower(strings.Join(strings.Fields(h), " "))), heading: h, lines: []int{i}}
 			continue
 		}
 		if cur != nil {
 			cur.text += line + "\n"
+			cur.lines = append(cur.lines, i)
 			continue
 		}
 		if strings.TrimSpace(line) == "" {
@@ -170,6 +183,7 @@ func splitSections(text string) []section {
 			continue
 		}
 		para = append(para, line)
+		paraLines = append(paraLines, i)
 	}
 	flushPara()
 	flushHead()
@@ -213,6 +227,9 @@ type GatherReport struct {
 	Machines []GatherMachine `json:"machines"`
 	Sections []GatherSection `json:"sections"`
 	Summary  map[string]int  `json:"summary"` // same, differs, some, only
+	// Fingerprint names the files as read: a reconcile plan that carries it
+	// is refused once any of them changed
+	Fingerprint string `json:"fingerprint"`
 }
 
 type GatherMachine struct {
@@ -227,6 +244,7 @@ type GatherFileInfo struct {
 	Bytes    int    `json:"bytes"`  // the user's own text
 	Yonder   bool   `json:"yonder"` // held a yonder block, or was rendered by yonder; that part is left out
 	Rendered bool   `json:"rendered,omitempty"`
+	Hash     string `json:"hash"` // sha256 of the whole file as read
 }
 
 type GatherSection struct {
@@ -241,6 +259,7 @@ type GatherVersion struct {
 	Machines []string `json:"machines"`
 	Files    []string `json:"files"` // machine:~/path
 	Text     string   `json:"text"`
+	Diff     string   `json:"diff,omitempty"` // against the first version
 }
 
 // section statuses
@@ -268,8 +287,9 @@ func Compare(ms []MachineFiles) GatherReport {
 				continue
 			}
 			own, yonder := OwnText(data)
+			sum := sha256.Sum256(data)
 			gm.Files = append(gm.Files, GatherFileInfo{Path: "~/" + gf.Path, Harness: gf.Harness, Bytes: len(strings.TrimSpace(own)),
-				Yonder: yonder, Rendered: yonder && own == ""})
+				Yonder: yonder, Rendered: yonder && own == "", Hash: hex.EncodeToString(sum[:])})
 			for _, s := range splitSections(own) {
 				any = true
 				gs, ok := byKey[s.key]
@@ -286,8 +306,19 @@ func Compare(ms []MachineFiles) GatherReport {
 		}
 		r.Machines = append(r.Machines, gm)
 	}
+	fp := sha256.New()
+	for _, m := range r.Machines {
+		for _, f := range m.Files {
+			fmt.Fprintf(fp, "%s:%s=%s\n", m.Name, f.Path, f.Hash)
+		}
+	}
+	r.Fingerprint = hex.EncodeToString(fp.Sum(nil))[:16]
 	for _, k := range order {
 		gs := byKey[k]
+		for i := 1; i < len(gs.Versions); i++ {
+			v0, v := gs.Versions[0], &gs.Versions[i]
+			v.Diff = Diff([]byte(v0.Text+"\n"), []byte(v.Text+"\n"), strings.Join(v0.Files, ", "), strings.Join(v.Files, ", "))
+		}
 		switch {
 		case len(gs.Versions) > 1:
 			gs.Status = Differs

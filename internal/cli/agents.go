@@ -50,7 +50,7 @@ Store layout:
 	cmd.AddCommand(newAgentsInstallCmd(), newAgentsUninstallCmd(), newAgentsStatusCmd(),
 		newAgentsImportCmd(), newAgentsLinkCmd(), newAgentsUnlinkCmd(), newAgentsLogCmd(),
 		newAgentsDiffCmd(), newAgentsAcceptCmd(), newAgentsRestoreCmd(), newAgentsAllowCmd(),
-		newAgentsBriefingCmd(), newAgentsGatherCmd())
+		newAgentsBriefingCmd(), newAgentsGatherCmd(), newAgentsReconcileCmd())
 	return cmd
 }
 

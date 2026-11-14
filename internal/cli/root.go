@@ -128,6 +128,6 @@ func newRoot() *cobra.Command {
 		newScheduleCmd(),
 	)
 	root.AddCommand(hiddenCmds()...)
-	root.AddCommand(newAcceptListCmd(), newAcceptApplyCmd())
+	root.AddCommand(newAcceptListCmd(), newAcceptApplyCmd(), newReconcileTrimCmd(), newReconcileUndoCmd())
 	return root
 }
