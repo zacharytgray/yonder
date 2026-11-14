@@ -3,12 +3,11 @@ My work is spread across computers. Each AI agent only knows the machine it's on
 So I built Yonder. It connects my computers so the agent on any one of them can use all of them. I send it plain messages:
 
 - "Pick up where I left off on the thesis repo." The repo is on my desktop. The agent on my laptop finds it there and works on it.
-- "The Pi's disk is full, can you clean it up?" It checks what's using the space, then frees it on the Pi.
-- "Run the training script on the PC." It runs there in the background, and I check on it later.
-- "Send the slides on my Mac mini to my laptop." Done.
-- My agent instructions and skills are the same on every machine. I change them once, and every agent also knows a short map of my machines.
+- "Run the tests on the gaming PC, it's faster." They run there in the background, and I check on them later from my phone.
+- "The Raspberry Pi's disk is full, can you clean it up?" It checks what's using the space, then frees it.
+- My agent instructions and skills are the same on every machine. I add a rule once, and every agent knows it.
 - "Use my Hugging Face token." The agent asks for it by name. The value stays in 1Password or Bitwarden and out of output and logs.
 
-It's one small program, with no server and no daemon. It uses Tailscale and SSH, and works with Claude Code, Codex, Pi and Hermes. A timer syncs agent config every 15 minutes. To set it up, tell your agent "Set up Yonder for me" with the repo link, and it walks you through the rest. Open source, MIT, macOS and Linux.
+It's one small program, with no server and no daemon. It uses Tailscale and SSH, and works with Claude Code, Codex, Pi and Hermes. To set it up, tell your agent "Set up Yonder for me" with the repo link, and it walks you through the rest. Open source, MIT, macOS and Linux.
 
 github.com/zacharytgray/yonder

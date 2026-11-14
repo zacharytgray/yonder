@@ -12,79 +12,87 @@
     --night: #1a1828; --ink: #26223d; --rule-dk: #36314a; --cream: #f3eada; --muted-dk: #aba3b8;
     --paper: #f6f0e4; --raised: #fbf7ef; --band: #efe6d5; --rule: #ddd0ba; --muted: #5e5870;
     --sun: #d2602f; --sun-dk: #f08a55; --sun-text: #a3431a;
-    --online: #4f6b42; --online-dk: #9fbf8c; --lantern: #e3a23a; --warn-dk: #f2b54e;
+    --online: #4f6b42; --online-dk: #9fbf8c; --lantern: #e3a23a;
     --sky-dk: #a9c8da;
     --display: "Fraunces", "Iowan Old Style", Georgia, serif;
     --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
     --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--night); }
   #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: var(--sans); background: var(--night); }
   .disp { font-family: var(--display); font-weight: 600; font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144; letter-spacing: -0.01em; line-height: 1.1; }
+  .abs { position: absolute; }
+
+  /* kinetic words: each word slides up out of its own mask */
+  .w { display: inline-block; overflow: hidden; vertical-align: top; padding: 0.08em 0.03em 0.2em; margin: -0.08em -0.03em -0.2em; }
+  .wi { display: inline-block; }
+  .wi.em { color: var(--sun); }
 
   /* dusk ground: hook and outro */
   #dusk { position: absolute; inset: 0; color: var(--cream); }
   #dusk svg { position: absolute; inset: 0; }
-  .hook { position: absolute; left: 150px; font-size: 100px; }
-  #h1 { top: 210px; }
-  #h2 { top: 335px; color: var(--sun-dk); }
-  .mlabel { position: absolute; top: 788px; font: 600 36px var(--sans); text-align: center; color: var(--cream); transform: translateX(-50%); white-space: nowrap; }
-  #lockup { position: absolute; left: 150px; top: 100px; width: 600px; }
-  #o1 { position: absolute; left: 150px; top: 272px; font-size: 72px; }
-  #o3 { position: absolute; left: 154px; top: 388px; font: 500 28px var(--sans); color: var(--muted-dk); }
-  #o4 { position: absolute; left: 154px; top: 434px; font: 500 30px var(--mono); color: var(--cream); white-space: pre; }
-  #o2 { position: absolute; left: 154px; top: 508px; font: 500 24px var(--sans); color: var(--muted-dk); }
+  .hook { position: absolute; left: 150px; font-size: 104px; white-space: nowrap; }
+  #h1 { top: 196px; }
+  #h2 { top: 326px; }
+  #h2 .wi { color: var(--sun-dk); }
+  #lockup { position: absolute; left: 150px; top: 104px; width: 560px; }
+  #o1 { position: absolute; left: 150px; top: 270px; font-size: 76px; white-space: nowrap; }
+  #o3 { position: absolute; left: 154px; top: 392px; font: 500 28px var(--sans); color: var(--muted-dk); }
+  #o4 { position: absolute; left: 154px; top: 436px; font: 500 31px var(--mono); color: var(--cream); white-space: pre; }
+  #o2 { position: absolute; left: 154px; top: 512px; font: 500 25px var(--sans); color: var(--muted-dk); }
 
   /* paper ground: the scenes */
-  #paper { position: absolute; inset: 0; background: var(--paper); color: var(--ink); }
-  .scene { position: absolute; inset: 0; }
-
-  /* the strip of machines */
-  .strip { position: absolute; height: 92px; }
-  .strip svg { position: absolute; left: 0; top: 0; overflow: visible; }
-  .chip { position: absolute; top: 14px; width: 270px; height: 64px; border-radius: 14px; background: var(--raised);
-    border: 1.5px solid rgba(79,107,66,0.45); display: flex; align-items: center; gap: 14px; padding: 0 16px 0 18px; }
-  .chip .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--online); flex: none; }
-  .chip .nm { font: 600 23px var(--sans); white-space: nowrap; }
-  .chip .rl { font-size: 16px; color: var(--muted); margin-top: 1px; white-space: nowrap; }
-  .chip .rl b { font-weight: 600; color: var(--sun-text); }
-  .chip .tag { position: absolute; right: 14px; top: -13px; font-size: 13px; font-weight: 600; color: var(--sun-text);
-    border: 1.5px solid rgba(163,67,26,0.4); border-radius: 999px; padding: 3px 9px; white-space: nowrap; background: var(--raised); }
+  #paper { position: absolute; inset: 0; color: var(--ink); overflow: hidden;
+    background: radial-gradient(ellipse 70% 60% at 50% 42%, #fbf7ef 0%, #f6f0e4 60%, #efe6d5 100%); }
+  #grid { position: absolute; left: -400px; top: -400px; width: 2720px; height: 1880px;
+    background-image: radial-gradient(rgba(38,34,61,0.10) 1.5px, transparent 1.9px); background-size: 40px 40px; }
+  #gridmask { position: absolute; inset: 0; overflow: hidden;
+    -webkit-mask-image: radial-gradient(ellipse 62% 58% at 50% 50%, #000 25%, transparent 80%); }
+  .scene { position: absolute; inset: 0; perspective: 1800px; }
+  .cam { position: absolute; inset: 0; transform-origin: 960px 540px; }
+  .slit { position: absolute; left: 0; width: 1920px; height: 2px; background: var(--cream);
+    box-shadow: 0 0 18px 2px rgba(243,234,218,0.55); }
+  #band { position: absolute; top: -60px; width: 520px; height: 1200px; background: var(--ink); transform-origin: 50% 50%;
+    box-shadow: inset 10px 0 0 var(--sun); }
 
   /* windows: the coding agent and plain terminals */
-  .win { position: absolute; border-radius: 16px; background: var(--ink); color: var(--cream);
-    box-shadow: 0 26px 70px rgba(38,34,61,0.25); overflow: hidden; display: flex; flex-direction: column; }
-  .tbar { height: 46px; flex: none; display: flex; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid var(--rule-dk); }
+  .win { position: absolute; border-radius: 18px; background: var(--ink); color: var(--cream);
+    box-shadow: 0 2px 0 rgba(255,255,255,0.04) inset, 0 40px 90px -20px rgba(38,34,61,0.42), 0 12px 30px rgba(38,34,61,0.16);
+    overflow: hidden; display: flex; flex-direction: column; transform-origin: 50% 100%; }
+  .tbar { height: 48px; flex: none; display: flex; align-items: center; gap: 9px; padding: 0 20px; border-bottom: 1px solid var(--rule-dk); }
   .tbar i { width: 13px; height: 13px; border-radius: 50%; display: block; background: var(--rule-dk); }
-  .tbar span { margin-left: 14px; font-size: 16px; color: var(--muted-dk); font-family: var(--mono); }
+  .tbar span { margin-left: 14px; font-size: 17px; color: var(--muted-dk); font-family: var(--mono); }
   .tbar span b { color: var(--cream); font-weight: 500; }
   .tx { flex: 1; min-height: 0; overflow: hidden;
-    padding: 18px 28px 10px; font-family: var(--mono); white-space: pre; font-variant-ligatures: none; }
+    padding: 20px 30px 10px; font-family: var(--mono); white-space: pre; font-variant-ligatures: none; }
   .tx.code { font-size: 24px; line-height: 1.5; }
   .ln { display: block; }
   .blk { margin-top: 14px; }
   .blk:first-child { margin-top: 0; }
-  .user { color: var(--cream); background: rgba(243,234,218,0.07); border-radius: 8px; padding: 4px 14px; margin-left: -14px; margin-right: -14px; }
+  .user { color: var(--cream); background: rgba(243,234,218,0.075); border-radius: 9px; padding: 5px 14px; margin-left: -14px; margin-right: -14px; }
   .user .gl { color: var(--sun-dk); }
   .tool .bul { display: inline-block; width: 0.62em; height: 0.62em; border-radius: 50%; background: var(--online-dk); margin-right: 0.55em; vertical-align: 0.02em; }
+  .tool .spin { display: inline-block; width: 0.62em; height: 0.62em; border-radius: 50%; margin-right: 0.55em; vertical-align: 0.02em;
+    border: 2.5px solid rgba(240,138,85,0.25); border-top-color: var(--sun-dk); }
   .tool .nm { color: var(--muted-dk); margin-right: 0.6em; }
   .out { display: block; margin-left: 0.55em; padding-left: 1.05em; border-left: 2px solid var(--rule-dk); color: var(--muted-dk); }
   .out.add { color: var(--online-dk); }
   .reply { color: var(--cream); font-family: var(--sans); font-size: 1.08em; white-space: normal; }
-  .prompt { flex: none; margin: 6px 20px 18px; height: 60px; border: 1.5px solid var(--rule-dk); border-radius: 12px;
+  .prompt { flex: none; margin: 6px 22px 20px; height: 62px; border: 1.5px solid var(--rule-dk); border-radius: 13px;
     display: flex; align-items: center; padding: 0 18px; font: 24px var(--mono); white-space: pre; color: var(--cream); }
   .prompt .gl { color: var(--sun-dk); margin-right: 0.6em; }
-  .prompt .ph { color: #6f6884; }
   .p { color: var(--sun-dk); }
-  .d { color: var(--muted-dk); }
   .g { color: var(--online-dk); }
-  .hl { background: rgba(240,138,85,0.18); box-shadow: -10px 0 0 rgba(240,138,85,0.18), 10px 0 0 rgba(240,138,85,0.18); border-radius: 4px; color: var(--cream); }
-  .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--cream); vertical-align: -0.22em; opacity: 0.85; }
+  .dim { color: #6f6884; }
+  .hlw { position: relative; display: inline-block; }
+  .hlw .hb { position: absolute; left: -10px; right: -10px; top: 0; bottom: 0; background: rgba(240,138,85,0.22); border-radius: 5px; transform-origin: 0 50%; }
+  .hlw .ht { position: relative; color: var(--cream); }
+  .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--cream); vertical-align: -0.22em; }
 
   /* the phone */
-  #phone { position: absolute; left: 0; top: 0; width: 400px; height: 820px; transform-origin: 0 0;
-    border-radius: 58px; background: var(--ink); padding: 12px; box-shadow: 0 30px 80px rgba(38,34,61,0.22); }
+  #phone { position: absolute; left: 0; top: 0; width: 400px; height: 820px; transform-origin: 50% 60%;
+    border-radius: 58px; background: var(--ink); padding: 12px; box-shadow: 0 50px 100px -24px rgba(38,34,61,0.45), 0 14px 30px rgba(38,34,61,0.18); }
   #screen { position: relative; width: 100%; height: 100%; border-radius: 47px; overflow: hidden; background: var(--raised); }
   .ph-status { height: 52px; display: flex; justify-content: space-between; align-items: center;
     padding: 6px 34px 0; font-size: 17px; font-weight: 600; color: var(--ink); }
@@ -96,16 +104,35 @@
   #thread { position: absolute; left: 0; right: 0; top: 168px; bottom: 86px; padding: 18px 16px; overflow: hidden;
     display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; }
   .bubble { max-width: 320px; padding: 11px 16px; border-radius: 22px; font-size: 25px; line-height: 1.28; }
-  .me { align-self: flex-end; background: var(--sun-text); color: #fff; border-bottom-right-radius: 6px; }
-  .them { align-self: flex-start; background: var(--band); color: var(--ink); border-bottom-left-radius: 6px; }
+  .me { align-self: flex-end; background: var(--sun-text); color: #fff; border-bottom-right-radius: 6px; transform-origin: 100% 100%; }
+  .them { align-self: flex-start; background: var(--band); color: var(--ink); border-bottom-left-radius: 6px; transform-origin: 0 100%; }
   .dots { display: flex; gap: 6px; padding: 16px 18px; }
   .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: block; }
   #compose { position: absolute; left: 14px; right: 14px; bottom: 26px; height: 48px; border-radius: 24px;
     border: 1px solid var(--rule); padding: 0 18px; display: flex; align-items: center; font-size: 19px; color: #9a92a8; }
 
-  .caption { position: absolute; text-align: center; font-size: 48px;
+  .caption { position: absolute; text-align: center; font-size: 54px; white-space: nowrap;
     font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 72; color: var(--ink); }
-  .caption em { font-style: normal; color: var(--sun); }
+
+  /* the four machines: dots on the horizon, chips on paper */
+  #toks { position: absolute; inset: 0; pointer-events: none; }
+  .tok { position: absolute; left: 0; top: 0; }
+  .tb { position: absolute; overflow: hidden; }
+  .lyr { position: absolute; inset: 0; border-radius: inherit; }
+  .lyr.hol { background: var(--night); box-shadow: inset 0 0 0 3px var(--muted-dk); }
+  .lyr.lit { background: var(--online-dk); }
+  .lyr.chip { background: var(--raised); box-shadow: inset 0 0 0 1.5px rgba(79,107,66,0.45); }
+  .lyr.hot { box-shadow: inset 0 0 0 2.5px rgba(210,96,47,0.85); }
+  .tin { position: absolute; left: 0; top: 0; width: 270px; height: 64px; display: flex; align-items: center; gap: 14px; padding: 0 16px 0 18px; }
+  .tin .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--online); flex: none; }
+  .tin .nm { font: 600 23px var(--sans); white-space: nowrap; color: var(--ink); }
+  .tin .rl { position: relative; height: 21px; overflow: hidden; font-size: 16px; color: var(--muted); margin-top: 1px; white-space: nowrap; width: 200px; }
+  .tin .rl span { position: absolute; left: 0; top: 0; }
+  .tin .rl b { font-weight: 600; color: var(--sun-text); }
+  .hlabel { position: absolute; font: 600 34px var(--sans); color: var(--cream); white-space: nowrap; transform: translateX(-50%); }
+  #tag { position: absolute; font-size: 13px; font-weight: 600; color: var(--sun-text); font-family: var(--sans);
+    border: 1.5px solid rgba(163,67,26,0.4); border-radius: 999px; padding: 3px 9px; white-space: nowrap; background: var(--raised); }
+  #net { position: absolute; inset: 0; overflow: visible; }
 </style>
 </head>
 <body>
@@ -115,390 +142,659 @@
     <svg width="1920" height="1080" viewBox="0 0 1920 1080">
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#1a1828"/><stop offset="0.25" stop-color="#1a1828"/><stop offset="0.7" stop-color="#2e2440"/>
+          <stop offset="0" stop-color="#1a1828"/><stop offset="0.3" stop-color="#1a1828"/><stop offset="0.75" stop-color="#2e2440"/><stop offset="1" stop-color="#3a2a44"/>
         </linearGradient>
+        <radialGradient id="haze" cx="0.71" cy="1" r="0.5">
+          <stop offset="0" stop-color="#f08a55" stop-opacity="0.22"/><stop offset="1" stop-color="#f08a55" stop-opacity="0"/>
+        </radialGradient>
         <clipPath id="above"><rect width="1920" height="760"/></clipPath>
       </defs>
-      <rect width="1920" height="760" fill="url(#sky)"/>
-      <rect y="760" width="1920" height="320" fill="#16141f"/>
-      <g clip-path="url(#above)"><g id="sun"><path d="M1230 760a150 150 0 0 1 300 0z" fill="#f08a55"/></g></g>
-      <path d="M0 760 C 160 742 300 738 470 748 C 640 758 760 736 930 744 C 1100 752 1180 740 1290 748 C 1420 757 1600 738 1760 746 C 1840 750 1890 752 1920 754 L1920 762 L0 762 Z" fill="#2e2a45"/>
-      <path d="M0 762 C 220 752 380 756 560 754 C 760 752 980 758 1160 755 C 1380 752 1600 757 1920 756 L1920 764 L0 764 Z" fill="#1f1c30"/>
-      <rect x="0" y="757" width="1920" height="6" rx="3" fill="#f3eada"/>
-      <g>
-        <rect x="1270" y="784" width="220" height="11" rx="5.5" fill="#f08a55" opacity=".55"/>
-        <rect x="1310" y="808" width="140" height="11" rx="5.5" fill="#f08a55" opacity=".35"/>
-        <rect x="1345" y="832" width="70" height="11" rx="5.5" fill="#f08a55" opacity=".2"/>
+      <g id="gSky">
+        <rect x="-200" y="-300" width="2320" height="1060" fill="url(#sky)"/>
+        <rect x="-200" y="300" width="2320" height="460" fill="url(#haze)"/>
+        <g id="stars" fill="#f3eada"></g>
       </g>
-      <circle cx="1650" cy="230" r="7" fill="#e3a23a"/>
-      <!-- every machine reaches every other: no hub -->
-      <g id="arcs" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"></g>
-      <g id="dots"></g>
+      <g id="gSun" clip-path="url(#above)"><g id="sun"><path d="M1230 760a150 150 0 0 1 300 0z" fill="#f08a55"/></g></g>
+      <g id="gLand">
+        <rect x="-400" y="760" width="2720" height="600" fill="#16141f"/>
+        <path d="M-200 760 L0 760 C 160 742 300 738 470 748 C 640 758 760 736 930 744 C 1100 752 1180 740 1290 748 C 1420 757 1600 738 1760 746 C 1840 750 1890 752 1920 754 L2120 754 L2120 762 L-200 762 Z" fill="#2e2a45"/>
+        <path d="M-200 762 L0 762 C 220 752 380 756 560 754 C 760 752 980 758 1160 755 C 1380 752 1600 757 1920 756 L2120 756 L2120 764 L-200 764 Z" fill="#1f1c30"/>
+        <rect x="-200" y="757" width="2320" height="6" rx="3" fill="#f3eada"/>
+        <g>
+          <rect x="1270" y="784" width="220" height="11" rx="5.5" fill="#f08a55" opacity=".55"/>
+          <rect x="1310" y="808" width="140" height="11" rx="5.5" fill="#f08a55" opacity=".35"/>
+          <rect x="1345" y="832" width="70" height="11" rx="5.5" fill="#f08a55" opacity=".2"/>
+        </g>
+      </g>
+      <circle id="lantern" cx="1650" cy="230" r="7" fill="#e3a23a"/>
     </svg>
-    <div id="labels"></div>
-    <div class="hook disp" id="h1">More than one computer?</div>
-    <div class="hook disp" id="h2">Your agent uses them like one.</div>
+    <div class="hook disp" id="h1"></div>
+    <div class="hook disp" id="h2"></div>
     <img id="lockup" src="../brand/yonder-logo-dark.svg" alt="yonder">
-    <div class="disp" id="o1">Every computer you own, one agent.</div>
+    <div class="disp" id="o1"></div>
     <div id="o3">Tell your agent:</div>
-    <div id="o4"><span style="color:var(--sun-dk)">&gt;</span> Set up Yonder for me: https://github.com/zacharytgray/yonder</div>
+    <div id="o4"></div>
     <div id="o2">macOS and Linux&nbsp; · &nbsp;Claude Code, Codex, Pi, Hermes&nbsp; · &nbsp;MIT</div>
   </div>
 
   <div id="paper">
+    <div id="gridmask"><div id="grid"></div></div>
     <!-- 2: a coding agent on the laptop -->
-    <div class="scene" id="sc-code">
-      <div class="strip" id="st-code"></div>
+    <div class="scene" id="sc-code"><div class="cam" id="cam-code">
       <div class="win" id="w-code"><div class="tbar"><i></i><i></i><i></i><span><b>agent</b> · laptop · ~</span></div>
         <div class="tx code" id="tx-code"></div><div class="prompt" id="pr-code"></div></div>
-      <div class="caption disp" id="cap-code"></div>
-    </div>
-    <!-- 3: a text from the phone, to the agent on the pi -->
-    <div class="scene" id="sc-phone">
-      <div class="strip" id="st-phone"></div>
-      <div class="win" id="w-phone"><div class="tbar"><i></i><i></i><i></i><span><b>agent</b> · pi</span></div>
+    </div></div>
+    <!-- 3: a text from the phone, to the agent on the raspberry pi -->
+    <div class="scene" id="sc-phone"><div class="cam" id="cam-phone">
+      <div class="win" id="w-phone"><div class="tbar"><i></i><i></i><i></i><span><b>agent</b> · raspberry-pi</span></div>
         <div class="tx" id="tx-phone" style="font-size:22px;line-height:1.5"></div></div>
       <div id="phone"><div id="screen">
         <div class="ph-island"></div>
         <div class="ph-status"><span>9:41</span><span>●●●</span></div>
-        <div class="ph-head"><img class="avatar" src="../brand/yonder-icon.svg" alt=""><div class="ph-name">agent</div><div class="ph-sub">on pi</div></div>
+        <div class="ph-head"><img class="avatar" src="../brand/yonder-icon.svg" alt=""><div class="ph-name">agent</div><div class="ph-sub">on raspberry-pi</div></div>
         <div id="thread">
-          <div class="bubble me" id="m1">How are the tests doing?</div>
-          <div class="bubble them" id="r1">All 212 passed on the PC.</div>
+          <div class="bubble me" id="m1">Did the tests pass?</div>
+          <div class="bubble them" id="r1">All 212 passed on the gaming PC.</div>
           <div class="bubble me" id="m2">Is my Hugging Face key working there?</div>
-          <div class="bubble them" id="r2">Yes. It came from 1Password by name.</div>
+          <div class="bubble them" id="r2">Yes. From 1Password, by name.</div>
           <div class="bubble them dots" id="typing"><i></i><i></i><i></i></div>
         </div>
         <div id="compose">Message</div>
       </div></div>
-      <div class="caption disp" id="cap-phone"></div>
-    </div>
+    </div></div>
     <!-- 4: the same rules on every machine -->
-    <div class="scene" id="sc-sync">
-      <div class="strip" id="st-sync"></div>
+    <div class="scene" id="sc-sync"><div class="cam" id="cam-sync">
       <div class="win" id="w-sync-l"><div class="tbar"><i></i><i></i><i></i><span><b>agent</b> · laptop · ~</span></div>
         <div class="tx code" id="tx-sync-l" style="font-size:22px"></div><div class="prompt" id="pr-sync" style="font-size:22px"></div></div>
-      <div class="win" id="w-sync-r"><div class="tbar"><i></i><i></i><i></i><span><b>desktop</b> · later</span></div>
+      <div class="win" id="w-sync-r"><div class="tbar"><i></i><i></i><i></i><span><b>terminal</b> · desktop · later</span></div>
         <div class="tx" id="tx-sync-r" style="font-size:22px;line-height:1.5"></div></div>
-      <div class="caption disp" id="cap-sync"></div>
-    </div>
+    </div></div>
+    <div id="band"></div>
+    <div class="caption disp" id="cap-a"></div>
+    <div class="caption disp" id="cap-b"></div>
   </div>
+  <div class="slit" id="slit-t"></div>
+  <div class="slit" id="slit-b"></div>
+
+  <svg id="net" width="1920" height="1080" viewBox="0 0 1920 1080">
+    <defs>
+      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glow2" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <!-- directional motion blur for the whips; its deviation is set per frame -->
+      <filter id="mb" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur id="mbg" stdDeviation="0 0"/></filter>
+    </defs>
+    <g id="links"></g>
+    <g id="arcs" fill="none" stroke-linecap="round" filter="url(#glow2)"></g>
+    <g id="rings" fill="none"></g>
+    <g id="packets" filter="url(#glow)"></g>
+  </svg>
+  <div id="toks"></div>
 </div>
 
 <script>
-// every frame is a pure function of t (seconds). the music is 92 bpm; BAR matches music.py.
-const BEAT = 60 / 92, BAR = 4 * BEAT;
-const S2 = 5 * BEAT, S3 = 4 * BAR, S4 = 7 * BAR, OUT = 9 * BAR, XF = 0.35;
+// every frame is a pure function of t (seconds). the music is 92 bpm and t = 0 is a downbeat
+// (music.sh cuts the track there). B and BAR match the beat grid the cue analysis found.
+const B = 0.65204, BAR = 4 * B;
+// ?lite drops the slow ambient drift (camera creep, sun, stars) so the readme gif stays small
+const AMB = new URLSearchParams(location.search).has('lite') ? 0 : 1;
+const D = 2 * BAR, P = 5 * BAR, Y = 7 * BAR, O = 9 * BAR, STOP = 10 * BAR, END = 28.4;
 const $ = id => document.getElementById(id);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const ex = x => { x = clamp(x); return x >= 1 ? 1 : 1 - Math.pow(2, -10 * x); };
 const eo = x => 1 - Math.pow(1 - clamp(x), 3);
+const ei = x => Math.pow(clamp(x), 3);
+const io = x => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
 const lerp = (a, b, k) => a + (b - a) * k;
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const typed = (s, t, t0, cps) => s.slice(0, clamp(Math.floor((t - t0) * cps), 0, s.length));
-// a quiet entrance: fade in and rise a few pixels
-function rise(el, t, t0, dur = 0.35, dy = 10) {
-  const k = eo((t - t0) / dur);
-  el.style.opacity = k;
-  el.style.transform = `translateY(${(1 - k) * dy}px)`;
+// a decaying hit on every beat, stronger on the downbeat; silent once the music stops
+function pulse(t, decay = 0.2) {
+  if (t < 0 || t >= STOP) return 0;
+  const k = Math.floor(t / B + 1e-6), dt = t - k * B;
+  return (k % 4 === 0 ? 1 : 0.6) * Math.exp(-dt / decay);
+}
+const hit = (t, at, decay = 0.25) => t < at ? 0 : Math.exp(-(t - at) / decay);
+// typing with a little human unevenness; finishes by `end`
+function typedN(s, t, t0, end) {
+  if (t < t0) return 0;
+  const n = s.length, w = [];
+  let sum = 0;
+  for (let i = 0; i < n; i++) { const j = 0.65 + 0.7 * ((Math.sin(i * 12.9898 + n) * 43758.5453) % 1 + 1) % 1; w.push(j); sum += j; }
+  const per = (end - t0) / sum;
+  let acc = t0;
+  for (let i = 0; i < n; i++) { acc += w[i] * per; if (t < acc) return i; }
+  return n;
+}
+const typed = (s, t, t0, end) => s.slice(0, typedN(s, t, t0, end));
+// steady cursor: on for the first half of each beat
+const blink = t => (((t % B) + B) % B) < B / 2 ? 1 : 0.15;
+
+// ---- kinetic words
+function kbuild(el, text) {
+  if (el._text === text) return el._w;
+  el.innerHTML = text.split(' ').map(w => {
+    const em = w.startsWith('*');
+    return `<span class="w"><span class="wi${em ? ' em' : ''}">${esc(em ? w.slice(1) : w)}</span></span>`;
+  }).join(' ');
+  el._text = text;
+  el._w = [...el.querySelectorAll('.wi')];
+  return el._w;
+}
+function kinetic(el, text, tIn, tOut, t, st = 0.045, dur = 0.6) {
+  const ws = kbuild(el, text);
+  const on = t >= tIn && (tOut == null || t < tOut + 0.1);
+  el.style.visibility = on ? 'visible' : 'hidden';
+  if (!on) return;
+  ws.forEach((w, i) => {
+    const kin = ex(seg(t, tIn + i * st, tIn + i * st + dur));
+    const kout = tOut == null ? 0 : ei(seg(t, tOut - 0.3 + i * 0.016, tOut - 0.04 + i * 0.016));
+    w.style.transform = `translateY(${(1 - kin) * 108 - kout * 140}%)`;
+    w.style.visibility = kout >= 1 ? 'hidden' : '';
+  });
 }
 
 // the real output, from docs/demo/fleet.sh
-const JOB = '20261114-174544-bcac84';
+const JOB = '20261114-181752-3e6682';
 const GITLOG = [
   'db6f739 Start the chapter 4 results table',
   '51dfd99 Add the BLEU eval script',
   'c1c1275 Fix the data loader seed',
 ];
 
-// ---- the strip of machines, shared by the scenes
-const ORDER = ['laptop', 'desktop', 'pc', 'pi'];
-const MACH = {
-  laptop: ['Laptop', 'M3 Pro · 36 GB'], desktop: ['Desktop', 'M4 · 24 GB'],
-  pc: ['PC', 'RTX 4090 · 64 GB'], pi: ['Pi', 'Cortex-A76 · 8 GB'],
-};
-const CW = 270;
-function makeStrip(id, width) {
-  const el = $(id), sp = (width - CW) / 3;
-  el.style.width = width + 'px';
-  let svg = `<svg width="${width}" height="92">`;
-  for (let i = 0; i < 3; i++)
-    svg += `<line x1="${i * sp + CW}" x2="${(i + 1) * sp}" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>`;
-  for (let i = 0; i < 3; i++) svg += `<path class="arc" fill="none" stroke="#d2602f" stroke-width="4" stroke-linecap="round"/>`;
-  svg += '</svg>';
-  el.innerHTML = svg + ORDER.map((n, i) =>
-    `<div class="chip" data-m="${n}" style="left:${i * sp}px"><div class="dot"></div><div><div class="nm">${MACH[n][0]}</div>` +
-    `<div class="rl">${MACH[n][1]}</div></div><div class="tag">agent here</div></div>`).join('');
-  el._sp = sp;
+// ---- the four machines
+const ORDER = ['laptop', 'desktop', 'gaming-pc', 'raspberry-pi'];
+const NAME = { laptop: 'Laptop', desktop: 'Desktop', 'gaming-pc': 'Gaming PC', 'raspberry-pi': 'Raspberry Pi' };
+const SPEC = { laptop: 'M3 Pro · 36 GB', desktop: 'M4 · 24 GB', 'gaming-pc': 'RTX 4090 · 64 GB', 'raspberry-pi': 'Cortex-A76 · 8 GB' };
+const HX = [240, 700, 1160, 1640], HY = 760;      // on the horizon
+const CW = 270, CH = 64, SY = 100, SX0 = 160, SW = 1600, SP = (SW - CW) / 3;   // the strip on paper
+const sx = i => SX0 + i * SP;
+const CX = 960, CY = 760;                          // the dusk camera's origin
+
+(function build() {
+  $('toks').innerHTML = ORDER.map(n =>
+    `<div class="tok" data-m="${n}"><div class="tb"><div class="lyr hol"></div><div class="lyr lit"></div><div class="lyr chip"></div><div class="lyr hot"></div>` +
+    `<div class="tin"><div class="dot"></div><div><div class="nm">${NAME[n]}</div><div class="rl"></div></div></div></div>` +
+    `<div class="hlabel">${NAME[n]}</div></div>`).join('') + '<div id="tag">agent here</div>';
+  let s = '';
+  for (let i = 0; i < 70; i++) {
+    const x = ((Math.sin(i * 91.7) * 10000) % 1 + 1) % 1 * 1920, y = ((Math.sin(i * 37.3) * 10000) % 1 + 1) % 1 * 520;
+    const r = 0.8 + (((Math.sin(i * 13.1) * 1000) % 1 + 1) % 1) * 1.3;
+    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(2)}" data-p="${i}"/>`;
+  }
+  $('stars').innerHTML = s;
+})();
+const TOK = [...document.querySelectorAll('.tok')];
+
+function duskCam(t) {
+  if (t < O) {
+    const k = io(seg(t, 0, D));
+    return { s: 1 + 0.05 * k * AMB + 0.035 * hit(t, D, 0.2) + 0.2 * ei(seg(t, D, D + 0.6)), ty: -16 * k * AMB };
+  }
+  const k = ex(seg(t, O - 0.1, O + 1.9));
+  return { s: lerp(1.16, 1, k) + 0.018 * io(seg(t, O + 1.9, END)) * AMB + 0.012 * hit(t, STOP, 0.3), ty: lerp(46, 0, k) };
 }
-// st: { here, links: [[from, to, t0]], rl: {m: html}, hot: [m] }
-function drawStrip(id, t, st) {
-  const el = $(id), sp = el._sp;
-  const cx = n => ORDER.indexOf(n) * sp + CW / 2;
-  const arcs = el.querySelectorAll('.arc');
-  arcs.forEach((p, i) => {
-    const l = st.links && st.links[i];
-    if (!l || t < l[2]) { p.style.opacity = 0; return; }
-    const x0 = cx(l[0]), x1 = cx(l[1]), lift = 22 + Math.abs(x1 - x0) * 0.04;
-    p.setAttribute('d', `M${x0} 12 Q ${(x0 + x1) / 2} ${12 - 2 * lift} ${x1} 12`);
-    const L = p.getTotalLength(), k = eo((t - l[2]) / 0.45);
-    p.style.strokeDasharray = `${L} ${L}`;
-    p.style.strokeDashoffset = L * (1 - k);
-    p.style.opacity = 1;
-  });
-  el.querySelectorAll('.chip').forEach(c => {
-    const n = c.dataset.m, hot = (st.hot || []).includes(n);
-    c.style.borderColor = hot ? 'rgba(210,96,47,0.7)' : '';
-    c.querySelector('.dot').style.background = hot ? '#d2602f' : '';
-    const tag = c.querySelector('.tag');
-    tag.style.display = st.here === n ? '' : 'none';
-    // keep the tag clear of the arcs, which leave toward the middle
-    const left = ORDER.indexOf(n) < 2;
-    tag.style.left = left ? '14px' : 'auto';
-    tag.style.right = left ? 'auto' : '14px';
-    c.querySelector('.rl').innerHTML = (st.rl && st.rl[n]) || MACH[n][1];
-  });
+const camPt = (c, x, y, str = 1) => [(x - CX) * (1 + (c.s - 1) * str) + CX, (y - CY) * (1 + (c.s - 1) * str) + CY + c.ty * str];
+const camAttr = (c, str) => `translate(${CX} ${CY + c.ty * str}) scale(${1 + (c.s - 1) * str}) translate(${-CX} ${-CY})`;
+
+// 0 = a dot on the horizon, 1 = a chip on paper
+function morphK(t, i) {
+  if (t < O) return seg(t, D + 0.03 + i * 0.035, D + 0.66 + i * 0.035);
+  return 1 - seg(t, O - 0.06 + i * 0.03, O + 0.56 + i * 0.03);
 }
-const hotAt = (links, t) => links.filter(l => t >= l[2]).map(l => l[1]);
+// hook: each node lights when its first arc lands
+const PAIRS = [[0, 1], [1, 2], [2, 3], [0, 2], [1, 3], [0, 3]];
+// the arcs land through the riser, quickening: beats 2, 2.5, 3, 3.25, 3.5, 3.75 of the second bar
+const HOOK_ARC = [1, 1.5, 2, 2.25, 2.5, 2.75].map(b => BAR + b * B);
+const LIT_AT = [0, 1, 2, 3].map(n => Math.min(...PAIRS.map((p, i) => p.includes(n) ? HOOK_ARC[i] + 0.3 : 99)));
+const OUT_ARC = PAIRS.map((p, i) => O + 0.42 + i * B / 4);
+
+// ---- what each scene says about the machines
+// here: where the agent is. status: [machine, time, html or null for the spec]
+const HERE = [[D, 0], [P, 3], [Y, 0]];
+const C = D;
+const STATUS = [
+  ['desktop', C + 1.956, '<b>~/thesis</b>'], ['gaming-pc', C + 4.564, '<b>tests running</b>'],
+  ['desktop', P, null], ['gaming-pc', P + 0.978, '<b>212 tests passed</b>'], ['gaming-pc', P + 3.42, '<b>HF_TOKEN, by name</b>'],
+  ['gaming-pc', Y, null], ['laptop', Y + 1.304, '<b>rule added</b>'],
+  ['desktop', Y + 1.956 + 0.42, '<b>rules in sync</b>'], ['gaming-pc', Y + 2.119 + 0.42, '<b>rules in sync</b>'],
+  ['raspberry-pi', Y + 2.282 + 0.42, '<b>rules in sync</b>'],
+];
+// links: [from, to, start, end]
+const LINKS = [
+  [0, 1, C + 1.50, P], [0, 2, C + 4.10, P],
+  [3, 2, P + 0.50, Y],
+  [0, 1, Y + 1.956, O], [0, 2, Y + 2.119, O], [0, 3, Y + 2.282, O],
+];
+
+function statusOf(n, t) {
+  let cur = [-99, null], prev = [-99, null];
+  for (const s of STATUS) if (s[0] === n && t >= s[1]) { prev = cur; cur = [s[1], s[2]]; }
+  return { at: cur[0], html: cur[1] || SPEC[n], prev: prev[1] || SPEC[n] };
+}
+
+function qpt(x0, y0, x1, y1, lift, u) {
+  const mx = (x0 + x1) / 2, my = y0 - 2 * lift, a = (1 - u) * (1 - u), b = 2 * (1 - u) * u, c = u * u;
+  return [a * x0 + b * mx + c * x1, a * y0 + b * my + c * y1];
+}
+function qlen(x0, y0, x1, y1, lift) {
+  let L = 0, p = [x0, y0];
+  for (let i = 1; i <= 24; i++) { const q = qpt(x0, y0, x1, y1, lift, i / 24); L += Math.hypot(q[0] - p[0], q[1] - p[1]); p = q; }
+  return L;
+}
+function packet(x0, y0, x1, y1, lift, u, color, r = 5.5) {
+  let s = '';
+  for (let j = 0; j < 4; j++) {
+    const v = u - j * 0.035;
+    if (v < 0 || v > 1) continue;
+    const [px, py] = qpt(x0, y0, x1, y1, lift, v);
+    s += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${(r * (1 - j * 0.22)).toFixed(2)}" fill="${color}" opacity="${(1 - j * 0.28).toFixed(2)}"/>`;
+  }
+  return s;
+}
+
+function renderNet(t) {
+  const c = duskCam(t);
+  const ks = ORDER.map((_, i) => morphK(t, i));
+  const kAvg = ks.reduce((a, b) => a + b, 0) / 4;
+  // token geometry
+  const geo = ORDER.map((n, i) => {
+    const k = ks[i], kk = io(seg(k, 0.1, 0.9));
+    const [hx, hy] = camPt(c, HX[i], HY);
+    const kx = io(k), ky = t < O ? ex(k * 1.1) : 1 - ex((1 - k) * 1.1);
+    const cx = lerp(hx, sx(i) + CW / 2, kx), cy = lerp(hy, SY + CH / 2, ky);
+    const w = lerp(26, CW, kk), h = lerp(26, CH, kk);
+    return { k, kk, cx, cy, w, h, top: cy - h / 2 };
+  });
+  // lit state on the horizon
+  const lit = ORDER.map((_, i) => t >= O ? 1 : seg(t, LIT_AT[i], LIT_AT[i] + 0.2));
+  // which chips a live link points at
+  const hot = [0, 0, 0, 0];
+  for (const [a, b, t0, t1] of LINKS) if (t >= t0 && t < t1) hot[b] = Math.max(hot[b], seg(t, t0 + 0.35, t0 + 0.5));
+  const here = (() => {
+    let x = null;
+    for (let j = 0; j < HERE.length; j++) {
+      const [at, m] = HERE[j];
+      if (t < at - 0.05) break;
+      const pm = j ? HERE[j - 1][1] : m;
+      x = lerp(pm, m, ex(seg(t, at - 0.05, at + 0.5)));
+    }
+    return x;
+  })();
+  const tagEl = $('tag');
+  TOK.forEach((el, i) => {
+    const g = geo[i], n = ORDER[i];
+    const tb = el.querySelector('.tb');
+    const arrive = Math.max(0, ...LINKS.filter(l => l[1] === i).map(l => hit(t, l[2] + 0.45, 0.3)));
+    const sc = 1 + 0.035 * arrive + 0.25 * (t < D + 0.3 ? hit(t, D, 0.12) : 0) * (1 - g.kk);
+    Object.assign(tb.style, { left: (g.cx - g.w / 2) + 'px', top: g.top + 'px', width: g.w + 'px', height: g.h + 'px',
+      borderRadius: lerp(13, 14, g.kk) + 'px', transform: `scale(${sc})`,
+      boxShadow: g.kk > 0.5 ? `0 ${lerp(0, 10, g.kk)}px ${lerp(0, 26, g.kk)}px rgba(38,34,61,${0.1 * g.kk})` :
+        lit[i] > 0 ? `0 0 ${16 + 26 * pulse(t)}px rgba(159,191,140,${0.55 * lit[i] * (1 - g.kk * 2)})` : 'none' });
+    const chipO = seg(g.k, 0.18, 0.6);
+    const [hol, li, ch, ho] = tb.querySelectorAll('.lyr');
+    hol.style.opacity = (1 - lit[i]) * (1 - chipO);
+    li.style.opacity = lit[i] * (1 - chipO);
+    ch.style.opacity = chipO;
+    ho.style.opacity = chipO * Math.max(hot[i], arrive);
+    const tin = tb.querySelector('.tin');
+    tin.style.opacity = seg(g.k, 0.7, 1);
+    tin.querySelector('.dot').style.background = hot[i] > 0.5 ? '#d2602f' : '';
+    // status line rolls up when it changes
+    const st = statusOf(n, t), kr = ex(seg(t, st.at, st.at + 0.4));
+    const rl = tin.querySelector('.rl');
+    const key = st.html + '|' + st.prev;
+    if (rl._key !== key) { rl.innerHTML = `<span>${st.prev}</span><span>${st.html}</span>`; rl._key = key; }
+    const [sp0, sp1] = rl.children;
+    sp0.style.transform = `translateY(${-kr * 110}%)`;
+    sp1.style.transform = `translateY(${(1 - kr) * 110}%)`;
+    sp0.style.visibility = kr >= 1 ? 'hidden' : '';
+    const lab = el.querySelector('.hlabel');
+    const lo = t < O ? 1 - seg(t, D, D + 0.04) : 1 - seg(g.k, 0, 0.08);
+    lab.style.opacity = lo * lerp(0.62, 1, Math.max(lit[i], t < D ? hit(t, i * B, 0.5) : 0));
+    lab.style.left = g.cx + 'px';
+    lab.style.top = (g.cy + 26) + 'px';
+    lab.style.display = lo > 0 ? '' : 'none';
+  });
+  // the "agent here" tag rides between chips
+  if (here == null || kAvg < 0.6) tagEl.style.display = 'none';
+  else {
+    tagEl.style.display = '';
+    const tw = tagEl.offsetWidth;
+    const lx = j => sx(j) + (j < 2 ? 14 : CW - 14 - tw);
+    const j0 = Math.floor(here), j1 = Math.min(3, j0 + 1), f = here - j0;
+    tagEl.style.left = lerp(lx(j0), lx(j1), f) + 'px';
+    tagEl.style.top = (SY - 22) + 'px';
+    tagEl.style.opacity = seg(kAvg, 0.75, 1) * seg(paperK(t), 0.85, 1);
+  }
+
+  // hook and outro arcs between every pair, from the tokens' tops
+  let arcs = '', pk = '', rings = '';
+  const hookVis = t < O ? 1 - seg(t, D + 0.01, D + 0.09) : 1;
+  if (hookVis > 0) {
+    PAIRS.forEach(([a, b], i) => {
+      const at = t < O ? HOOK_ARC[i] : OUT_ARC[i];
+      const k = ex(seg(t, at, at + 0.5));
+      if (k <= 0) return;
+      const ga = geo[a], gb = geo[b];
+      const x0 = ga.cx + 4, x1 = gb.cx - 4, y0 = ga.top + 2, lift = 40 + (x1 - x0) * 0.09 * (1 - Math.max(ga.kk, gb.kk) * 0.6);
+      const L = qlen(x0, y0, x1, y0, lift);
+      const base = i < 3 ? 0.85 : 0.55;
+      const op = hookVis * (base + 0.15 * pulse(t) + 0.4 * hit(t, D, 0.15) * (t < D + 0.4 ? 1 : 0) + 0.4 * hit(t, STOP, 0.35));
+      arcs += `<path d="M${x0.toFixed(1)} ${y0.toFixed(1)} Q ${((x0 + x1) / 2).toFixed(1)} ${(y0 - 2 * lift).toFixed(1)} ${x1.toFixed(1)} ${y0.toFixed(1)}" stroke="#a9c8da" stroke-width="${3 + 1.2 * pulse(t)}" opacity="${Math.min(1, op).toFixed(3)}" stroke-dasharray="${L.toFixed(1)} ${L.toFixed(1)}" stroke-dashoffset="${(L * (1 - k)).toFixed(1)}"/>`;
+      if (k < 1) pk += packet(x0, y0, x1, y0, lift, k, '#f3eada', 6);
+      // a packet on the beat once the network is up: two arcs per beat, all six on the downbeat
+      const live = t < O ? t > LIT_AT[3] + 0.2 && t < D : t > OUT_ARC[5] + 0.5 && t < STOP;
+      if (live) {
+        const bk = Math.floor(t / B + 1e-6), u = (t - bk * B) / 0.6;
+        if (u < 1 && (bk % 4 === 0 || bk % 3 === i % 3)) pk += packet(x0, y0, x1, y0, lift, ex(u), '#f3eada', 4.5);
+      }
+    });
+  }
+  // node rings: one ping per machine on the first beats, a burst when each lights, a flash on the drop and the stop
+  if (t < D + 0.6 || t >= O) {
+    geo.forEach((g, i) => {
+      if (g.kk > 0.4) return;
+      const ring = (at, r0, r1, dur, col, op) => {
+        if (t < at || t > at + dur) return;
+        const u = (t - at) / dur;
+        rings += `<circle cx="${g.cx.toFixed(1)}" cy="${g.cy.toFixed(1)}" r="${lerp(r0, r1, ex(u)).toFixed(1)}" stroke="${col}" stroke-width="${lerp(3, 0.5, u).toFixed(2)}" opacity="${(op * (1 - u)).toFixed(3)}"/>`;
+      };
+      ring(i * B, 13, 48, 0.8, '#f3eada', 0.7);
+      ring(LIT_AT[i], 13, 54, 0.7, '#9fbf8c', 0.9);
+      ring(D, 13, 90, 0.4, '#f3eada', 0.95);
+      ring(O + 0.5 + i * 0.05, 13, 54, 0.7, '#9fbf8c', 0.8);
+      ring(STOP, 13, 80, 0.9, '#f3eada', 0.8);
+    });
+  }
+
+  // strip links on paper: dashed track between neighbours, live arcs with packets
+  let links = '';
+  const stripO = seg(kAvg, 0.7, 1) * seg(paperK(t), 0.85, 1);
+  if (stripO > 0) {
+    const off = (Math.floor(t / B) + ex((t % B) / 0.25)) * 14;
+    for (let i = 0; i < 3; i++)
+      links += `<line x1="${(sx(i) + CW + 6).toFixed(1)}" x2="${(sx(i + 1) - 6).toFixed(1)}" y1="${SY + CH / 2}" y2="${SY + CH / 2}" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8" stroke-dashoffset="${-off}" opacity="${stripO}"/>`;
+    const live = LINKS.filter(l => t >= l[2] && t < l[3] + 0.3);
+    live.forEach(([a, b, t0, t1], j) => {
+      const x0 = sx(a) + CW / 2, x1 = sx(b) + CW / 2, y0 = SY;
+      const lift = 20 + Math.abs(x1 - x0) * 0.03;
+      const L = qlen(x0, y0, x1, y0, lift), k = ex(seg(t, t0, t0 + 0.45));
+      const newer = live.some(l => l[2] > t0 && t >= l[2] + 0.3 && l[0] === a && t0 < l[2] - 1);
+      const fade = 1 - seg(t, t1 - 0.12, t1 + 0.12);
+      const op = stripO * fade * (newer ? 0.4 : 1) * (0.85 + 0.15 * pulse(t));
+      links += `<path d="M${x0} ${y0} Q ${(x0 + x1) / 2} ${y0 - 2 * lift} ${x1} ${y0}" fill="none" stroke="#d2602f" stroke-width="${4 + 1.5 * pulse(t) * (newer ? 0 : 1)}" stroke-linecap="round" opacity="${op.toFixed(3)}" stroke-dasharray="${L.toFixed(1)} ${L.toFixed(1)}" stroke-dashoffset="${(L * (1 - k)).toFixed(1)}"/>`;
+      if (k < 1) pk += packet(x0, y0, x1, y0, lift, k, '#f08a55', 6.5);
+      else if (!newer && fade > 0.5) {
+        const bk = Math.floor(t / B + 1e-6), u = (t - bk * B) / 0.55;
+        if (u < 1 && t - 0.45 > t0) pk += packet(x0, y0, x1, y0, lift, eo(u), '#f08a55', 5);
+      }
+    });
+  }
+  $('arcs').innerHTML = arcs;
+  $('packets').innerHTML = pk;
+  $('rings').innerHTML = rings;
+  $('links').innerHTML = links;
+}
 
 // ---- the coding agent: blocks appear at their times, the newest at the bottom
-// user: typed into the prompt box from `type`, sent at `at`
-// fill a transcript; once it is taller than its window, the oldest lines scroll off the top
-function fill(id, html) {
-  const el = $(id);
-  el.innerHTML = '<div>' + html + '</div>';
-  const inner = el.firstChild, over = inner.offsetHeight - (el.clientHeight - 28);
-  inner.style.marginTop = over > 0 ? -over + 'px' : '0';
-}
 function codeBody(blocks, t) {
   let html = '';
   for (const b of blocks) {
     if (t < b.at) continue;
-    const k = eo((t - b.at) / 0.2);
+    const k = ex(seg(t, b.at, b.at + 0.35));
     let inner = '';
     if (b.user) inner = `<span class="ln"><span class="gl">› </span>${esc(b.user)}</span>`;
     if (b.cmd || b.edit) {
-      inner = `<span class="ln"><span class="bul"></span>${b.edit ? '<span class="nm">edit</span>' + esc(b.edit) : esc(b.cmd)}</span>`;
+      const done = t >= b.outAt;
+      const icon = done ? `<span class="bul" style="transform:scale(${1 + 0.6 * hit(t, b.outAt, 0.12)})"></span>` :
+        `<span class="spin" style="transform:rotate(${(t - b.at) * 900}deg)"></span>`;
+      inner = `<span class="ln">${icon}${b.edit ? '<span class="nm">edit</span>' + esc(b.edit) : esc(b.cmd)}</span>`;
       (b.out || []).forEach((l, i) => {
-        const ko = eo((t - (b.outAt + i * 0.08)) / 0.2);
-        if (ko > 0) inner += `<span class="out${b.add ? ' add' : ''}" style="opacity:${ko}">${esc(l)}</span>`;
+        const ko = ex(seg(t, b.outAt + i * 0.07, b.outAt + i * 0.07 + 0.3));
+        if (ko > 0) inner += `<span class="out${b.add ? ' add' : ''}" style="opacity:${ko};transform:translateX(${(1 - ko) * -14}px)">${esc(l)}</span>`;
       });
     }
     if (b.reply) inner = `<span class="ln">${esc(b.reply)}</span>`;
     const cls = b.user ? 'user' : b.reply ? 'reply' : 'tool';
-    html += `<div class="blk ${cls}" style="opacity:${k}">${inner}</div>`;
+    html += `<div class="blk ${cls}" style="opacity:${k};transform:translateY(${(1 - k) * (b.user ? 26 : 12)}px)">${inner}</div>`;
   }
   return html;
 }
-function promptBox(blocks, t, cps) {
+function promptBox(blocks, t) {
   for (const b of blocks) {
     if (!b.user || t >= b.at || t < b.type) continue;
-    return `<span class="gl">›</span>${esc(typed(b.user, t, b.type, cps))}<span class="cur"></span>`;
+    return `<span class="gl">›</span>${esc(typed(b.user, t, b.type, b.at - 0.1))}<span class="cur"></span>`;
   }
-  return '<span class="gl">›</span><span class="cur" style="opacity:0.5"></span>';
+  return `<span class="gl">›</span><span class="cur" style="opacity:${blink(t) * 0.6}"></span>`;
 }
-
-const C = S2;
-const CODE = [
-  { type: C + 0.2, at: C + 1.35, user: 'The thesis repo is on my desktop. Pick up where I left off.' },
-  { at: C + 1.6, cmd: "yonder run desktop -- 'git -C ~/thesis log --oneline -3'", outAt: C + 2.0, out: GITLOG },
-  { at: C + 2.7, reply: 'You stopped at the chapter 4 results table. I\'ll pick it up there.' },
-  { type: C + 3.55, at: C + 4.35, user: "Run the tests on the PC, it's faster." },
-  { at: C + 4.6, cmd: "yonder run pc --detach -- 'cd ~/thesis && python3 -m unittest -q'", outAt: C + 5.0, out: [
-    JOB, `yonder: started on pc; output: yonder jobs pc ${JOB}`] },
-  { at: C + 5.55, reply: 'The tests are running on the PC. Back to chapter 4.' },
-];
-const CODE_LINKS = [['laptop', 'desktop', C + 1.6], ['laptop', 'pc', C + 4.6]];
-
-function renderCode(t) {
-  fill('tx-code', codeBody(CODE, t));
-  $('pr-code').innerHTML = promptBox(CODE, t, 55);
-  const links = CODE_LINKS.filter(l => t >= l[2]).slice(-1);
-  drawStrip('st-code', t, { here: 'laptop', links, hot: hotAt(links, t),
-    rl: Object.assign(t >= C + 2.0 ? { desktop: '<b>~/thesis</b>' } : {}, t >= C + 5.0 ? { pc: '<b>tests running</b>' } : {}) });
-}
-
-// ---- the phone, and the agent on the pi
-const P = S3;
-const PSTEPS = [
-  { cmd: 'yonder jobs pc', type: P + 0.85, cps: 40, out: P + 1.4, gap: 0.08, lines: [
-    'ID                      STATE   EXIT  STARTED              COMMAND',
-    `${JOB}  exited  0     2026-11-14 17:45:44  cd ~/thesis && python3 -m unittest -q`] },
-  { cmd: `yonder jobs pc ${JOB}`, type: P + 1.95, cps: 60, out: P + 2.65, gap: 0.08, lines: [
-    '----------------------------------------------------------------------',
-    'Ran 212 tests in 13.526s', '', '<span class="g">OK</span>'], raw: true },
-  { cmd: 'yonder run pc --secret HF_TOKEN -- hf auth whoami', type: P + 4.6, cps: 62, out: P + 5.55, gap: 0.08, lines: [
-    '<span class="g">✓ Logged in</span>', '  user: me'], raw: true },
-];
-const MSGS = [['m1', P + 0.3], ['r1', P + 3.25], ['m2', P + 4.1], ['r2', P + 6.0]];
-const TYPING = [[P + 0.75, P + 3.25], [P + 4.55, P + 6.0]];
-const PHONE_LINKS = [['pi', 'pc', P + 1.4]];
-
 function termBody(steps, t) {
   let html = '';
-  steps.forEach((st, si) => {
-    if (t < st.type) return;
+  steps.forEach(st => {
+    if (t < st.type) { if (st.idle != null && t >= st.idle) html += `<span class="ln"><span class="p">$</span> <span class="cur" style="opacity:${blink(t)}"></span></span>`; return; }
     const cur = t < st.out ? '<span class="cur"></span>' : '';
-    html += '<span class="ln"><span class="p">$</span> ' + esc(typed(st.cmd, t, st.type, st.cps)) + cur + '</span>';
+    html += '<span class="ln"><span class="p">$</span> ' + esc(typed(st.cmd, t, st.type, st.out - 0.12)) + cur + '</span>';
     st.lines.forEach((l, i) => {
-      const k = eo((t - (st.out + i * (st.gap || 0))) / 0.2);
+      const k = ex(seg(t, st.out + i * 0.06, st.out + i * 0.06 + 0.3));
       if (k <= 0) return;
-      const hl = st.hl && st.hl.line === i && t >= st.hl.at ? ' hl' : '';
-      html += `<span class="ln${hl}" style="opacity:${k}">${(st.raw ? l : esc(l)) || ' '}</span>`;
+      let body = (st.raw ? l : esc(l)) || ' ';
+      if (st.hl && st.hl.line === i) {
+        const kh = ex(seg(t, st.hl.at, st.hl.at + 0.45));
+        body = `<span class="hlw"><span class="hb" style="transform:scaleX(${kh})"></span><span class="ht">${body}</span></span>`;
+      }
+      html += `<span class="ln" style="opacity:${k}">${body}</span>`;
     });
   });
   return html;
 }
 
-function renderPhone(t) {
-  fill('tx-phone', termBody(PSTEPS, t));
-  for (const [id, at] of MSGS) {
-    const el = $(id);
-    el.style.display = t >= at ? '' : 'none';
-    rise(el, t, at, 0.3, 8);
-  }
-  const ty = $('typing');
-  ty.style.display = TYPING.some(([a, b]) => t >= a && t < b) ? '' : 'none';
-  [...ty.children].forEach((d, i) => { d.style.opacity = 0.4 + 0.5 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI / 1.1 - i * 0.9)); });
-  const rl = t >= P + 5.55 ? { pc: '<b>HF_TOKEN, by name</b>' } : t >= P + 2.65 ? { pc: '<b>212 tests passed</b>' } : {};
-  drawStrip('st-phone', t, { here: 'pi', links: PHONE_LINKS, hot: hotAt(PHONE_LINKS, t), rl });
-}
-
-// ---- the same rules on every machine
-const Y = S4;
+const CODE = [
+  { type: C + 0.42, at: C + 1.304, user: 'The thesis repo is on my desktop. Pick up where I left off.' },
+  { at: C + 1.50, cmd: "yonder run desktop -- 'git -C ~/thesis log --oneline -3'", outAt: C + 1.956, out: GITLOG },
+  { at: C + 2.608, reply: 'You stopped at the chapter 4 results table. I\'ll pick it up there.' },
+  { type: C + 3.15, at: C + 3.912, user: "Run the tests on the gaming PC, it's faster." },
+  { at: C + 4.10, cmd: "yonder run gaming-pc --detach -- 'cd ~/thesis && python3 -m unittest -q'", outAt: C + 4.564, out: [
+    JOB, `yonder: started on gaming-pc; output: yonder jobs gaming-pc ${JOB}`] },
+  { at: C + 5.216, reply: 'The tests are running on the gaming PC. Back to chapter 4.' },
+];
+const PSTEPS = [
+  { cmd: `yonder jobs gaming-pc ${JOB}`, type: P + 0.50, out: P + 0.978, idle: P, raw: true, lines: [
+    '<span class="dim">' + '-'.repeat(70) + '</span>', 'Ran 212 tests in 13.580s', '', '<span class="g">OK</span>'] },
+  { cmd: 'yonder run gaming-pc --secret HF_TOKEN -- hf auth whoami', type: P + 2.85, out: P + 3.42, raw: true, lines: [
+    '<span class="g">✓ Logged in</span>', '  user: me'] },
+];
+const MSGS = [['m1', P + 0.2], ['r1', P + 1.304], ['m2', P + 2.608], ['r2', P + 3.59]];
+const TYPING = [[P + 0.5, P + 1.304], [P + 2.85, P + 3.59]];
 const SYNC = [
-  { type: Y + 0.15, at: Y + 0.95, user: 'Always run the tests before you commit.' },
-  { at: Y + 1.2, edit: '~/.local/share/yonder/agents/instructions.md', outAt: Y + 1.45, add: true, out: [
+  { type: Y + 0.30, at: Y + 0.978, user: 'Always run the tests before you commit.' },
+  { at: Y + 1.10, edit: '~/.local/share/yonder/agents/instructions.md', outAt: Y + 1.304, add: true, out: [
     '+ - Run the tests before you commit.'] },
-  { at: Y + 1.85, reply: 'Added to your shared rules. Every machine gets them.' },
+  { at: Y + 1.63, reply: 'Added to your shared rules. Every machine gets them.' },
 ];
 const SYNC_R = [
-  { cmd: 'tail -4 ~/.local/share/yonder/agents/instructions.md', type: Y + 2.35, cps: 75, out: Y + 3.1, gap: 0.08, lines: [
+  { cmd: 'tail -4 ~/.local/share/yonder/agents/instructions.md', type: Y + 2.75, out: Y + 3.26, idle: Y, lines: [
     '## House rules', '- Be brief.', '- Ask before deleting anything.', '- Run the tests before you commit.'],
-    hl: { line: 3, at: Y + 3.5 } },
+    hl: { line: 3, at: Y + 3.912 } },
 ];
-const SYNC_LINKS = [['laptop', 'desktop', Y + 1.85], ['laptop', 'pc', Y + 1.95], ['laptop', 'pi', Y + 2.05]];
-
-function renderSync(t) {
-  fill('tx-sync-l', codeBody(SYNC, t));
-  $('pr-sync').innerHTML = promptBox(SYNC, t, 60);
-  fill('tx-sync-r', termBody(SYNC_R, t));
-  $('w-sync-r').style.opacity = eo((t - (Y + 2.1)) / 0.3);
-  const rl = {};
-  for (const [, m, at] of SYNC_LINKS) if (t >= at + 0.4) rl[m] = '<b>rules in sync</b>';
-  if (t >= Y + 1.45) rl.laptop = '<b>rule added</b>';
-  drawStrip('st-sync', t, { here: 'laptop', links: SYNC_LINKS, hot: hotAt(SYNC_LINKS, t), rl });
-}
 
 // ---- layout, once
 function place(id, x, y, w, h) {
   const el = $(id);
-  el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.width = w + 'px';
+  Object.assign(el.style, { left: x + 'px', top: y + 'px', width: w + 'px' });
   if (h) el.style.height = h + 'px';
 }
-// code: full width
-place('st-code', 160, 125, 1600); makeStrip('st-code', 1600);
-place('w-code', 160, 247, 1600, 620);
-place('cap-code', 160, 898, 1600);
-// phone: the phone on the left, strip and terminal on the right
-$('phone').style.transform = 'translate(110px, 150px) scale(0.95)';
-place('st-phone', 505, 132, 1355); makeStrip('st-phone', 1355);
-place('w-phone', 505, 252, 1355, 520);
-place('cap-phone', 505, 812, 1355);
-// sync: two windows side by side
-place('st-sync', 110, 200, 1700); makeStrip('st-sync', 1700);
-place('w-sync-l', 110, 328, 830, 420);
-place('w-sync-r', 980, 328, 830, 420);
-place('cap-sync', 110, 790, 1700);
+place('w-code', 160, 214, 1600, 640);
+place('w-phone', 600, 214, 1160, 500);
+place('w-sync-l', 160, 226, 780, 480);
+place('w-sync-r', 980, 226, 780, 480);
 
-const CAPTIONS = [
-  ['cap-code', C + 0.45, S3, 'Ask on your laptop. It works <em>where the work is</em>.'],
-  ['cap-phone', P + 0.45, P + 4.05, 'Text it from your phone. <em>Start anywhere.</em>'],
-  ['cap-phone', P + 4.2, S4, 'Keys by name. The value stays <em>out of output and logs</em>.'],
-  ['cap-sync', Y + 0.45, OUT, 'Your setup follows you. <em>Every agent knows the drill.</em>'],
+// ---- scene motion: each scene enters and leaves on a downbeat
+const wipeX = t => t < P ? -2200 * ei(seg(t, P - 0.24, P + 0.06)) : 0;
+const phoneX = t => 2200 * (1 - ex(seg(t, P - 0.04, P + 0.52)));
+const phoneY = t => -1250 * ei(seg(t, Y - 0.24, Y + 0.06));
+const syncY = t => 1250 * (1 - ex(seg(t, Y - 0.04, Y + 0.52)));
+const punch = (t, list) => list.reduce((a, at) => a + 0.007 * hit(t, at, 0.18), 0);
+function blurFor(f, t) { return Math.min(70, Math.abs(f(t) - f(t - 1 / 30)) * 0.33); }
+function setBlur(el, bx, by) {
+  if (bx < 0.5 && by < 0.5) { el.style.filter = ''; return; }
+  $('mbg').setAttribute('stdDeviation', `${bx.toFixed(1)} ${by.toFixed(1)}`);
+  el.style.filter = 'url(#mb)';
+}
+
+function renderCode(t) {
+  const el = $('sc-code');
+  const show = t >= D && t < P + 0.1;
+  el.style.display = show ? '' : 'none';
+  if (!show) return;
+  const x = wipeX(t);
+  const s = 1 + 0.028 * io(seg(t, D + 0.6, P)) * AMB + punch(t, [C + 1.304, C + 1.956, C + 3.912, C + 4.564]);
+  $('cam-code').style.transform = `translateX(${x}px) scale(${s})`;
+  setBlur($('cam-code'), blurFor(wipeX, t), 0);
+  const k = ex(seg(t, D + 0.08, D + 0.85));
+  $('w-code').style.transform = `translateY(${(1 - k) * 160}px) rotateX(${(1 - k) * 18}deg) scale(${lerp(0.93, 1, k)})`;
+  $('tx-code').innerHTML = codeBody(CODE, t);
+  $('pr-code').innerHTML = promptBox(CODE, t);
+}
+
+function renderPhone(t) {
+  const el = $('sc-phone');
+  const show = t >= P - 0.05 && t < Y + 0.1;
+  el.style.display = show ? '' : 'none';
+  if (!show) return;
+  const fx = t => phoneX(t), fy = t => phoneY(t);
+  const s = 1 + 0.025 * io(seg(t, P + 0.5, Y)) * AMB + punch(t, [P + 0.978, P + 3.42]);
+  $('cam-phone').style.transform = `translate(${fx(t)}px, ${fy(t)}px) scale(${s})`;
+  setBlur($('cam-phone'), blurFor(fx, t), blurFor(fy, t));
+  const k = ex(seg(t, P + 0.0, P + 0.75));
+  const fl = Math.sin((t - P) * Math.PI * 2 / (2 * BAR)) * 5 * AMB;
+  $('phone').style.transform = `translate(170px, ${200 + (1 - k) * 90 + fl}px) scale(0.9) rotateY(${(1 - k) * -26}deg) rotateZ(${(1 - k) * -4}deg)`;
+  const kt = ex(seg(t, P + 0.12, P + 0.8));
+  $('w-phone').style.transform = `translateX(${(1 - kt) * 120}px) rotateY(${(1 - kt) * -12}deg)`;
+  $('tx-phone').innerHTML = termBody(PSTEPS, t);
+  for (const [id, at] of MSGS) {
+    const m = $(id), km = ex(seg(t, at, at + 0.4));
+    m.style.display = t >= at ? '' : 'none';
+    m.style.opacity = clamp(km * 1.6);
+    m.style.transform = `translateY(${(1 - km) * 16}px) scale(${lerp(0.86, 1, km)})`;
+  }
+  const ty = $('typing');
+  ty.style.display = TYPING.some(([a, b]) => t >= a && t < b) ? '' : 'none';
+  [...ty.children].forEach((d, i) => {
+    const ph = ((t / (B / 2)) - i * 0.25) % 1;
+    d.style.transform = `translateY(${-5 * Math.max(0, Math.sin(ph * Math.PI))}px)`;
+    d.style.opacity = 0.45 + 0.5 * Math.max(0, Math.sin(ph * Math.PI));
+  });
+}
+
+function renderSync(t) {
+  const el = $('sc-sync');
+  const show = t >= Y - 0.05 && t < O + 0.4;
+  el.style.display = show ? '' : 'none';
+  if (!show) return;
+  const out = io(seg(t, O - 0.14, O + 0.32));
+  const s = 1 + 0.025 * io(seg(t, Y + 0.5, O)) * AMB + punch(t, [Y + 0.978, Y + 1.956, Y + 3.26]) - 0.05 * out;
+  $('cam-sync').style.transform = `translateY(${syncY(t)}px) scale(${s})`;
+  setBlur($('cam-sync'), 0, blurFor(syncY, t));
+  const kl = ex(seg(t, Y + 0.0, Y + 0.7)), kr = ex(seg(t, Y + 0.12, Y + 0.85));
+  $('w-sync-l').style.transform = `translateY(${(1 - kl) * 80}px) rotateY(${(1 - kl) * 10}deg)`;
+  $('w-sync-r').style.transform = `translateX(${(1 - kr) * 160}px) rotateY(${(1 - kr) * -16}deg)`;
+  $('tx-sync-l').innerHTML = codeBody(SYNC, t);
+  $('pr-sync').innerHTML = promptBox(SYNC, t);
+  $('tx-sync-r').innerHTML = termBody(SYNC_R, t);
+}
+
+// captions: one slot under each scene, two elements so a new line can rise while the old one leaves
+const CAPS = [
+  { at: C + 0.25, to: P - 0.03, x: 160, y: 884, w: 1600, text: 'Ask on your laptop. It works *where *the *work *is.' },
+  { at: P + 0.12, to: P + 2.5, x: 600, y: 768, w: 1160, text: 'Text it from *your *phone.' },
+  { at: P + 2.56, to: Y - 0.03, x: 600, y: 768, w: 1160, text: 'Keys by name. *Never *the *value.' },
+  { at: Y + 0.25, to: O - 0.03, x: 160, y: 768, w: 1600, text: 'Add a rule once. *Every *agent *knows *the *drill.' },
 ];
 function renderCaptions(t) {
-  for (const id of ['cap-code', 'cap-phone', 'cap-sync']) {
-    const cap = CAPTIONS.find(c => c[0] === id && t >= c[1] && t < c[2]);
-    const ce = $(id);
-    if (!cap) { ce.style.opacity = 0; continue; }
-    ce.innerHTML = cap[3];
-    const k = eo((t - cap[1]) / 0.4), ko = clamp((t - (cap[2] - 0.2)) / 0.2);
-    ce.style.opacity = k * (1 - ko);
-    ce.style.transform = `translateY(${(1 - k) * 10}px)`;
-  }
+  const slots = [$('cap-a'), $('cap-b')];
+  slots.forEach(s => (s.style.visibility = 'hidden'));
+  CAPS.forEach((c, i) => {
+    if (t < c.at || t > c.to + 0.1) return;
+    const el = slots[i % 2];
+    place(el.id, c.x, c.y, c.w);
+    kinetic(el, c.text, c.at, c.to, t, 0.04, 0.55);
+  });
 }
 
-// ---- the dusk: four machines on the horizon, joined to each other
-const HX = { laptop: 230, desktop: 720, pc: 1210, pi: 1700 };
-const HN = { laptop: 'Laptop', desktop: 'Desktop', pc: 'PC', pi: 'Pi' };
-const PAIRS = [['laptop', 'desktop'], ['desktop', 'pc'], ['pc', 'pi'], ['laptop', 'pc'], ['desktop', 'pi'], ['laptop', 'pi']];
-(function buildDusk() {
-  $('arcs').innerHTML = PAIRS.map(([a, b]) => {
-    const x0 = HX[a] + 4, x1 = HX[b] - 4, h = 40 + (x1 - x0) * 0.09;
-    return `<path d="M${x0} 748 Q ${(x0 + x1) / 2} ${748 - 2 * h} ${x1} 748"/>`;
-  }).join('');
-  $('dots').innerHTML = ORDER.map(n => `<circle cx="${HX[n]}" cy="760" r="13"/>`).join('');
-  $('labels').innerHTML = ORDER.map(n => `<div class="mlabel" style="left:${HX[n]}px">${HN[n]}</div>`).join('');
-})();
-
-function renderDusk(t) {
-  const outro = t >= S2;
-  // the arcs join the machines at the end of the hook; they stay for the outro
-  [...$('arcs').children].forEach((p, i) => {
-    const L = p.getTotalLength(), k = outro ? 1 : eo((t - (1.25 + i * 0.12)) / 0.6);
-    p.style.strokeDasharray = `${L} ${L}`;
-    p.style.strokeDashoffset = L * (1 - k);
-    p.style.opacity = k > 0 ? (i < 3 ? 0.85 : 0.55) : 0;
-  });
-  const kd = outro ? 1 : eo((t - 1.9) / 0.3);
-  [...$('dots').children].forEach(d => {
-    d.setAttribute('fill', kd > 0.5 ? '#9fbf8c' : '#1a1828');
-    d.setAttribute('stroke', kd > 0.5 ? 'none' : '#aba3b8');
-    d.setAttribute('stroke-width', 3);
-    d.setAttribute('r', kd > 0.5 ? 13 : 11);
-  });
-  [...$('labels').children].forEach(l => { l.style.opacity = lerp(0.6, 1, kd); });
-  $('sun').setAttribute('transform', `translate(0 ${(outro ? t - OUT + 3 : t) * 2})`);
-  for (const id of ['h1', 'h2']) {
-    $(id).style.display = outro ? 'none' : '';
-    $(id).style.opacity = 1 - eo((t - (S2 - 0.65)) / 0.3);
-  }
-  for (const id of ['lockup', 'o1', 'o2', 'o3', 'o4']) $(id).style.display = outro ? '' : 'none';
-  if (outro) {
-    for (const [id, at] of [['lockup', OUT + 0.1], ['o1', OUT + 0.35], ['o3', OUT + 0.9], ['o4', OUT + 1.1], ['o2', OUT + 1.4]])
-      rise($(id), t, at, 0.45);
-  }
-}
-
-// each scene fades in over its cut and out just before the next
-const SCENES = [['sc-code', S2, S3], ['sc-phone', S3, S4], ['sc-sync', S4, OUT]];
-const RENDER = { 'sc-code': renderCode, 'sc-phone': renderPhone, 'sc-sync': renderSync };
+// paper opens from the horizon on the drop and folds back into it for the outro
+const paperK = t => t < O ? ex(seg(t, D, D + 0.62)) : 1 - io(seg(t, O - 0.14, O + 0.32));
 function renderPaper(t) {
-  for (const [id, a, b] of SCENES) {
-    const o = (a === S2 ? 1 : eo((t - a) / 0.25)) * (b === OUT ? 1 : 1 - eo((t - (b - 0.2)) / 0.2));
-    const show = t >= a - 0.01 && t < b && o > 0;
-    $(id).style.display = show ? '' : 'none';
-    if (!show) continue;
-    $(id).style.opacity = o;
-    RENDER[id](t);
-  }
+  const k = paperK(t);
+  const top = HY * (1 - k), bot = (1080 - HY) * (1 - k);
+  const paper = $('paper');
+  paper.style.display = k > 0.001 ? '' : 'none';
+  paper.style.clipPath = `inset(${top}px 0 ${bot}px 0)`;
+  const so = k > 0.001 && k < 0.999 ? (t < O ? 1 - seg(t, D + 0.3, D + 0.62) : 1) : 0;
+  $('slit-t').style.top = (top - 1) + 'px'; $('slit-b').style.top = (1080 - bot - 1) + 'px';
+  $('slit-t').style.opacity = $('slit-b').style.opacity = so;
+  if (k <= 0.001) return;
+  const gx = -520 * io(seg(t, P - 0.24, P + 0.52)), gy = -420 * io(seg(t, Y - 0.24, Y + 0.52)) + 60 * (1 - k);
+  $('grid').style.transform = `translate(${gx % 40}px, ${(gy % 40) - 20 * io(seg(t, D, O)) * AMB}px)`;
+  // the ink band that sweeps across the whip to the phone
+  const bx = lerp(2050, -720, io(seg(t, P - 0.27, P + 0.25)));
+  const band = $('band');
+  band.style.display = t > P - 0.3 && t < P + 0.3 ? '' : 'none';
+  band.style.left = bx + 'px';
+  band.style.transform = 'skewX(-14deg)';
+  renderCode(t);
+  renderPhone(t);
+  renderSync(t);
   renderCaptions(t);
 }
 
-function render(t) {
-  // the hook crossfades into paper; paper dips to night, then the outro fades up
-  const pin = eo((t - (S2 - XF)) / XF), pout = eo((t - (OUT - 0.3)) / 0.3);
-  const po = pin * (1 - pout);
-  const dk = t < S2 ? 1 : eo((t - OUT) / 0.45);
-  $('paper').style.opacity = po;
-  $('paper').style.display = po > 0 ? '' : 'none';
-  $('dusk').style.opacity = dk;
-  $('dusk').style.display = dk > 0 ? '' : 'none';
-  if (dk > 0) renderDusk(t);
-  if (po > 0) renderPaper(Math.max(t, S2));
+function renderDusk(t) {
+  const c = duskCam(t);
+  $('gSky').setAttribute('transform', camAttr(c, 0.25));
+  $('gSun').setAttribute('transform', camAttr(c, 0.6));
+  $('gLand').setAttribute('transform', camAttr(c, 1));
+  const [lx, ly] = camPt(c, 1650, 230, 0.4);
+  $('lantern').setAttribute('cx', lx); $('lantern').setAttribute('cy', ly);
+  $('lantern').setAttribute('r', 7 + 2 * pulse(t, 0.3));
+  $('sun').setAttribute('transform', `translate(0 ${(t < O ? t : t - O + 2) * 2.2 * AMB})`);
+  [...$('stars').children].forEach((s, i) => s.setAttribute('opacity', (0.25 + 0.2 * Math.sin(t * 1.3 * AMB + i * 1.7)).toFixed(2)));
+  // hook: line one is set at frame 0; line two lands on the second bar; both leave on the drop
+  const hook = t < O;
+  for (const id of ['h1', 'h2']) $(id).style.display = hook ? '' : 'none';
+  if (hook) {
+    kinetic($('h1'), 'More than one computer?', -1, D + 0.02, t);
+    kinetic($('h2'), 'Your agent uses them like one.', BAR, D + 0.06, t, 0.055, 0.6);
+    const hy = -10 * io(seg(t, 0, D)) * AMB;
+    $('h1').style.transform = `translateY(${hy}px)`;
+    $('h2').style.transform = `translateY(${hy}px)`;
+  }
+  for (const id of ['lockup', 'o1', 'o3', 'o4', 'o2']) $(id).style.display = hook ? 'none' : '';
+  if (!hook) {
+    const kl = ex(seg(t, O + 0.12, O + 0.8));
+    $('lockup').style.clipPath = `inset(-10% ${(1 - kl) * 100}% -10% 0)`;
+    $('lockup').style.transform = `translateX(${(1 - kl) * -30}px)`;
+    kinetic($('o1'), 'Every computer you own, one agent.', O + 0.3, null, t, 0.045, 0.6);
+    for (const [id, at] of [['o3', O + B], ['o2', O + 2 * B]]) {
+      const k = ex(seg(t, at, at + 0.5));
+      $(id).style.opacity = k;
+      $(id).style.transform = `translateY(${(1 - k) * 18}px)`;
+    }
+    const line = 'Set up Yonder for me: https://github.com/zacharytgray/yonder';
+    const t0 = O + B + 0.12, t1 = O + 2 * B - 0.02;
+    $('o4').innerHTML = t < t0 - 0.1 ? '' : `<span style="color:var(--sun-dk)">&gt;</span> ${esc(typed(line, t, t0, t1))}<span class="cur" style="opacity:${t < t1 ? 1 : blink(t) * 0.8};margin-left:0.15em;width:0.55em"></span>`;
+  }
 }
 
-window.DURATION = Math.round((OUT + 4.2) * 30) / 30;
+function render(t) {
+  $('dusk').style.display = (t < D + 0.7 || t >= O - 0.2) ? '' : 'none';
+  if ($('dusk').style.display === '') renderDusk(t);
+  renderPaper(t);
+  renderNet(t);
+}
+
+window.DURATION = END;
 window.render = render;
 render(Number(new URLSearchParams(location.search).get('t') || 0));
 </script>

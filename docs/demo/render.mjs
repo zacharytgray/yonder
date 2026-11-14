@@ -12,7 +12,8 @@ import { pathToFileURL } from 'node:url';
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9400 + Math.floor(Math.random() * 400);
 const [mode, out, ...rest] = process.argv.slice(2);
-const page = pathToFileURL(resolve(import.meta.dirname, 'index.html')).href;
+// QUERY=lite renders the gif's version (see index.html)
+const page = pathToFileURL(resolve(import.meta.dirname, 'index.html')).href + (process.env.QUERY ? '?' + process.env.QUERY : '');
 
 const profile = mkdtempSync(join(tmpdir(), 'yonder-render-'));
 const chrome = spawn(CHROME, [

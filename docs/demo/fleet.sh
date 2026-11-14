@@ -1,8 +1,8 @@
 #!/bin/sh
 # builds the fake fleet the demo's terminal output comes from, then prints the
 # real `yonder ls`, `yonder layers`, `yonder log` and `yonder agents install`
-# output, and the scenes in the video: the thesis on the desktop, tests on the pc,
-# a check and a key from the phone, the same rules everywhere.
+# output, and the scenes in the video: the thesis on the desktop, tests on the
+# gaming pc, a check and a key from the phone, the same rules everywhere.
 # usage: docs/demo/fleet.sh [path/to/yonder]   (run `make build` first)
 set -eu
 yonder=$(cd "$(dirname "${1:-bin/yonder}")" && pwd)/$(basename "${1:-bin/yonder}")
@@ -63,10 +63,10 @@ unified = true
 [[facts.harnesses]]
 name = 'codex'
 EOF
-machine pc linux amd64 100.64.0.3 gpu 'heavy jobs'
-cat >> "$f/home/config/machines/pc.toml" <<'EOF'
+machine gaming-pc linux amd64 100.64.0.3 gpu 'heavy jobs'
+cat >> "$f/home/config/machines/gaming-pc.toml" <<'EOF'
 [facts]
-hostname = 'pc'
+hostname = 'gaming-pc'
 os_version = 'Ubuntu 24.04'
 cpu = 'AMD Ryzen 9 7950X 16-Core Processor'
 memory_gb = 64.0
@@ -75,12 +75,12 @@ name = 'NVIDIA GeForce RTX 4090'
 vendor = 'nvidia'
 memory_gb = 24.0
 [[facts.harnesses]]
-name = 'pi'
+name = 'claude-code'
 EOF
-machine pi linux arm64 100.64.0.4 server 'always on'
-cat >> "$f/home/config/machines/pi.toml" <<'EOF'
+machine raspberry-pi linux arm64 100.64.0.4 server 'always on'
+cat >> "$f/home/config/machines/raspberry-pi.toml" <<'EOF'
 [facts]
-hostname = 'pi'
+hostname = 'raspberry-pi'
 os_version = 'Debian 12'
 cpu = 'Cortex-A76'
 memory_gb = 8.0
@@ -95,8 +95,8 @@ tailnet() { # online: true for the ls table, false for everything else
  "Self":{"ID":"nSelf","UserID":1,"HostName":"laptop","DNSName":"laptop.example.ts.net.","OS":"macOS","TailscaleIPs":["100.64.0.1"],"Online":true},
  "Peer":{
   "nodekey:a":{"UserID":1,"HostName":"desktop","DNSName":"desktop.example.ts.net.","OS":"macOS","TailscaleIPs":["100.64.0.2"],"Online":$1,"LastSeen":"$seen"},
-  "nodekey:b":{"UserID":1,"HostName":"pc","DNSName":"pc.example.ts.net.","OS":"linux","TailscaleIPs":["100.64.0.3"],"Online":$1,"LastSeen":"$seen"},
-  "nodekey:c":{"UserID":1,"HostName":"pi","DNSName":"pi.example.ts.net.","OS":"linux","TailscaleIPs":["100.64.0.4"],"Online":$1,"LastSeen":"$seen"}},
+  "nodekey:b":{"UserID":1,"HostName":"gaming-pc","DNSName":"gaming-pc.example.ts.net.","OS":"linux","TailscaleIPs":["100.64.0.3"],"Online":$1,"LastSeen":"$seen"},
+  "nodekey:c":{"UserID":1,"HostName":"raspberry-pi","DNSName":"raspberry-pi.example.ts.net.","OS":"linux","TailscaleIPs":["100.64.0.4"],"Online":$1,"LastSeen":"$seen"}},
  "CurrentTailnet":{"Name":"example.ts.net","MagicDNSSuffix":"example.ts.net"}}
 EOF
 }
@@ -106,8 +106,8 @@ tailnet false
 # what the targets would have logged; peers are marked offline for `log` so it reads only this file
 cat > "$f/log-seed.jsonl" <<'EOF'
 {"time":"2026-11-11T09:40:31Z","id":"20261111-094031-a9","from":"laptop","to":"desktop","harness":"claude-code","user":"me","command":"git -C ~/thesis log --oneline -3","secrets":[],"exit":0,"ms":212,"side":"target"}
-{"time":"2026-11-11T09:41:12Z","id":"20261111-094112-a0","from":"laptop","to":"pc","harness":"claude-code","user":"me","command":"cd ~/thesis && python3 -m unittest -q","secrets":[],"exit":null,"ms":140,"side":"target","detached":true}
-{"time":"2026-11-11T09:42:05Z","id":"20261111-094205-a1","from":"pi","to":"pc","harness":"hermes","user":"me","command":"hf auth whoami","secrets":["HF_TOKEN"],"exit":0,"ms":96,"side":"target"}
+{"time":"2026-11-11T09:41:12Z","id":"20261111-094112-a0","from":"laptop","to":"gaming-pc","harness":"claude-code","user":"me","command":"cd ~/thesis && python3 -m unittest -q","secrets":[],"exit":null,"ms":140,"side":"target","detached":true}
+{"time":"2026-11-11T09:42:05Z","id":"20261111-094205-a1","from":"raspberry-pi","to":"gaming-pc","harness":"hermes","user":"me","command":"hf auth whoami","secrets":["HF_TOKEN"],"exit":0,"ms":96,"side":"target"}
 EOF
 
 # stand-in harness binaries so `agents install` finds all four
@@ -121,7 +121,7 @@ reviewed: 2026-11-01
 
 ## Where things live
 - Projects: `~/<repo>` on every machine. The thesis: `desktop:~/thesis`.
-- Tests and GPU jobs go to `pc`.
+- Tests and GPU jobs go to `gaming-pc`.
 - Secrets by name only: `yonder run <machine> --secret NAME -- <cmd>`.
 EOF
 
@@ -141,7 +141,7 @@ run YONDER_TAILSCALE_JSON="$f/ts-false.json" "$yonder" agents install
 # the video's scenes. a machine runs a command in-process when it is `self`:
 # the same _exec path an ssh call reaches. so each scene makes the target self
 # and runs from a home of its own.
-mkdir -p "$f/homes/laptop" "$f/homes/desktop" "$f/homes/pc" "$f/homes/pi"
+mkdir -p "$f/homes/laptop" "$f/homes/desktop" "$f/homes/gaming-pc" "$f/homes/raspberry-pi"
 # the thesis repo on the desktop, with fixed dates so the hashes stay the same
 g() { # date, then git args
   d=$1; shift
@@ -156,11 +156,11 @@ for c in '2026-11-10T16:02:00Z|Fix the data loader seed' '2026-11-12T11:30:00Z|A
   g "${c%%|*}" add NOTES
   g "${c%%|*}" commit -q -m "${c#*|}"
 done
-# the pc's copy: 212 small tests that take a few seconds
-mkdir -p "$f/homes/pc/thesis/tests"
-: > "$f/homes/pc/thesis/tests/__init__.py"
+# the gaming pc's copy: 212 small tests that take a few seconds
+mkdir -p "$f/homes/gaming-pc/thesis/tests"
+: > "$f/homes/gaming-pc/thesis/tests/__init__.py"
 for mod in data eval model; do
-  cat > "$f/homes/pc/thesis/tests/test_$mod.py" <<'EOF'
+  cat > "$f/homes/gaming-pc/thesis/tests/test_$mod.py" <<'EOF'
 import time
 import unittest
 
@@ -174,9 +174,9 @@ def case(i):
     return t
 EOF
 done
-printf 'for i in range(71):\n    setattr(T, f"test_{i}", case(i))\n' >> "$f/homes/pc/thesis/tests/test_data.py"
-printf 'for i in range(71):\n    setattr(T, f"test_{i}", case(i))\n' >> "$f/homes/pc/thesis/tests/test_eval.py"
-printf 'for i in range(70):\n    setattr(T, f"test_{i}", case(i))\n' >> "$f/homes/pc/thesis/tests/test_model.py"
+printf 'for i in range(71):\n    setattr(T, f"test_{i}", case(i))\n' >> "$f/homes/gaming-pc/thesis/tests/test_data.py"
+printf 'for i in range(71):\n    setattr(T, f"test_{i}", case(i))\n' >> "$f/homes/gaming-pc/thesis/tests/test_eval.py"
+printf 'for i in range(70):\n    setattr(T, f"test_{i}", case(i))\n' >> "$f/homes/gaming-pc/thesis/tests/test_model.py"
 # stand-in for the 1password cli: fills each reference with a made-up value
 cat > "$f/bin/op" <<'EOF'
 #!/bin/sh
@@ -203,17 +203,17 @@ on() { # machine, then yonder args: run as that machine, from its home
 echo '--- scene: the coding agent on the laptop'
 echo "\$ yonder run desktop -- 'git -C ~/thesis log --oneline -3'"
 on desktop run --as claude-code desktop -- 'git -C ~/thesis log --oneline -3'
-echo "\$ yonder run pc --detach -- 'cd ~/thesis && python3 -m unittest -q'"
-on pc run --as claude-code --detach pc -- 'cd ~/thesis && python3 -m unittest -q' >"$f/detach.txt" 2>&1
+echo "\$ yonder run gaming-pc --detach -- 'cd ~/thesis && python3 -m unittest -q'"
+on gaming-pc run --as claude-code --detach gaming-pc -- 'cd ~/thesis && python3 -m unittest -q' >"$f/detach.txt" 2>&1
 cat "$f/detach.txt"
 id=$(head -1 "$f/detach.txt")
 # wait for the tests to finish
 while ! grep -q exited "$f/home/state/jobs/$id.json" 2>/dev/null; do sleep 0.5; done
-echo '--- scene: a text from the phone, to the agent on the pi'
-echo '$ yonder jobs pc'
-on pc jobs pc
-echo "\$ yonder jobs pc $id"
-on pc jobs pc "$id"
+echo '--- scene: a text from the phone, to the agent on the raspberry pi'
+echo '$ yonder jobs gaming-pc'
+on gaming-pc jobs gaming-pc
+echo "\$ yonder jobs gaming-pc $id"
+on gaming-pc jobs gaming-pc "$id"
 
 echo '--- scene: the same rules on every machine'
 # the house rules in the agents store. the laptop's agent adds the last one; sync
@@ -229,5 +229,5 @@ echo '$ tail -4 ~/.codex/AGENTS.md   (on desktop)'
 tail -4 "$f/home/home/.codex/AGENTS.md"
 
 echo '--- scene: a key by name'
-echo '$ yonder run pc --secret HF_TOKEN -- hf auth whoami'
-on pc run --as hermes --secret HF_TOKEN pc -- hf auth whoami
+echo '$ yonder run gaming-pc --secret HF_TOKEN -- hf auth whoami'
+on gaming-pc run --as hermes --secret HF_TOKEN gaming-pc -- hf auth whoami

@@ -21,7 +21,7 @@
 **[<kbd> <br> Design <br> </kbd>](docs/design.md)**
 
 <a href="docs/demo/yonder-demo.mp4">
-  <img src="docs/demo/hero.gif" width="100%" alt="More than one computer? Your agent uses them like one. In a coding agent on the laptop: The thesis repo is on my desktop. Pick up where I left off. It runs yonder run desktop for the git log, then Run the tests on the PC: yonder run pc --detach starts them. Later, a text from the phone to the agent on the Pi: How are the tests doing? yonder jobs shows all 212 passed. Is my Hugging Face key working there? yonder run pc --secret HF_TOKEN runs hf auth whoami. Then a rule added on the laptop shows up on the desktop: Your setup follows you. Every agent knows the drill. Then: Every computer you own, one agent. Tell your agent: Set up Yonder for me, with the repo link.">
+  <img src="docs/demo/hero.gif" width="100%" alt="More than one computer? Your agent uses them like one. Four machines on a horizon, Laptop, Desktop, Gaming PC and Raspberry Pi, joined by arcs. In a coding agent on the laptop: The thesis repo is on my desktop. Pick up where I left off. It runs yonder run desktop for the git log, then Run the tests on the gaming PC: yonder run gaming-pc --detach starts them. Then a text from the phone to the agent on the Raspberry Pi: Did the tests pass? yonder jobs shows all 212 passed. Is my Hugging Face key working there? yonder run gaming-pc --secret HF_TOKEN runs hf auth whoami. Keys by name, never the value. Then a rule added on the laptop shows up on the desktop: Add a rule once. Every agent knows the drill. Then: Every computer you own, one agent. Tell your agent: Set up Yonder for me, with the repo link.">
 </a>
 
 **[▶ Watch the 28-second demo, with sound](docs/demo/yonder-demo.mp4)**
