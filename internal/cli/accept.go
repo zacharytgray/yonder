@@ -279,7 +279,7 @@ func (a *app) acceptAll(show bool) error {
 	for {
 		switch acceptChoose(fmt.Sprintf("Accept all %s on this machine?", plural(len(items), "change")), []string{choiceAccept, choiceShow, choiceOne, choiceNo}) {
 		case choiceAccept:
-			done := a.acceptHere(s, items)
+			done := a.acceptHere(s, items, true)
 			a.printDone("", done)
 			return nil
 		case choiceShow:
@@ -305,11 +305,13 @@ func verbS(n int) string {
 }
 
 // acceptHere accepts the listed items in s, only as they were listed.
-func (a *app) acceptHere(s *store.Store, items []acceptItem) acceptDone {
+// person: a person typed the yes at this machine's terminal, so the versions
+// are marked reviewed here. a ticket accept from another machine is not.
+func (a *app) acceptHere(s *store.Store, items []acceptItem, person bool) acceptDone {
 	done := acceptDone{Accepted: []string{}, Skipped: []skip{}}
 	_, err := withStore(s, func() error {
 		for _, it := range items {
-			if err := s.AcceptIf(it.Path, it.Hash, it.Exec); err != nil {
+			if err := s.AcceptIf(it.Path, it.Hash, it.Exec, person); err != nil {
 				done.Skipped = append(done.Skipped, skip{it.Path, err.Error()})
 				continue
 			}
@@ -447,7 +449,7 @@ func (a *app) acceptPaths(args []string) error {
 		yes = append(yes, it)
 	}
 	if len(yes) > 0 {
-		done := a.acceptHere(s, yes)
+		done := a.acceptHere(s, yes, true)
 		for _, p := range done.Accepted {
 			fmt.Fprintf(a.out, "accepted %s\n", agents.Printable(p))
 		}
@@ -547,11 +549,27 @@ func (a *app) listOn(m registry.Machine, self string) acceptList {
 		return l
 	}
 	// a reply speaks for that machine only, whatever it calls itself
-	l.Ticket, l.Items = got.Ticket, got.Items
-	if l.Items == nil {
-		l.Items = []acceptItem{}
-	}
+	l.Ticket, l.Items = got.Ticket, peerItems(got.Items)
 	return l
+}
+
+// peerItems makes a peer's list safe to show: every item lands in a group
+// the summary prints, and its diff is escaped here, whatever the peer sent.
+func peerItems(in []acceptItem) []acceptItem {
+	out := []acceptItem{}
+	for _, it := range in {
+		if !slices.Contains(kindOrder, it.Kind) {
+			it.Kind = "other"
+		}
+		lines := strings.Split(it.Diff, "\n")
+		for i, l := range lines {
+			lines[i] = agents.Printable(l)
+		}
+		it.Diff = strings.Join(lines, "\n")
+		it.Mode = agents.Printable(it.Mode)
+		out = append(out, it)
+	}
+	return out
 }
 
 // lastJSON is the last line of out: a login shell's profile may print first.
@@ -575,7 +593,7 @@ func (a *app) applyFleet(self string, ms []registry.Machine, lists []acceptList)
 			if err != nil {
 				return err
 			}
-			a.printDone(self+": ", a.acceptHere(s, l.Items))
+			a.printDone(self+": ", a.acceptHere(s, l.Items, true))
 			continue
 		}
 		want := acceptWant{Ticket: l.Ticket}
@@ -639,8 +657,25 @@ func saveTickets(ts map[string]ticket) error {
 	return os.WriteFile(ticketsPath(), data, 0o600)
 }
 
+// hiddenAcceptGuard: _accept-list and _accept-apply are for another
+// machine's `accept --all-machines`, which a person runs at a terminal there.
+// a local call is refused, and so is a caller whose _exec envelope names an
+// agent harness. the harness check is advisory (an agent can hide its
+// markers); the real gate stays the caller's terminal and the single-use ticket.
+func hiddenAcceptGuard() error {
+	if os.Getenv("SSH_CONNECTION") == "" {
+		return errors.New("this runs only for `yonder agents accept --all-machines` on another machine; here, a person runs `yonder agents accept --all` in a terminal")
+	}
+	if h := os.Getenv("YONDER_EXEC_HARNESS"); slices.Contains(agents.Names(), h) {
+		return fmt.Errorf("the caller is %s, an agent; accepting needs a person, who runs `yonder agents accept --all-machines` in a terminal", agents.Printable(h))
+	}
+	return nil
+}
+
 // caller names the fleet machine running this through _exec over ssh, or ""
-// for this machine itself.
+// for this machine itself. a var for tests.
+var acceptCaller = func(a *app) (string, error) { return a.caller() }
+
 func (a *app) caller() (string, error) {
 	conn := os.Getenv("SSH_CONNECTION")
 	if conn == "" {
@@ -664,12 +699,15 @@ func newAcceptListCmd() *cobra.Command {
 		Hidden: true,
 		Args:   usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := hiddenAcceptGuard(); err != nil {
+				return err
+			}
 			a := newApp(cmd)
 			s, self, err := a.agentStore("agents accept")
 			if err != nil {
 				return err
 			}
-			from, err := a.caller()
+			from, err := acceptCaller(a)
 			if err != nil {
 				return err
 			}
@@ -718,6 +756,9 @@ func newAcceptApplyCmd() *cobra.Command {
 		Hidden: true,
 		Args:   usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := hiddenAcceptGuard(); err != nil {
+				return err
+			}
 			a := newApp(cmd)
 			s, _, err := a.agentStore("agents accept")
 			if err != nil {
@@ -727,7 +768,7 @@ func newAcceptApplyCmd() *cobra.Command {
 			if err := json.NewDecoder(io.LimitReader(a.in, 4<<20)).Decode(&want); err != nil {
 				return fmt.Errorf("bad request: %w", err)
 			}
-			from, err := a.caller()
+			from, err := acceptCaller(a)
 			if err != nil {
 				return err
 			}
@@ -754,7 +795,7 @@ func newAcceptApplyCmd() *cobra.Command {
 					items = append(items, acceptItem{Path: w.Path, Hash: w.Hash, Exec: w.Exec})
 				}
 			}
-			done := a.acceptHere(s, items)
+			done := a.acceptHere(s, items, false)
 			for _, w := range want.Items {
 				if !slices.Contains(t.Items, w) {
 					done.Skipped = append(done.Skipped, skip{w.Path, "not in the list this machine gave"})
@@ -783,4 +824,68 @@ func acceptHint(here, elsewhere int) string {
 		return fmt.Sprintf("%s wait%s for review on other machines; to review them from this terminal: yonder agents accept --all-machines", plural(elsewhere, "change"), verbS(elsewhere))
 	}
 	return ""
+}
+
+// importAsk is the question after an import at a terminal; tests swap it.
+var importAsk = func(q string) bool {
+	fmt.Fprintf(os.Stdout, "\n%s\nType y and press Enter to make them live everywhere; anything else leaves them for review on each machine: ", q)
+	line, _ := acceptIn.ReadString('\n')
+	return slices.Contains(choiceKeys[choiceAccept], strings.ToLower(strings.TrimSpace(line)))
+}
+
+// offerReviewed: after an import, the hooks and other files that would wait
+// for review on the other machines get one summary. a person at a terminal
+// is asked once, and only a typed yes marks them reviewed here, so peers take
+// them as they are. without a terminal nothing is asked or marked: the
+// summary says how the person approves them from their own terminal.
+func (a *app) offerReviewed(s *store.Store, rs []agents.ImportResult) {
+	if s.Kind.Review == nil {
+		return
+	}
+	var items []acceptItem
+	for _, r := range rs {
+		if r.Action != "added" && r.Action != "replaced" {
+			continue
+		}
+		data, ok := s.Live(r.Rel)
+		if !ok {
+			continue
+		}
+		exec := false
+		if st, err := os.Stat(filepath.Join(s.Dir, filepath.FromSlash(r.Rel))); err == nil {
+			exec = st.Mode()&0o111 != 0
+		}
+		if !s.Kind.Review(r.Rel, exec) {
+			continue
+		}
+		items = append(items, acceptItem{Path: r.Rel, Kind: reviewKind(r.Rel, exec), New: r.Action == "added",
+			Lines: len(strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")), Bytes: int64(len(data)),
+			Hash: hashHex(string(data)), Exec: exec, Origin: store.Origin{Machine: s.Self, Time: time.Now()}})
+	}
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintf(a.out, "\n%s would wait for review on your other machines:\n", plural(len(items), "file"))
+	printSummary(a.out, []acceptList{{Machine: "this import", Items: items}}, false)
+	if !acceptTTY() {
+		fmt.Fprintln(a.out, "nothing was marked reviewed: no person at a terminal answered. Show the user this list. To make them live, they run `yonder agents accept --all-machines` in their own terminal once the next sync has delivered them (one command, one yes)")
+		return
+	}
+	if !importAsk("Make these live on every machine?") {
+		fmt.Fprintln(a.out, "left them to be reviewed on each machine (`yonder agents accept --all-machines`)")
+		return
+	}
+	marked := 0
+	if _, err := withStore(s, func() error {
+		for _, it := range items {
+			if s.MarkReviewed(it.Path, it.Hash) {
+				marked++
+			}
+		}
+		return nil
+	}); err != nil {
+		a.warnf("marking them reviewed: %v", err)
+		return
+	}
+	fmt.Fprintf(a.out, "marked %s reviewed here; your other machines take them without asking\n", plural(marked, "file"))
 }

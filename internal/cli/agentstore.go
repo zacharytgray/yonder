@@ -120,6 +120,9 @@ links follow on their own. Run it again any time.`,
 			if err := l.Link(hs); err != nil {
 				return err
 			}
+			if _, ok := agents.CodexOverride(agents.Home()); ok && slices.Contains(hs, "codex") {
+				a.warnf("WARNING: %s", agents.CodexOverrideNote(agents.Home()))
+			}
 			if !dryRun && !scheduleHere() {
 				fmt.Fprintln(a.out, "no sync schedule runs here, so store edits arrive only when a sync runs; `yonder schedule install` adds one")
 			}
@@ -222,21 +225,8 @@ A store file that differs is left alone unless --replace (the old one is kept).`
 				return &usageError{err}
 			}
 			var rs []agents.ImportResult
-			// a person importing at a terminal has looked at what goes in, so
-			// peers take it without asking again; an agent's import still waits
-			person := acceptTTY()
 			_, err = withStore(s, func() error {
 				rs = agents.Import(s, plan, o.Replace, o.DryRun)
-				if person && !o.DryRun {
-					s.ReviewedHere = map[string]string{}
-					for _, r := range rs {
-						if r.Action == "added" || r.Action == "replaced" {
-							if data, ok := s.Live(r.Rel); ok {
-								s.ReviewedHere[r.Rel] = hashHex(string(data))
-							}
-						}
-					}
-				}
 				return nil
 			})
 			if err != nil {
@@ -266,6 +256,7 @@ A store file that differs is left alone unless --replace (the old one is kept).`
 			fmt.Fprintf(a.out, "%d added, %d replaced, %d unchanged, %d left as they are, %d refused\n",
 				counts["added"], counts["replaced"], counts["unchanged"], counts["exists"], counts["refused"]+counts["failed"])
 			if !o.DryRun && counts["added"]+counts["replaced"] > 0 {
+				a.offerReviewed(s, rs)
 				a.pushSoon()
 			}
 			if failed {

@@ -240,7 +240,18 @@ not the instructions:
 
 ```sh
 yonder agents import ~/.claude --kind skills --kind subagents --kind commands --kind hooks
+yonder agents import ~/.agents --kind skills    # skills Codex and Pi use, if they have any
 ```
+
+When the import holds hooks or other scripts, it prints them on one screen: they would wait for
+review on the person's other machines, and nothing you ran can approve them. Show the person that
+list. If they want them live everywhere, ask them to run, in their own terminal once the next
+sync has delivered them (step 9):
+
+    yonder agents accept --all-machines
+
+One command, one yes. Someone who wants no review at all can set `[sync] review = "none"` in
+`~/.config/yonder/config.toml` on each machine; say so only if they ask.
 
 On another machine: `yonder run <m> -- yonder agents import '~/.claude' --kind skills ...`.
 Codex hook configs go in with `yonder agents import ~/.codex/hooks.json --kind files --harness
@@ -274,8 +285,11 @@ section (action `shared`, `from` that machine), show the dry run, and apply it t
 
 Where each harness gets it: Claude Code reads the instructions from a marked block in
 `~/.claude/CLAUDE.md` and the skills from `~/.claude/skills/`. Codex reads `~/.codex/AGENTS.md`
-(the whole file when Codex had none, else a marked block in the person's own file) and the
-skills from `~/.agents/skills/`, which Pi shares. Both start with the same short briefing about
+(the whole file when Codex had none, else a marked block in the person's own file), or the same
+file in `$CODEX_HOME` when they set that, and the skills from `~/.agents/skills/`, which Pi
+shares. If Codex has an `AGENTS.override.md` with text, it reads that instead and never sees
+Yonder's text: `yonder agents link` and `yonder doctor` warn about it. Tell the person, and ask
+whether to move its text into the shared instructions; Yonder never writes into that file. Both start with the same short briefing about
 the machines. Skills, subagents and commands that only Claude Code understands (`claude/agents`,
 `claude/commands`) only reach Claude Code; a Codex hook config goes in `files/codex/`.
 
@@ -297,7 +311,7 @@ and it should. If `yonder sync` or `yonder doctor` says changes wait for review,
 > It shows one summary for all your machines and asks once: type `y` and press Enter to accept
 > everything, or `s` to read the full diffs first.
 
-What the person imported or accepted at a terminal themselves doesn't ask again on their other
+What the person accepted, or imported at a terminal and said yes to, doesn't ask again on their other
 machines; what you imported does, once.
 
 If they use Codex: Codex also asks before running a hook that changed. Tell them to open Codex

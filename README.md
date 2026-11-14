@@ -429,10 +429,13 @@ How sync behaves:
   shows one summary of everything waiting, grouped into hooks, scripts and harness files, and you
   type `y` once to accept it all (`s` or `--show` pages through the full diffs first). `yonder agents accept
   --all-machines` does every online machine from the terminal you're at. A change you already
-  accepted, or imported yourself in a terminal, doesn't ask again on your other machines; one an
-  agent made always does. `sync` and `doctor` print the command when something waits.
+  accepted, or imported yourself in a terminal and said yes to, doesn't ask again on your other
+  machines; one an agent made or imported always does. `[sync] review = "none"` turns review off. `sync` and `doctor` print the command when something waits.
 - Codex also asks you to trust a changed hook before it runs it. After a hook in
-  `files/codex/` changes, open Codex and run `/hooks`. `[sync] review` in `~/.config/yonder/config.toml` changes that: `executables` (the
+  `files/codex/` changes, open Codex and run `/hooks`.
+- Codex's files follow `$CODEX_HOME` when you set it. If Codex has an `AGENTS.override.md` with
+  text, it reads that instead of `AGENTS.md` and doesn't see Yonder's instructions; `link` and
+  `doctor` warn about it, and Yonder never writes into it. `[sync] review` in `~/.config/yonder/config.toml` changes that: `executables` (the
   default), `all` or `none`.
 - Secrets and settings never sync. Names like `.env`, `*.pem` or a harness's `settings.json` and
   `config.toml` are refused, and so are files that look like they hold a key, with the line

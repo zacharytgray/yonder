@@ -205,6 +205,9 @@ func (a *app) initCommand(io initOpts) error {
 	if err := a.initLayers(self, interactive, layers); err != nil {
 		return err
 	}
+	if io.noSchedule {
+		a.declineSchedule(self, self)
+	}
 
 	candidates := a.initCandidates(st, self, allowShared)
 	picks, err := a.pickPeers(st, candidates, chosen, interactive, allowShared)
@@ -249,6 +252,9 @@ func (a *app) initCommand(io initOpts) error {
 		}
 		fmt.Fprintf(a.out, "added %s (%s/%s, %s@%s)\n", m.Name, m.OS, m.Arch, m.SSHUser, m.TailscaleIP)
 		added = append(added, m.Name)
+		if io.noSchedule {
+			a.declineSchedule(self, m.Name)
+		}
 	}
 
 	// secrets: offer hands-free 1password for the fleet when this machine can
@@ -267,7 +273,9 @@ func (a *app) initCommand(io initOpts) error {
 	if len(added) > 0 {
 		a.offerMesh(self, "", addOpts{interactive: interactive, allowShared: allowShared, noMesh: noMesh})
 	}
-	a.scheduleMachines(self, append([]string{self}, added...), io.noSchedule)
+	if !io.noSchedule {
+		a.scheduleMachines(self, append([]string{self}, added...), false)
+	}
 	if !noSkill {
 		a.installSkillOn(self, added, interactive)
 	}

@@ -164,9 +164,6 @@ type Store struct {
 	// StaleOK syncs files only one side knows even with a peer this machine
 	// hasn't synced with for longer than DeleteTTL
 	StaleOK bool
-	// ReviewedHere: path -> hash a person here put in at a terminal (import).
-	// the next scan marks that version reviewed by this machine.
-	ReviewedHere map[string]string
 
 	st   *State
 	lock *os.File

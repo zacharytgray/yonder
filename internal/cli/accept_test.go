@@ -147,7 +147,7 @@ func TestAcceptOnlyWhatWasShown(t *testing.T) {
 	}
 	items[0].Hash = hashHex("something else")
 	a := &app{out: &bytes.Buffer{}, errw: &bytes.Buffer{}}
-	d := a.acceptHere(s, items)
+	d := a.acceptHere(s, items, true)
 	if len(d.Accepted) != 0 || len(d.Skipped) != 1 || !strings.Contains(d.Skipped[0].Why, "changed since") {
 		t.Fatalf("%+v", d)
 	}
@@ -156,7 +156,12 @@ func TestAcceptOnlyWhatWasShown(t *testing.T) {
 // a target accepts only what it listed, for the caller it listed it to, once
 func TestAcceptTicket(t *testing.T) {
 	waiting(t, map[string]string{"hooks/a.sh": "#!/bin/sh\necho a\n", "hooks/b.sh": "#!/bin/sh\necho b\n"})
-	t.Setenv("SSH_CONNECTION", "")
+	// as another machine's accept --all-machines reaches it: over ssh, through _exec, from a shell
+	t.Setenv("SSH_CONNECTION", "100.64.0.1 50000 100.64.0.2 22")
+	t.Setenv("YONDER_EXEC_HARNESS", "shell")
+	old := acceptCaller
+	acceptCaller = func(*app) (string, error) { return "laptop", nil }
+	t.Cleanup(func() { acceptCaller = old })
 	run := func(c interface {
 		SetArgs([]string)
 		SetOut(io.Writer)
@@ -214,11 +219,11 @@ func TestAcceptTicket(t *testing.T) {
 	_ = json.Unmarshal([]byte(out), &l)
 	ts = loadTickets()
 	tk = ts[l.Ticket]
-	tk.From = "gpu-box"
+	tk.From = "desktop"
 	ts[l.Ticket] = tk
 	_ = saveTickets(ts)
 	body, _ = json.Marshal(acceptWant{Ticket: l.Ticket, Items: []wantItem{{l.Items[0].Path, l.Items[0].Hash, l.Items[0].Exec}}})
-	if _, err := run(newAcceptApplyCmd(), string(body)); err == nil || !strings.Contains(err.Error(), "given to gpu-box") {
+	if _, err := run(newAcceptApplyCmd(), string(body)); err == nil || !strings.Contains(err.Error(), "given to desktop") {
 		t.Fatalf("another caller's ticket: %v", err)
 	}
 }

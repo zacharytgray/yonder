@@ -277,7 +277,7 @@ func (l *Linker) wants(harnesses []string) plan {
 		if w.instructions != "" {
 			// the text itself, never an @import: claude code asks once per project
 			// before importing a file outside it, which a headless session can't answer
-			p := filepath.Join(l.Home, w.instructions)
+			p := InstructionsPath(l.Home, w.instructions)
 			text, briefErr, err := l.renderText(w.key)
 			_, statErr := os.Lstat(p)
 			if err == nil && briefErr != nil && (text != "" || !w.mustExist || statErr == nil) {
@@ -313,7 +313,7 @@ func (l *Linker) wants(harnesses []string) plan {
 		}
 		if w.files != "" {
 			for _, it := range l.items(filepath.Join("files", w.key), false) {
-				add(want{path: filepath.Join(l.Home, w.files, it.name), kind: kindLink, target: it.path})
+				add(want{path: filepath.Join(InstructionsPath(l.Home, w.files), it.name), kind: kindLink, target: it.path})
 			}
 		}
 		if w.note != "" {
@@ -1040,6 +1040,16 @@ func upToDate(data, kind, content string) bool {
 
 // Blocked is the instruction files linked here that can't render now, with
 // why (a briefing over its cap, an unknown placeholder). they keep what they had.
+// RenderProblems is what Blocked would say after linking these harnesses,
+// worked out without writing anything: a dry check before a change that
+// relies on the store's text rendering.
+func (l *Linker) RenderProblems(harnesses []string) map[string]error {
+	if len(harnesses) == 0 {
+		return nil
+	}
+	return l.wants(harnesses).blocked
+}
+
 func (l *Linker) Blocked() map[string]error {
 	st, err := l.State()
 	if err != nil || st.Paused || len(st.Harnesses) == 0 {

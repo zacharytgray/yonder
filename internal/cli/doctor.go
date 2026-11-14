@@ -186,7 +186,7 @@ func codexStoreHooks(r agents.StoreStatus, self string) bool {
 	if !slices.Contains(r.Linked, "codex") {
 		return false
 	}
-	for _, d := range []string{filepath.Join(r.Dir, "files", "codex"), filepath.Join(r.Dir, "machines", self, "files", "codex")} {
+	for _, d := range []string{filepath.Join(r.Dir, "files", "codex"), filepath.Join(r.Dir, "machines", self, "files", "codex")} { // store paths, not CODEX_HOME
 		if es, err := os.ReadDir(d); err == nil && len(es) > 0 {
 			return true
 		}
@@ -229,6 +229,9 @@ func agentsChecks(self string) []doctor.Check {
 		}
 		add("review", doctor.Warn, fmt.Sprintf("%s from other machines wait%s for review here: %s", plural(n, "change"), verbS(n), strings.Join(shown, ", ")),
 			"yonder agents accept --all  (in a terminal; --all-machines reviews every machine from there)")
+	}
+	if _, ok := agents.CodexOverride(agents.Home()); ok && slices.Contains(r.Linked, "codex") {
+		add("codex", doctor.Warn, agents.CodexOverrideNote(agents.Home()), "move its text into the agents store or AGENTS.md, then delete the override file")
 	}
 	if codexStoreHooks(r, self) {
 		add("codex hooks", doctor.Pass, "Codex hooks come from the store; when they change, "+strings.ToLower(codexTrustNote[:1])+codexTrustNote[1:], "")

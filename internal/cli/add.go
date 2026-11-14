@@ -113,10 +113,15 @@ func (a *app) addCommand(arg string, o addOpts) error {
 		return err
 	}
 	fmt.Fprintf(a.out, "added %s (%s/%s, %s@%s)\n", m.Name, m.OS, m.Arch, m.SSHUser, m.TailscaleIP)
+	if o.noSchedule {
+		a.declineSchedule(self, m.Name) // before the sync that brings it the layer
+	}
 	a.syncFleet(self)
 	a.syncStoresQuiet(self)
 	a.offerMesh(self, m.Name, o)
-	a.scheduleMachines(self, []string{m.Name}, o.noSchedule)
+	if !o.noSchedule {
+		a.scheduleMachines(self, []string{m.Name}, false)
+	}
 	return nil
 }
 

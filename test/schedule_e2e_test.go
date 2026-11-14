@@ -60,7 +60,10 @@ func TestSchedule(t *testing.T) {
 	}
 
 	g := newFleet(t, "testdata/fleet.json")
-	g.must("init", "--yes", "--no-skill", "--layers", "agents", "--no-schedule")
+	// review item 6: the decline lands before the first sync, so nothing is written first
+	if r := g.must("init", "--yes", "--no-skill", "--layers", "agents", "--no-schedule"); strings.Contains(r.stdout, "wrote ") {
+		t.Fatalf("--no-schedule installed the job before declining it:\n%s", r.stdout)
+	}
 	gjob := strings.Replace(job, f.home, g.home, 1)
 	if _, err := os.Stat(gjob); err == nil {
 		t.Fatal("--no-schedule installed one")
@@ -72,5 +75,15 @@ func TestSchedule(t *testing.T) {
 	g.must("sync")
 	if _, err := os.Stat(gjob); err == nil {
 		t.Fatal("sync put back a declined schedule")
+	}
+	// review item 13: turning the layer off and on keeps the decline; install by name clears it
+	g.must("disable", "agents")
+	g.must("enable", "agents")
+	if _, err := os.Stat(gjob); err == nil {
+		t.Fatal("enable agents cleared the decline")
+	}
+	g.must("schedule", "install")
+	if _, err := os.Stat(gjob); err != nil {
+		t.Fatal("schedule install should turn it back on")
 	}
 }
