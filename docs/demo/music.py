@@ -1,9 +1,10 @@
 # soundtrack for the demo, synthesized from scratch. stdlib only.
 # usage: python3 music.py out.wav
-# 84 bpm in F major, one chord a bar: Fmaj9, Am7, Bbmaj9, C9sus4, Dm9, Bbmaj9 to C9sus4,
-# then Fmaj9 held under the outro. soft electric piano chords on 1 and the and of 2,
-# a low pad, a felt thump on 1 and 3 once the scenes start, and a small room.
-# the outro starts on the final chord, at 6 bars: index.html uses the same BAR.
+# 92 bpm in D major, plain triads, one chord a bar: D, A, Bm, G, twice, then G and A a half
+# bar each, and D held under the outro. a soft felt piano (chords and a simple top line),
+# a light pad, a felt kick on 1 and 3 and a quiet brush on 2 and 4 once the scenes start,
+# and a small room. every note is in D major.
+# the outro starts on the final chord, at 9 bars: index.html uses the same BAR.
 # build.sh sets the loudness.
 import math
 import random
@@ -12,26 +13,32 @@ import sys
 import wave
 
 SR = 44100
-BPM = 84
+BPM = 92
 BEAT = 60 / BPM
 BAR = 4 * BEAT
-DUR = 21.6
+END = 9  # the final chord, under the outro
+DUR = END * BAR + 4.2
 N = int(SR * DUR)
 random.seed(7)
 
 keys = [0.0] * N
 pad = [0.0] * N
-thump = [0.0] * N
+drums = [0.0] * N
+
+NAMES = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
 
 
-def hz(note):
-    names = {'C': -9, 'D': -7, 'E': -5, 'F': -4, 'G': -2, 'A': 0, 'B': 2}
-    n = names[note[0]]
+def midi(note):
+    n = NAMES[note[0]]
     rest = note[1:]
-    if rest.startswith('b'):
-        n -= 1
+    if rest.startswith('#'):
+        n += 1
         rest = rest[1:]
-    return 440.0 * 2 ** ((n + (int(rest) - 4) * 12) / 12)
+    return n + 12 * (int(rest) + 1)
+
+
+def hz(m):
+    return 440.0 * 2 ** ((m - 69) / 12)
 
 
 def lowpass(buf, fc, passes=2):
@@ -51,93 +58,161 @@ def highpass(buf, fc):
         buf[i] -= y
 
 
-def epiano(t0, note, dur, amp):
-    # two-operator fm at ratio 1, brightness fading in half a second, plus a soft tine
-    f = hz(note)
-    i0, n = int(t0 * SR), int(dur * SR)
-    rel = int(0.35 * SR)
-    w = 2 * math.pi * f / SR
-    for i in range(n):
-        j = i0 + i
-        if j >= N:
+_notes = {}
+
+
+def piano_note(m, n):
+    # felt piano: a few slightly stretched partials that die faster as they go up,
+    # two strings a hair apart on the lowest two, a slow attack and a damper at the end
+    key = (m, n)
+    if key in _notes:
+        return _notes[key]
+    f = hz(m)
+    out = [0.0] * n
+    att, rel = int(0.008 * SR), min(int(0.3 * SR), n // 2)
+    base = 0.55 * (f / 262) ** 0.35  # low notes ring longer
+    for p in range(1, 8):
+        fp = p * f * math.sqrt(1 + 0.0003 * p * p)
+        if fp > 6000:
             break
-        x = i / SR
-        idx = 0.5 + 1.6 * math.exp(-x / 0.35)
-        env = min(1, x / 0.005) * (0.55 * math.exp(-x / 0.5) + 0.45 * math.exp(-x / 3.0))
+        a = 0.9 ** (p - 1) / p ** 1.2
+        for detune in ((1.0, 1.0007) if p <= 2 else (1.0,)):
+            w = 2 * math.pi * fp * detune / SR
+            c = 2 * math.cos(w)
+            s1, s2 = math.sin(-w), math.sin(-2 * w)
+            fast = math.exp(-base * (1 + 0.7 * (p - 1)) * 2.2 / SR)
+            slow = math.exp(-base * (1 + 0.7 * (p - 1)) * 0.45 / SR)
+            ef, es = 0.6, 0.4
+            amp = a / (2 if p <= 2 else 1)
+            for i in range(n):
+                s = c * s1 - s2
+                s2, s1 = s1, s
+                out[i] += amp * (ef + es) * s
+                ef *= fast
+                es *= slow
+    for i in range(n):
+        g = 1.0
+        if i < att:
+            g = i / att
         if i > n - rel:
-            env *= (n - i) / rel
-        trem = 1 + 0.06 * math.sin(2 * math.pi * 4.2 * x)
-        v = math.sin(w * i + idx * math.sin(w * i))
-        # the tine: a quiet partial near the 7th harmonic that dies in a tenth of a second
-        v += 0.3 * math.exp(-x / 0.5) * math.sin(3 * w * i) + 0.22 * math.exp(-x / 0.07) * math.sin(6.97 * w * i)
-        keys[j] += amp * env * trem * v
+            g *= (n - i) / rel
+        out[i] *= g
+    _notes[key] = out
+    return out
+
+
+def piano(t0, note, dur, amp):
+    i0, n = int(t0 * SR), int(dur * SR)
+    n = min(n, N - i0)
+    if n <= 0:
+        return
+    buf = piano_note(midi(note), n)
+    for i in range(n):
+        keys[i0 + i] += amp * buf[i]
 
 
 def pad_chord(t0, notes, dur, amp):
-    # three slightly detuned sines per note, slow swell in and out
+    # two detuned sines and a soft octave per note, slow swell in and out
     i0, n = int(t0 * SR), int(dur * SR)
-    att, rel = int(0.9 * SR), int(1.0 * SR)
+    att, rel = int(0.8 * SR), int(0.9 * SR)
     for note in notes:
-        f = hz(note)
-        ws = [2 * math.pi * f * d / SR for d in (0.997, 1.0, 1.003)]
-        ph = [random.uniform(0, 6.28) for _ in ws]
+        f = hz(midi(note))
+        ws = [2 * math.pi * f * d / SR for d in (0.998, 1.002)]
+        w2 = 4 * math.pi * f / SR
+        ph = [random.uniform(0, 6.28) for _ in range(3)]
         for i in range(n):
             j = i0 + i
             if j >= N:
                 break
             env = min(1, i / att) * min(1, (n - i) / rel)
-            v = (math.sin(ws[0] * i + ph[0]) + math.sin(ws[1] * i + ph[1]) + math.sin(ws[2] * i + ph[2])) / 3
+            v = 0.5 * (math.sin(ws[0] * i + ph[0]) + math.sin(ws[1] * i + ph[1])) + 0.15 * math.sin(w2 * i + ph[2])
             pad[j] += amp * env * v
 
 
-def felt(t0, amp):
-    # a soft low thump, like a felt beater on a floor tom
-    i0, n = int(t0 * SR), int(0.4 * SR)
+def kick(t0, amp):
+    # a soft low thump, like a felt beater
+    i0, n = int(t0 * SR), int(0.35 * SR)
     ph = 0.0
     for i in range(n):
         j = i0 + i
         if j >= N:
             break
         x = i / SR
-        f = 52 + 38 * math.exp(-x / 0.03)
+        f = 55 + 35 * math.exp(-x / 0.03)
         ph += 2 * math.pi * f / SR
-        thump[j] += amp * min(1, x / 0.004) * math.exp(-x / 0.14) * math.sin(ph)
+        drums[j] += amp * min(1, x / 0.004) * math.exp(-x / 0.12) * math.sin(ph)
 
 
-# (start in bars, length in bars, piano voicing, pad notes)
-F9 = (['A3', 'C4', 'E4', 'G4'], ['F2', 'C3', 'A3'])
-AM7 = (['G3', 'C4', 'E4', 'A4'], ['A2', 'E3', 'C4'])
-BB9 = (['A3', 'C4', 'D4', 'F4'], ['Bb2', 'F3', 'D4'])
-C9S = (['G3', 'Bb3', 'D4', 'F4'], ['C3', 'G3', 'F3'])
-DM9 = (['F3', 'A3', 'C4', 'E4'], ['D3', 'A3', 'F3'])
-PROG = [(0, 1, F9), (1, 1, AM7), (2, 1, BB9), (3, 1, C9S), (4, 1, DM9), (5, 0.5, BB9), (5.5, 0.5, C9S)]
-END = 6  # the final chord, under the outro
+def brush(t0, amp):
+    # a quiet brushed tap: band-limited noise with a short tail
+    i0, n = int(t0 * SR), int(0.18 * SR)
+    lo = hi = 0.0
+    for i in range(n):
+        j = i0 + i
+        if j >= N:
+            break
+        x = i / SR
+        r = random.uniform(-1, 1)
+        lo += 0.35 * (r - lo)
+        hi += 0.02 * (lo - hi)
+        drums[j] += amp * min(1, x / 0.006) * math.exp(-x / 0.05) * (lo - hi)
 
-for start, length, (voicing, pad_notes) in PROG:
+
+# chords: right hand, left-hand root and fifth, pad
+D = (['A3', 'D4', 'F#4'], 'D2', 'A2', ['D3', 'A3', 'F#4'])
+A = (['A3', 'C#4', 'E4'], 'A2', 'E3', ['A2', 'E3', 'C#4'])
+BM = (['B3', 'D4', 'F#4'], 'B2', 'F#3', ['B2', 'F#3', 'D4'])
+G = (['B3', 'D4', 'G4'], 'G2', 'D3', ['G2', 'D3', 'B3'])
+PROG = [(0, 1, D), (1, 1, A), (2, 1, BM), (3, 1, G), (4, 1, D), (5, 1, A), (6, 1, BM), (7, 1, G),
+        (8, 0.5, G), (8.5, 0.5, A)]
+# the top line, (bar, beat, note, beats): chord tones, mostly steps
+MELODY = [
+    (1, 0, 'C#5', 2), (1, 2, 'E5', 2),
+    (2, 0, 'D5', 2), (2, 2, 'F#5', 1), (2, 3, 'E5', 1),
+    (3, 0, 'D5', 3), (3, 3, 'B4', 1),
+    (4, 0, 'A4', 1), (4, 1, 'D5', 1), (4, 2, 'F#5', 2),
+    (5, 0, 'E5', 2), (5, 2, 'C#5', 1), (5, 3, 'E5', 1),
+    (6, 0, 'F#5', 1), (6, 1, 'E5', 1), (6, 2, 'D5', 2),
+    (7, 0, 'B4', 2), (7, 2, 'D5', 2),
+    (8, 0, 'D5', 2), (8, 2, 'C#5', 2),
+]
+PULSE_FROM = 1.25 * BAR  # the first scene starts on beat 2 of bar 1
+
+for start, length, (rh, root, fifth, pad_notes) in PROG:
     t0 = start * BAR
-    pad_chord(t0, pad_notes, length * BAR + 0.9, 0.04)
-    # the chord on 1, rolled a little; a lighter one on the and of 2 in full bars
-    for k, nt in enumerate(voicing):
-        epiano(t0 + k * 0.014, nt, length * BAR + 0.2, 0.06)
+    pad_chord(t0, pad_notes, length * BAR + 0.8, 0.035)
+    piano(t0, root, length * BAR + 0.3, 0.11)
+    for k, nt in enumerate(rh):
+        piano(t0 + 0.012 * k, nt, 2 * BEAT + 0.15, 0.085)
     if length == 1:
-        for k, nt in enumerate(voicing[1:]):
-            epiano(t0 + 1.5 * BEAT + k * 0.01, nt, 2.5 * BEAT, 0.032)
-    # the pulse starts with the first scene, at bar 1
-    if start >= 1:
-        for b in (0, 2):
-            if b * BEAT < length * BAR:
-                felt(t0 + b * BEAT, 0.1 if b == 0 else 0.07)
+        piano(t0 + 2 * BEAT, fifth, 2 * BEAT + 0.3, 0.07)
+        for k, nt in enumerate(rh):
+            piano(t0 + 2 * BEAT + 0.01 * k, nt, 2 * BEAT + 0.15, 0.06)
+    for b in range(int(length * 4)):
+        t = t0 + b * BEAT
+        if t >= PULSE_FROM - 0.01:
+            if b % 2 == 0:
+                kick(t, 0.09 if b == 0 else 0.065)
+            else:
+                brush(t, 0.05)
+
+for bar, beat, note, beats in MELODY:
+    piano(bar * BAR + beat * BEAT, note, beats * BEAT + 0.2, 0.13)
 
 t0 = END * BAR
-pad_chord(t0, ['F2', 'C3', 'A3'], DUR - t0, 0.04)
-for k, nt in enumerate(['F3', 'A3', 'C4', 'E4', 'G4']):
-    epiano(t0 + k * 0.022, nt, DUR - t0, 0.06)
-felt(t0, 0.09)
+pad_chord(t0, ['D3', 'A3', 'F#4'], DUR - t0, 0.035)
+piano(t0, 'D2', DUR - t0, 0.11)
+piano(t0, 'D3', DUR - t0, 0.08)
+for k, nt in enumerate(['A3', 'D4', 'F#4']):
+    piano(t0 + 0.02 * k, nt, DUR - t0, 0.085)
+piano(t0 + 0.08, 'D5', DUR - t0, 0.13)
+kick(t0, 0.09)
 
-lowpass(keys, 4500)
-lowpass(pad, 900)
-lowpass(thump, 180)
-highpass(pad, 70)
+lowpass(keys, 3800)
+highpass(keys, 45)
+lowpass(pad, 1200)
+highpass(pad, 80)
+lowpass(drums, 2400, 1)
 
 
 def comb(src, delay, fb, damp):
@@ -162,14 +237,14 @@ def allpass(src, delay, g=0.5):
     return out
 
 
-# a small dark room on the keys and pad, different combs left and right
+# a small warm room on the piano and pad, different combs left and right
 send = [keys[i] + 0.5 * pad[i] for i in range(N)]
-lowpass(send, 3000, 1)
+lowpass(send, 2800, 1)
 rooms = []
 for spread in (0, 23):
     acc = [0.0] * N
     for d in (1116, 1188, 1277, 1356):
-        c = comb(send, d + spread, 0.78, 0.4)
+        c = comb(send, d + spread, 0.8, 0.4)
         for i in range(N):
             acc[i] += c[i]
     acc = allpass(allpass(acc, 556 + spread), 441 + spread)
@@ -177,9 +252,9 @@ for spread in (0, 23):
 
 L, R = [0.0] * N, [0.0] * N
 for i in range(N):
-    dry = keys[i] + pad[i] + thump[i]
-    L[i] = dry + 0.055 * rooms[0][i]
-    R[i] = dry + 0.055 * rooms[1][i]
+    dry = keys[i] + pad[i] + drums[i]
+    L[i] = dry + 0.06 * rooms[0][i]
+    R[i] = dry + 0.06 * rooms[1][i]
 
 # fade in the first 30 ms and out over the last 1.5 s, soft clip, peak normalize;
 # build.sh brings it to -16 LUFS

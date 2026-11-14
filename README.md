@@ -21,10 +21,10 @@
 **[<kbd> <br> Design <br> </kbd>](docs/design.md)**
 
 <a href="docs/demo/yonder-demo.mp4">
-  <img src="docs/demo/hero.gif" width="100%" alt="Your work is on four computers. Your agent knows one. From a phone, to the agent on the Mac mini: The Pi's disk is full, can you clean it up? It runs yonder run pi to find 2.1 GB of old pip downloads and remove them. Run the training script on the PC: yonder run pc --detach starts it, and yonder jobs shows epoch 3 of 20 later. Use my Hugging Face token on the PC: yonder run --secret HF_TOKEN prints the value as [HF_TOKEN]. Then: Every computer you own, one agent. Tell your agent: Set up Yonder for me, with the repo link.">
+  <img src="docs/demo/hero.gif" width="100%" alt="More than one computer? Your agent uses them like one. In a coding agent on the laptop: The thesis repo is on my desktop. Pick up where I left off. It runs yonder run desktop for the git log, then Run the tests on the PC: yonder run pc --detach starts them. Later, a text from the phone to the agent on the Pi: How are the tests doing? yonder jobs shows all 212 passed. Is my Hugging Face key working there? yonder run pc --secret HF_TOKEN runs hf auth whoami. Then a rule added on the laptop shows up on the desktop: Your setup follows you. Every agent knows the drill. Then: Every computer you own, one agent. Tell your agent: Set up Yonder for me, with the repo link.">
 </a>
 
-**[▶ Watch the 22-second demo, with sound](docs/demo/yonder-demo.mp4)**
+**[▶ Watch the 28-second demo, with sound](docs/demo/yonder-demo.mp4)**
 
 </div>
 

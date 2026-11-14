@@ -30,17 +30,59 @@
   #h1 { top: 210px; }
   #h2 { top: 335px; color: var(--sun-dk); }
   .mlabel { position: absolute; top: 788px; font: 600 36px var(--sans); text-align: center; color: var(--cream); transform: translateX(-50%); white-space: nowrap; }
-  #agenttag { position: absolute; top: 846px; font: 600 22px var(--sans); color: var(--night); background: var(--sun-dk);
-    border-radius: 999px; padding: 5px 14px; transform: translateX(-50%); white-space: nowrap; }
-  #lockup { position: absolute; left: 150px; top: 120px; width: 600px; }
-  #o1 { position: absolute; left: 150px; top: 300px; font-size: 72px; }
-  #o3 { position: absolute; left: 154px; top: 420px; font: 500 28px var(--sans); color: var(--muted-dk); }
-  #o4 { position: absolute; left: 154px; top: 468px; font: 500 30px var(--mono); color: var(--cream); white-space: pre; }
-  #o2 { position: absolute; left: 154px; top: 548px; font: 500 24px var(--sans); color: var(--muted-dk); }
+  #lockup { position: absolute; left: 150px; top: 100px; width: 600px; }
+  #o1 { position: absolute; left: 150px; top: 272px; font-size: 72px; }
+  #o3 { position: absolute; left: 154px; top: 388px; font: 500 28px var(--sans); color: var(--muted-dk); }
+  #o4 { position: absolute; left: 154px; top: 434px; font: 500 30px var(--mono); color: var(--cream); white-space: pre; }
+  #o2 { position: absolute; left: 154px; top: 508px; font: 500 24px var(--sans); color: var(--muted-dk); }
 
-  /* paper ground */
+  /* paper ground: the scenes */
   #paper { position: absolute; inset: 0; background: var(--paper); color: var(--ink); }
+  .scene { position: absolute; inset: 0; }
 
+  /* the strip of machines */
+  .strip { position: absolute; height: 92px; }
+  .strip svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  .chip { position: absolute; top: 14px; width: 270px; height: 64px; border-radius: 14px; background: var(--raised);
+    border: 1.5px solid rgba(79,107,66,0.45); display: flex; align-items: center; gap: 14px; padding: 0 16px 0 18px; }
+  .chip .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--online); flex: none; }
+  .chip .nm { font: 600 23px var(--sans); white-space: nowrap; }
+  .chip .rl { font-size: 16px; color: var(--muted); margin-top: 1px; white-space: nowrap; }
+  .chip .rl b { font-weight: 600; color: var(--sun-text); }
+  .chip .tag { position: absolute; right: 14px; top: -13px; font-size: 13px; font-weight: 600; color: var(--sun-text);
+    border: 1.5px solid rgba(163,67,26,0.4); border-radius: 999px; padding: 3px 9px; white-space: nowrap; background: var(--raised); }
+
+  /* windows: the coding agent and plain terminals */
+  .win { position: absolute; border-radius: 16px; background: var(--ink); color: var(--cream);
+    box-shadow: 0 26px 70px rgba(38,34,61,0.25); overflow: hidden; display: flex; flex-direction: column; }
+  .tbar { height: 46px; flex: none; display: flex; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid var(--rule-dk); }
+  .tbar i { width: 13px; height: 13px; border-radius: 50%; display: block; background: var(--rule-dk); }
+  .tbar span { margin-left: 14px; font-size: 16px; color: var(--muted-dk); font-family: var(--mono); }
+  .tbar span b { color: var(--cream); font-weight: 500; }
+  .tx { flex: 1; min-height: 0; overflow: hidden;
+    padding: 18px 28px 10px; font-family: var(--mono); white-space: pre; font-variant-ligatures: none; }
+  .tx.code { font-size: 24px; line-height: 1.5; }
+  .ln { display: block; }
+  .blk { margin-top: 14px; }
+  .blk:first-child { margin-top: 0; }
+  .user { color: var(--cream); background: rgba(243,234,218,0.07); border-radius: 8px; padding: 4px 14px; margin-left: -14px; margin-right: -14px; }
+  .user .gl { color: var(--sun-dk); }
+  .tool .bul { display: inline-block; width: 0.62em; height: 0.62em; border-radius: 50%; background: var(--online-dk); margin-right: 0.55em; vertical-align: 0.02em; }
+  .tool .nm { color: var(--muted-dk); margin-right: 0.6em; }
+  .out { display: block; margin-left: 0.55em; padding-left: 1.05em; border-left: 2px solid var(--rule-dk); color: var(--muted-dk); }
+  .out.add { color: var(--online-dk); }
+  .reply { color: var(--cream); font-family: var(--sans); font-size: 1.08em; white-space: normal; }
+  .prompt { flex: none; margin: 6px 20px 18px; height: 60px; border: 1.5px solid var(--rule-dk); border-radius: 12px;
+    display: flex; align-items: center; padding: 0 18px; font: 24px var(--mono); white-space: pre; color: var(--cream); }
+  .prompt .gl { color: var(--sun-dk); margin-right: 0.6em; }
+  .prompt .ph { color: #6f6884; }
+  .p { color: var(--sun-dk); }
+  .d { color: var(--muted-dk); }
+  .g { color: var(--online-dk); }
+  .hl { background: rgba(240,138,85,0.18); box-shadow: -10px 0 0 rgba(240,138,85,0.18), 10px 0 0 rgba(240,138,85,0.18); border-radius: 4px; color: var(--cream); }
+  .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--cream); vertical-align: -0.22em; opacity: 0.85; }
+
+  /* the phone */
   #phone { position: absolute; left: 0; top: 0; width: 400px; height: 820px; transform-origin: 0 0;
     border-radius: 58px; background: var(--ink); padding: 12px; box-shadow: 0 30px 80px rgba(38,34,61,0.22); }
   #screen { position: relative; width: 100%; height: 100%; border-radius: 47px; overflow: hidden; background: var(--raised); }
@@ -61,33 +103,9 @@
   #compose { position: absolute; left: 14px; right: 14px; bottom: 26px; height: 48px; border-radius: 24px;
     border: 1px solid var(--rule); padding: 0 18px; display: flex; align-items: center; font-size: 19px; color: #9a92a8; }
 
-  #strip { position: absolute; height: 92px; }
-  #strip svg { position: absolute; inset: 0; overflow: visible; }
-  .chip { position: absolute; top: 14px; width: 270px; height: 64px; border-radius: 14px; background: var(--raised);
-    border: 1.5px solid rgba(79,107,66,0.45); display: flex; align-items: center; gap: 14px; padding: 0 18px; }
-  .chip .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--online); flex: none; }
-  .chip .nm { font: 600 23px var(--sans); white-space: nowrap; }
-  .chip .rl { font-size: 16px; color: var(--muted); margin-top: 1px; white-space: nowrap; }
-  .chip .tag { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--sun-text); border: 1.5px solid rgba(163,67,26,0.4);
-    border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
-
-  #term { position: absolute; border-radius: 16px; background: var(--ink); color: var(--cream);
-    box-shadow: 0 26px 70px rgba(38,34,61,0.25); overflow: hidden; }
-  .tbar { height: 46px; display: flex; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid var(--rule-dk); }
-  .tbar i { width: 13px; height: 13px; border-radius: 50%; display: block; background: var(--rule-dk); }
-  .tbar span { margin-left: 14px; font-size: 16px; color: var(--muted-dk); font-family: var(--mono); }
-  #tbody { padding: 22px 28px; font: 25px/1.5 var(--mono); white-space: pre; font-variant-ligatures: none; }
-  .p { color: var(--sun-dk); }
-  .d { color: var(--muted-dk); }
-  .g { color: var(--online-dk); }
-  .ln { display: block; }
-  .hl { background: rgba(240,138,85,0.16); box-shadow: -10px 0 0 rgba(240,138,85,0.16), 10px 0 0 rgba(240,138,85,0.16); border-radius: 4px; }
-  .sec { display: inline-block; font-size: 1.4em; margin: 6px 0; color: var(--night); background: var(--sun-dk); border-radius: 6px; padding: 0 8px; }
-  .cur { display: inline-block; width: 0.6em; height: 1.15em; background: var(--cream); vertical-align: -0.22em; opacity: 0.85; }
-
-  #caption { position: absolute; text-align: center; font-size: 48px;
+  .caption { position: absolute; text-align: center; font-size: 48px;
     font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 72; color: var(--ink); }
-  #caption em { font-style: normal; color: var(--sun); }
+  .caption em { font-style: normal; color: var(--sun); }
 </style>
 </head>
 <body>
@@ -113,21 +131,13 @@
         <rect x="1345" y="832" width="70" height="11" rx="5.5" fill="#f08a55" opacity=".2"/>
       </g>
       <circle cx="1650" cy="230" r="7" fill="#e3a23a"/>
-      <path id="arc-laptop" d="M1000 748 Q 615 470 232 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
-      <path id="arc-pi" d="M1000 748 Q 810 610 622 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
-      <path id="arc-pc" d="M1000 748 Q 1360 520 1718 748" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"/>
-      <circle id="d-laptop" cx="230" cy="760" r="13"/>
-      <circle id="d-pi" cx="620" cy="760" r="13"/>
-      <circle id="d-mini" cx="1000" cy="760" r="13" fill="#9fbf8c"/>
-      <circle id="d-pc" cx="1720" cy="760" r="13"/>
+      <!-- every machine reaches every other: no hub -->
+      <g id="arcs" fill="none" stroke="#a9c8da" stroke-width="3" stroke-linecap="round"></g>
+      <g id="dots"></g>
     </svg>
-    <div class="mlabel" id="lb-laptop" style="left:230px">Laptop</div>
-    <div class="mlabel" id="lb-pi" style="left:620px">Pi</div>
-    <div class="mlabel" id="lb-mini" style="left:1000px">Mac mini</div>
-    <div class="mlabel" id="lb-pc" style="left:1720px">PC</div>
-    <div id="agenttag" style="left:1000px">your agent</div>
-    <div class="hook disp" id="h1">Your work is on four computers.</div>
-    <div class="hook disp" id="h2">Your agent knows one.</div>
+    <div id="labels"></div>
+    <div class="hook disp" id="h1">More than one computer?</div>
+    <div class="hook disp" id="h2">Your agent uses them like one.</div>
     <img id="lockup" src="../brand/yonder-logo-dark.svg" alt="yonder">
     <div class="disp" id="o1">Every computer you own, one agent.</div>
     <div id="o3">Tell your agent:</div>
@@ -136,45 +146,49 @@
   </div>
 
   <div id="paper">
-    <div id="strip">
-      <svg width="1355" height="92">
-        <line class="lk" id="l-0" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>
-        <line class="lk" id="l-1" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>
-        <line class="lk" id="l-2" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>
-        <line id="l-on" y1="46" y2="46" stroke="#d2602f" stroke-width="4" stroke-linecap="round"/>
-      </svg>
-      <div class="chip" id="c-laptop"><div class="dot"></div><div><div class="nm">Laptop</div><div class="rl" id="laptop-rl">M3 Pro · 36 GB</div></div></div>
-      <div class="chip" id="c-pi"><div class="dot"></div><div><div class="nm">Pi</div><div class="rl" id="pi-rl">Cortex-A76 · 8 GB</div></div></div>
-      <div class="chip" id="c-mini"><div class="dot"></div><div><div class="nm">Mac mini</div><div class="rl" id="mini-rl">M4 · 16 GB</div></div><div class="tag">agent here</div></div>
-      <div class="chip" id="c-pc"><div class="dot"></div><div><div class="nm">PC</div><div class="rl" id="pc-rl">RTX 4090 · 64 GB</div></div></div>
+    <!-- 2: a coding agent on the laptop -->
+    <div class="scene" id="sc-code">
+      <div class="strip" id="st-code"></div>
+      <div class="win" id="w-code"><div class="tbar"><i></i><i></i><i></i><span><b>agent</b> · laptop · ~</span></div>
+        <div class="tx code" id="tx-code"></div><div class="prompt" id="pr-code"></div></div>
+      <div class="caption disp" id="cap-code"></div>
     </div>
-
-    <div id="term"><div class="tbar"><i></i><i></i><i></i><span>hermes · mac-mini</span></div><div id="tbody"></div></div>
-
-    <div id="phone"><div id="screen">
-      <div class="ph-island"></div>
-      <div class="ph-status"><span>9:41</span><span>●●●</span></div>
-      <div class="ph-head"><img class="avatar" src="../brand/yonder-icon.svg" alt=""><div class="ph-name">agent</div><div class="ph-sub">on mac-mini</div></div>
-      <div id="thread">
-        <div class="bubble me" id="m1">The Pi's disk is full, can you clean it up?</div>
-        <div class="bubble them" id="r1">Done. I cleared 2.1 GB of old pip downloads.</div>
-        <div class="bubble me" id="m2">Run the training script on the PC.</div>
-        <div class="bubble them" id="r2">It's running there. Epoch 3 of 20 so far.</div>
-        <div class="bubble me" id="m3">Use my Hugging Face token on the PC.</div>
-        <div class="bubble them" id="r3">Done. It came from 1Password by name.</div>
-        <div class="bubble them dots" id="typing"><i></i><i></i><i></i></div>
-      </div>
-      <div id="compose">Message</div>
-    </div></div>
-
-    <div id="caption" class="disp"></div>
+    <!-- 3: a text from the phone, to the agent on the pi -->
+    <div class="scene" id="sc-phone">
+      <div class="strip" id="st-phone"></div>
+      <div class="win" id="w-phone"><div class="tbar"><i></i><i></i><i></i><span><b>agent</b> · pi</span></div>
+        <div class="tx" id="tx-phone" style="font-size:22px;line-height:1.5"></div></div>
+      <div id="phone"><div id="screen">
+        <div class="ph-island"></div>
+        <div class="ph-status"><span>9:41</span><span>●●●</span></div>
+        <div class="ph-head"><img class="avatar" src="../brand/yonder-icon.svg" alt=""><div class="ph-name">agent</div><div class="ph-sub">on pi</div></div>
+        <div id="thread">
+          <div class="bubble me" id="m1">How are the tests doing?</div>
+          <div class="bubble them" id="r1">All 212 passed on the PC.</div>
+          <div class="bubble me" id="m2">Is my Hugging Face key working there?</div>
+          <div class="bubble them" id="r2">Yes. It came from 1Password by name.</div>
+          <div class="bubble them dots" id="typing"><i></i><i></i><i></i></div>
+        </div>
+        <div id="compose">Message</div>
+      </div></div>
+      <div class="caption disp" id="cap-phone"></div>
+    </div>
+    <!-- 4: the same rules on every machine -->
+    <div class="scene" id="sc-sync">
+      <div class="strip" id="st-sync"></div>
+      <div class="win" id="w-sync-l"><div class="tbar"><i></i><i></i><i></i><span><b>agent</b> · laptop · ~</span></div>
+        <div class="tx code" id="tx-sync-l" style="font-size:22px"></div><div class="prompt" id="pr-sync" style="font-size:22px"></div></div>
+      <div class="win" id="w-sync-r"><div class="tbar"><i></i><i></i><i></i><span><b>desktop</b> · later</span></div>
+        <div class="tx" id="tx-sync-r" style="font-size:22px;line-height:1.5"></div></div>
+      <div class="caption disp" id="cap-sync"></div>
+    </div>
   </div>
 </div>
 
 <script>
-// every frame is a pure function of t (seconds). the music is 84 bpm; BAR matches music.py.
-const BAR = 4 * 60 / 84;
-const A = BAR, B = A + 5, C = B + 5, OUT = 6 * BAR, XF = 0.35;
+// every frame is a pure function of t (seconds). the music is 92 bpm; BAR matches music.py.
+const BEAT = 60 / 92, BAR = 4 * BEAT;
+const S2 = 5 * BEAT, S3 = 4 * BAR, S4 = 7 * BAR, OUT = 9 * BAR, XF = 0.35;
 const $ = id => document.getElementById(id);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const eo = x => 1 - Math.pow(1 - clamp(x), 3);
@@ -189,107 +203,154 @@ function rise(el, t, t0, dur = 0.35, dy = 10) {
 }
 
 // the real output, from docs/demo/fleet.sh
-const JOB = '20261114-170957-49ba83';
-const SCENES = [
-  { from: A, to: 'pi', steps: [
-    { cmd: "yonder run pi -- 'du -sh .cache/* | sort -h'", type: A + 0.9, cps: 45, out: A + 2.0, gap: 0.12, lines: [
-      ' 12K    .cache/fontconfig',
-      ' 46M    .cache/thumbnails',
-      '2.1G    .cache/pip',
-    ], hl: { line: 2, at: A + 2.5 } },
-    { cmd: "yonder run pi -- 'rm -rf .cache/pip && du -sh .cache'", type: A + 2.8, cps: 60, out: A + 3.75, lines: [
-      ' 46M    .cache',
-    ] }] },
-  { from: B, to: 'pc', steps: [
-    { cmd: 'yonder run pc --detach -- python3 train.py', type: B + 0.8, cps: 45, out: B + 1.85, gap: 0.12, lines: [
-      JOB,
-      `<span class="d">yonder: started on pc; output: yonder jobs pc ${JOB}</span>`,
-    ] },
-    { cmd: `yonder jobs pc ${JOB}`, type: B + 2.7, cps: 55, out: B + 3.45, gap: 0.15, lines: [
-      'epoch 1/20  loss 0.920',
-      'epoch 2/20  loss 0.745',
-      'epoch 3/20  loss 0.604',
-    ] }] },
-  { from: C, to: 'pc', steps: [
-    { cmd: "yonder run pc --secret HF_TOKEN -- 'echo $HF_TOKEN'", type: C + 0.8, cps: 50, out: C + 1.95, lines: [
-      '<span class="sec">[HF_TOKEN]</span>',
-    ] }] },
+const JOB = '20261114-174544-bcac84';
+const GITLOG = [
+  'db6f739 Start the chapter 4 results table',
+  '51dfd99 Add the BLEU eval script',
+  'c1c1275 Fix the data loader seed',
 ];
-const CAPTIONS = [
-  { a: A + 0.45, b: B, html: '<em>Fix</em> another machine.' },
-  { a: B + 0.45, b: C, html: 'Send a job to <em>the right machine</em>.' },
-  { a: C + 0.45, b: OUT, html: 'Keys by name. The value stays <em>out of output and logs</em>.' },
-];
-const MSGS = [['m1', A + 0.3], ['r1', A + 4.25], ['m2', B + 0.3], ['r2', B + 4.2], ['m3', C + 0.3], ['r3', C + 2.6]];
-const TYPING = [[A + 0.75, A + 4.25], [B + 0.75, B + 4.2], [C + 0.75, C + 2.6]];
-// remote commands: when each starts, and which chip it reaches
-const RUNS = [[A + 1.85, 'pi'], [B + 1.75, 'pc'], [C + 1.85, 'pc']];
-const ORDER = ['laptop', 'pi', 'mini', 'pc'];
 
-function termBody(sc, t) {
+// ---- the strip of machines, shared by the scenes
+const ORDER = ['laptop', 'desktop', 'pc', 'pi'];
+const MACH = {
+  laptop: ['Laptop', 'M3 Pro · 36 GB'], desktop: ['Desktop', 'M4 · 24 GB'],
+  pc: ['PC', 'RTX 4090 · 64 GB'], pi: ['Pi', 'Cortex-A76 · 8 GB'],
+};
+const CW = 270;
+function makeStrip(id, width) {
+  const el = $(id), sp = (width - CW) / 3;
+  el.style.width = width + 'px';
+  let svg = `<svg width="${width}" height="92">`;
+  for (let i = 0; i < 3; i++)
+    svg += `<line x1="${i * sp + CW}" x2="${(i + 1) * sp}" y1="46" y2="46" stroke="#ddd0ba" stroke-width="2.5" stroke-dasharray="6 8"/>`;
+  for (let i = 0; i < 3; i++) svg += `<path class="arc" fill="none" stroke="#d2602f" stroke-width="4" stroke-linecap="round"/>`;
+  svg += '</svg>';
+  el.innerHTML = svg + ORDER.map((n, i) =>
+    `<div class="chip" data-m="${n}" style="left:${i * sp}px"><div class="dot"></div><div><div class="nm">${MACH[n][0]}</div>` +
+    `<div class="rl">${MACH[n][1]}</div></div><div class="tag">agent here</div></div>`).join('');
+  el._sp = sp;
+}
+// st: { here, links: [[from, to, t0]], rl: {m: html}, hot: [m] }
+function drawStrip(id, t, st) {
+  const el = $(id), sp = el._sp;
+  const cx = n => ORDER.indexOf(n) * sp + CW / 2;
+  const arcs = el.querySelectorAll('.arc');
+  arcs.forEach((p, i) => {
+    const l = st.links && st.links[i];
+    if (!l || t < l[2]) { p.style.opacity = 0; return; }
+    const x0 = cx(l[0]), x1 = cx(l[1]), lift = 22 + Math.abs(x1 - x0) * 0.04;
+    p.setAttribute('d', `M${x0} 12 Q ${(x0 + x1) / 2} ${12 - 2 * lift} ${x1} 12`);
+    const L = p.getTotalLength(), k = eo((t - l[2]) / 0.45);
+    p.style.strokeDasharray = `${L} ${L}`;
+    p.style.strokeDashoffset = L * (1 - k);
+    p.style.opacity = 1;
+  });
+  el.querySelectorAll('.chip').forEach(c => {
+    const n = c.dataset.m, hot = (st.hot || []).includes(n);
+    c.style.borderColor = hot ? 'rgba(210,96,47,0.7)' : '';
+    c.querySelector('.dot').style.background = hot ? '#d2602f' : '';
+    const tag = c.querySelector('.tag');
+    tag.style.display = st.here === n ? '' : 'none';
+    // keep the tag clear of the arcs, which leave toward the middle
+    const left = ORDER.indexOf(n) < 2;
+    tag.style.left = left ? '14px' : 'auto';
+    tag.style.right = left ? 'auto' : '14px';
+    c.querySelector('.rl').innerHTML = (st.rl && st.rl[n]) || MACH[n][1];
+  });
+}
+const hotAt = (links, t) => links.filter(l => t >= l[2]).map(l => l[1]);
+
+// ---- the coding agent: blocks appear at their times, the newest at the bottom
+// user: typed into the prompt box from `type`, sent at `at`
+// fill a transcript; once it is taller than its window, the oldest lines scroll off the top
+function fill(id, html) {
+  const el = $(id);
+  el.innerHTML = '<div>' + html + '</div>';
+  const inner = el.firstChild, over = inner.offsetHeight - (el.clientHeight - 28);
+  inner.style.marginTop = over > 0 ? -over + 'px' : '0';
+}
+function codeBody(blocks, t) {
   let html = '';
-  sc.steps.forEach((st, si) => {
-    if (si > 0 && t < st.type) return;
-    const active = t < st.out;
-    const cur = active ? '<span class="cur"></span>' : '';
+  for (const b of blocks) {
+    if (t < b.at) continue;
+    const k = eo((t - b.at) / 0.2);
+    let inner = '';
+    if (b.user) inner = `<span class="ln"><span class="gl">› </span>${esc(b.user)}</span>`;
+    if (b.cmd || b.edit) {
+      inner = `<span class="ln"><span class="bul"></span>${b.edit ? '<span class="nm">edit</span>' + esc(b.edit) : esc(b.cmd)}</span>`;
+      (b.out || []).forEach((l, i) => {
+        const ko = eo((t - (b.outAt + i * 0.08)) / 0.2);
+        if (ko > 0) inner += `<span class="out${b.add ? ' add' : ''}" style="opacity:${ko}">${esc(l)}</span>`;
+      });
+    }
+    if (b.reply) inner = `<span class="ln">${esc(b.reply)}</span>`;
+    const cls = b.user ? 'user' : b.reply ? 'reply' : 'tool';
+    html += `<div class="blk ${cls}" style="opacity:${k}">${inner}</div>`;
+  }
+  return html;
+}
+function promptBox(blocks, t, cps) {
+  for (const b of blocks) {
+    if (!b.user || t >= b.at || t < b.type) continue;
+    return `<span class="gl">›</span>${esc(typed(b.user, t, b.type, cps))}<span class="cur"></span>`;
+  }
+  return '<span class="gl">›</span><span class="cur" style="opacity:0.5"></span>';
+}
+
+const C = S2;
+const CODE = [
+  { type: C + 0.2, at: C + 1.35, user: 'The thesis repo is on my desktop. Pick up where I left off.' },
+  { at: C + 1.6, cmd: "yonder run desktop -- 'git -C ~/thesis log --oneline -3'", outAt: C + 2.0, out: GITLOG },
+  { at: C + 2.7, reply: 'You stopped at the chapter 4 results table. I\'ll pick it up there.' },
+  { type: C + 3.55, at: C + 4.35, user: "Run the tests on the PC, it's faster." },
+  { at: C + 4.6, cmd: "yonder run pc --detach -- 'cd ~/thesis && python3 -m unittest -q'", outAt: C + 5.0, out: [
+    JOB, `yonder: started on pc; output: yonder jobs pc ${JOB}`] },
+  { at: C + 5.55, reply: 'The tests are running on the PC. Back to chapter 4.' },
+];
+const CODE_LINKS = [['laptop', 'desktop', C + 1.6], ['laptop', 'pc', C + 4.6]];
+
+function renderCode(t) {
+  fill('tx-code', codeBody(CODE, t));
+  $('pr-code').innerHTML = promptBox(CODE, t, 55);
+  const links = CODE_LINKS.filter(l => t >= l[2]).slice(-1);
+  drawStrip('st-code', t, { here: 'laptop', links, hot: hotAt(links, t),
+    rl: Object.assign(t >= C + 2.0 ? { desktop: '<b>~/thesis</b>' } : {}, t >= C + 5.0 ? { pc: '<b>tests running</b>' } : {}) });
+}
+
+// ---- the phone, and the agent on the pi
+const P = S3;
+const PSTEPS = [
+  { cmd: 'yonder jobs pc', type: P + 0.85, cps: 40, out: P + 1.4, gap: 0.08, lines: [
+    'ID                      STATE   EXIT  STARTED              COMMAND',
+    `${JOB}  exited  0     2026-11-14 17:45:44  cd ~/thesis && python3 -m unittest -q`] },
+  { cmd: `yonder jobs pc ${JOB}`, type: P + 1.95, cps: 60, out: P + 2.65, gap: 0.08, lines: [
+    '----------------------------------------------------------------------',
+    'Ran 212 tests in 13.526s', '', '<span class="g">OK</span>'], raw: true },
+  { cmd: 'yonder run pc --secret HF_TOKEN -- hf auth whoami', type: P + 4.6, cps: 62, out: P + 5.55, gap: 0.08, lines: [
+    '<span class="g">✓ Logged in</span>', '  user: me'], raw: true },
+];
+const MSGS = [['m1', P + 0.3], ['r1', P + 3.25], ['m2', P + 4.1], ['r2', P + 6.0]];
+const TYPING = [[P + 0.75, P + 3.25], [P + 4.55, P + 6.0]];
+const PHONE_LINKS = [['pi', 'pc', P + 1.4]];
+
+function termBody(steps, t) {
+  let html = '';
+  steps.forEach((st, si) => {
+    if (t < st.type) return;
+    const cur = t < st.out ? '<span class="cur"></span>' : '';
     html += '<span class="ln"><span class="p">$</span> ' + esc(typed(st.cmd, t, st.type, st.cps)) + cur + '</span>';
     st.lines.forEach((l, i) => {
       const k = eo((t - (st.out + i * (st.gap || 0))) / 0.2);
       if (k <= 0) return;
       const hl = st.hl && st.hl.line === i && t >= st.hl.at ? ' hl' : '';
-      html += `<span class="ln${hl}" style="opacity:${k}">${l}</span>`;
+      html += `<span class="ln${hl}" style="opacity:${k}">${(st.raw ? l : esc(l)) || ' '}</span>`;
     });
   });
   return html;
 }
 
-function renderDusk(t) {
-  const outro = t >= A;
-  // arcs reach the other machines at the end of the hook; they stay for the outro
-  for (const [n, at] of [['pi', 1.45], ['laptop', 1.6], ['pc', 1.75]]) {
-    const p = $('arc-' + n), L = p.getTotalLength();
-    const k = outro ? 1 : eo((t - at) / 0.6);
-    p.style.strokeDasharray = `${L} ${L}`;
-    p.style.strokeDashoffset = L * (1 - k);
-    p.style.opacity = k > 0 ? 0.85 : 0;
-    const d = $('d-' + n), kd = outro ? 1 : eo((t - at - 0.45) / 0.3);
-    d.setAttribute('fill', kd > 0.5 ? '#9fbf8c' : '#1a1828');
-    d.setAttribute('stroke', kd > 0.5 ? 'none' : '#aba3b8');
-    d.setAttribute('stroke-width', 3);
-    d.setAttribute('r', kd > 0.5 ? 13 : 11);
-    $('lb-' + n).style.opacity = lerp(0.55, 1, kd);
-  }
-  $('sun').setAttribute('transform', `translate(0 ${(outro ? t - OUT + 3 : t) * 2})`);
-  for (const id of ['h1', 'h2']) {
-    $(id).style.display = outro ? 'none' : '';
-    $(id).style.opacity = 1 - eo((t - (A - 0.65)) / 0.3);
-  }
-  for (const id of ['lockup', 'o1', 'o2', 'o3', 'o4']) $(id).style.display = outro ? '' : 'none';
-  if (outro) {
-    for (const [id, at] of [['lockup', OUT + 0.1], ['o1', OUT + 0.35], ['o3', OUT + 0.9], ['o4', OUT + 1.1], ['o2', OUT + 1.4]])
-      rise($(id), t, at, 0.45);
-  }
-}
-
-function renderPaper(t) {
-  const sc = SCENES.filter(s => t >= s.from).pop() || SCENES[0];
-  const left = 505, width = 1355, th = 420;
-  const top0 = (1080 - (92 + 28 + th + 36 + 60)) / 2;
-  const term = $('term');
-  term.style.left = left + 'px'; term.style.width = width + 'px';
-  term.style.top = (top0 + 120) + 'px'; term.style.height = th + 'px';
-  const strip = $('strip');
-  strip.style.left = left + 'px'; strip.style.width = width + 'px'; strip.style.top = top0 + 'px';
-  $('caption').style.left = left + 'px'; $('caption').style.width = width + 'px';
-  $('caption').style.top = (top0 + 120 + th + 30) + 'px';
-
-  // the terminal body crossfades between scenes
-  let bo = 1;
-  for (const s of [B, C]) { const d = t - s; if (d > -0.15 && d < 0.15) bo = Math.min(bo, Math.abs(d) / 0.15); }
-  $('tbody').style.opacity = bo;
-  $('tbody').innerHTML = termBody(sc, t);
-
-  $('phone').style.transform = 'translate(110px, 150px) scale(0.95)';
+function renderPhone(t) {
+  fill('tx-phone', termBody(PSTEPS, t));
   for (const [id, at] of MSGS) {
     const el = $(id);
     el.style.display = t >= at ? '' : 'none';
@@ -298,55 +359,146 @@ function renderPaper(t) {
   const ty = $('typing');
   ty.style.display = TYPING.some(([a, b]) => t >= a && t < b) ? '' : 'none';
   [...ty.children].forEach((d, i) => { d.style.opacity = 0.4 + 0.5 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI / 1.1 - i * 0.9)); });
+  const rl = t >= P + 5.55 ? { pc: '<b>HF_TOKEN, by name</b>' } : t >= P + 2.65 ? { pc: '<b>212 tests passed</b>' } : {};
+  drawStrip('st-phone', t, { here: 'pi', links: PHONE_LINKS, hot: hotAt(PHONE_LINKS, t), rl });
+}
 
-  // strip: chips evenly spaced, a dashed link between neighbors, an active link from the mac mini
-  const cw = 270, sp = (width - cw) / 3;
-  const xs = Object.fromEntries(ORDER.map((n, i) => [n, i * sp]));
-  ORDER.forEach(n => { $('c-' + n).style.left = xs[n] + 'px'; });
-  for (let i = 0; i < 3; i++) { const l = $('l-' + i); l.setAttribute('x1', i * sp + cw); l.setAttribute('x2', (i + 1) * sp); }
-  let run = null;
-  for (const r of RUNS) if (t >= r[0]) run = r;
-  const lon = $('l-on');
-  if (run) {
-    const k = eo((t - run[0]) / 0.35);
-    const [x0, x1] = run[1] === 'pi' ? [xs.mini, xs.pi + cw] : [xs.mini + cw, xs.pc];
-    lon.setAttribute('x1', x0); lon.setAttribute('x2', x0 + (x1 - x0) * k);
-  }
-  lon.style.opacity = run ? 1 : 0;
-  for (const n of ORDER) {
-    const on = run && run[1] === n;
-    const el = $('c-' + n);
-    el.style.borderColor = on ? 'rgba(210,96,47,0.7)' : '';
-    el.querySelector('.dot').style.background = on ? '#d2602f' : '';
-  }
-  $('pi-rl').innerHTML = t >= A + 3.75 ? '<span style="color:#a3431a">2.1 GB freed</span>' : 'Cortex-A76 · 8 GB';
-  $('pc-rl').innerHTML = t >= C + 1.95 ? '<span style="color:#a3431a">HF_TOKEN, by name</span>'
-    : t >= B + 1.85 ? '<span style="color:#a3431a">train.py running</span>' : 'RTX 4090 · 64 GB';
+// ---- the same rules on every machine
+const Y = S4;
+const SYNC = [
+  { type: Y + 0.15, at: Y + 0.95, user: 'Always run the tests before you commit.' },
+  { at: Y + 1.2, edit: '~/.local/share/yonder/agents/instructions.md', outAt: Y + 1.45, add: true, out: [
+    '+ - Run the tests before you commit.'] },
+  { at: Y + 1.85, reply: 'Added to your shared rules. Every machine gets them.' },
+];
+const SYNC_R = [
+  { cmd: 'tail -4 ~/.local/share/yonder/agents/instructions.md', type: Y + 2.35, cps: 75, out: Y + 3.1, gap: 0.08, lines: [
+    '## House rules', '- Be brief.', '- Ask before deleting anything.', '- Run the tests before you commit.'],
+    hl: { line: 3, at: Y + 3.5 } },
+];
+const SYNC_LINKS = [['laptop', 'desktop', Y + 1.85], ['laptop', 'pc', Y + 1.95], ['laptop', 'pi', Y + 2.05]];
 
-  const cap = CAPTIONS.find(c => t >= c.a && t < c.b);
-  const ce = $('caption');
-  if (cap) {
-    ce.innerHTML = cap.html;
-    const k = eo((t - cap.a) / 0.4), ko = clamp((t - (cap.b - 0.2)) / 0.2);
+function renderSync(t) {
+  fill('tx-sync-l', codeBody(SYNC, t));
+  $('pr-sync').innerHTML = promptBox(SYNC, t, 60);
+  fill('tx-sync-r', termBody(SYNC_R, t));
+  $('w-sync-r').style.opacity = eo((t - (Y + 2.1)) / 0.3);
+  const rl = {};
+  for (const [, m, at] of SYNC_LINKS) if (t >= at + 0.4) rl[m] = '<b>rules in sync</b>';
+  if (t >= Y + 1.45) rl.laptop = '<b>rule added</b>';
+  drawStrip('st-sync', t, { here: 'laptop', links: SYNC_LINKS, hot: hotAt(SYNC_LINKS, t), rl });
+}
+
+// ---- layout, once
+function place(id, x, y, w, h) {
+  const el = $(id);
+  el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.width = w + 'px';
+  if (h) el.style.height = h + 'px';
+}
+// code: full width
+place('st-code', 160, 125, 1600); makeStrip('st-code', 1600);
+place('w-code', 160, 247, 1600, 620);
+place('cap-code', 160, 898, 1600);
+// phone: the phone on the left, strip and terminal on the right
+$('phone').style.transform = 'translate(110px, 150px) scale(0.95)';
+place('st-phone', 505, 132, 1355); makeStrip('st-phone', 1355);
+place('w-phone', 505, 252, 1355, 520);
+place('cap-phone', 505, 812, 1355);
+// sync: two windows side by side
+place('st-sync', 110, 200, 1700); makeStrip('st-sync', 1700);
+place('w-sync-l', 110, 328, 830, 420);
+place('w-sync-r', 980, 328, 830, 420);
+place('cap-sync', 110, 790, 1700);
+
+const CAPTIONS = [
+  ['cap-code', C + 0.45, S3, 'Ask on your laptop. It works <em>where the work is</em>.'],
+  ['cap-phone', P + 0.45, P + 4.05, 'Text it from your phone. <em>Start anywhere.</em>'],
+  ['cap-phone', P + 4.2, S4, 'Keys by name. The value stays <em>out of output and logs</em>.'],
+  ['cap-sync', Y + 0.45, OUT, 'Your setup follows you. <em>Every agent knows the drill.</em>'],
+];
+function renderCaptions(t) {
+  for (const id of ['cap-code', 'cap-phone', 'cap-sync']) {
+    const cap = CAPTIONS.find(c => c[0] === id && t >= c[1] && t < c[2]);
+    const ce = $(id);
+    if (!cap) { ce.style.opacity = 0; continue; }
+    ce.innerHTML = cap[3];
+    const k = eo((t - cap[1]) / 0.4), ko = clamp((t - (cap[2] - 0.2)) / 0.2);
     ce.style.opacity = k * (1 - ko);
     ce.style.transform = `translateY(${(1 - k) * 10}px)`;
-  } else ce.style.opacity = 0;
+  }
+}
+
+// ---- the dusk: four machines on the horizon, joined to each other
+const HX = { laptop: 230, desktop: 720, pc: 1210, pi: 1700 };
+const HN = { laptop: 'Laptop', desktop: 'Desktop', pc: 'PC', pi: 'Pi' };
+const PAIRS = [['laptop', 'desktop'], ['desktop', 'pc'], ['pc', 'pi'], ['laptop', 'pc'], ['desktop', 'pi'], ['laptop', 'pi']];
+(function buildDusk() {
+  $('arcs').innerHTML = PAIRS.map(([a, b]) => {
+    const x0 = HX[a] + 4, x1 = HX[b] - 4, h = 40 + (x1 - x0) * 0.09;
+    return `<path d="M${x0} 748 Q ${(x0 + x1) / 2} ${748 - 2 * h} ${x1} 748"/>`;
+  }).join('');
+  $('dots').innerHTML = ORDER.map(n => `<circle cx="${HX[n]}" cy="760" r="13"/>`).join('');
+  $('labels').innerHTML = ORDER.map(n => `<div class="mlabel" style="left:${HX[n]}px">${HN[n]}</div>`).join('');
+})();
+
+function renderDusk(t) {
+  const outro = t >= S2;
+  // the arcs join the machines at the end of the hook; they stay for the outro
+  [...$('arcs').children].forEach((p, i) => {
+    const L = p.getTotalLength(), k = outro ? 1 : eo((t - (1.25 + i * 0.12)) / 0.6);
+    p.style.strokeDasharray = `${L} ${L}`;
+    p.style.strokeDashoffset = L * (1 - k);
+    p.style.opacity = k > 0 ? (i < 3 ? 0.85 : 0.55) : 0;
+  });
+  const kd = outro ? 1 : eo((t - 1.9) / 0.3);
+  [...$('dots').children].forEach(d => {
+    d.setAttribute('fill', kd > 0.5 ? '#9fbf8c' : '#1a1828');
+    d.setAttribute('stroke', kd > 0.5 ? 'none' : '#aba3b8');
+    d.setAttribute('stroke-width', 3);
+    d.setAttribute('r', kd > 0.5 ? 13 : 11);
+  });
+  [...$('labels').children].forEach(l => { l.style.opacity = lerp(0.6, 1, kd); });
+  $('sun').setAttribute('transform', `translate(0 ${(outro ? t - OUT + 3 : t) * 2})`);
+  for (const id of ['h1', 'h2']) {
+    $(id).style.display = outro ? 'none' : '';
+    $(id).style.opacity = 1 - eo((t - (S2 - 0.65)) / 0.3);
+  }
+  for (const id of ['lockup', 'o1', 'o2', 'o3', 'o4']) $(id).style.display = outro ? '' : 'none';
+  if (outro) {
+    for (const [id, at] of [['lockup', OUT + 0.1], ['o1', OUT + 0.35], ['o3', OUT + 0.9], ['o4', OUT + 1.1], ['o2', OUT + 1.4]])
+      rise($(id), t, at, 0.45);
+  }
+}
+
+// each scene fades in over its cut and out just before the next
+const SCENES = [['sc-code', S2, S3], ['sc-phone', S3, S4], ['sc-sync', S4, OUT]];
+const RENDER = { 'sc-code': renderCode, 'sc-phone': renderPhone, 'sc-sync': renderSync };
+function renderPaper(t) {
+  for (const [id, a, b] of SCENES) {
+    const o = (a === S2 ? 1 : eo((t - a) / 0.25)) * (b === OUT ? 1 : 1 - eo((t - (b - 0.2)) / 0.2));
+    const show = t >= a - 0.01 && t < b && o > 0;
+    $(id).style.display = show ? '' : 'none';
+    if (!show) continue;
+    $(id).style.opacity = o;
+    RENDER[id](t);
+  }
+  renderCaptions(t);
 }
 
 function render(t) {
   // the hook crossfades into paper; paper dips to night, then the outro fades up
-  const pin = eo((t - (A - XF)) / XF), pout = eo((t - (OUT - 0.3)) / 0.3);
+  const pin = eo((t - (S2 - XF)) / XF), pout = eo((t - (OUT - 0.3)) / 0.3);
   const po = pin * (1 - pout);
-  const dk = t < A ? 1 : eo((t - OUT) / 0.45);
+  const dk = t < S2 ? 1 : eo((t - OUT) / 0.45);
   $('paper').style.opacity = po;
   $('paper').style.display = po > 0 ? '' : 'none';
   $('dusk').style.opacity = dk;
   $('dusk').style.display = dk > 0 ? '' : 'none';
   if (dk > 0) renderDusk(t);
-  if (po > 0) renderPaper(t);
+  if (po > 0) renderPaper(Math.max(t, S2));
 }
 
-window.DURATION = 21.6;
+window.DURATION = Math.round((OUT + 4.2) * 30) / 30;
 window.render = render;
 render(Number(new URLSearchParams(location.search).get('t') || 0));
 </script>

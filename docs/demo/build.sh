@@ -1,6 +1,6 @@
 #!/bin/sh
 # rebuilds yonder-demo.mp4, hero.gif and poster.jpg from index.html and music.py.
-# needs node 22+, google chrome, ffmpeg, python3. takes about four minutes.
+# needs node 22+, google chrome, ffmpeg, python3. takes about five minutes.
 set -eu
 cd "$(dirname "$0")"
 work=${WORK:-$(mktemp -d)}
