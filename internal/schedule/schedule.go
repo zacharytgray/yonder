@@ -330,6 +330,16 @@ func Declined(stateDir string) bool {
 // so tests write the files and leave the real service manager alone.
 func manage() bool { return os.Getenv("YONDER_HOME") == "" }
 
+// noManager: linux without systemctl (a container, a minimal install). the
+// timer can't run there; other machines' syncs still reach it. a var for tests.
+var noManager = func(goos string) bool {
+	if goos == "darwin" {
+		return false
+	}
+	_, err := exec.LookPath("systemctl")
+	return err != nil
+}
+
 // command runs a service-manager command. a var for tests.
 var command = func(name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -420,7 +430,7 @@ func (j Job) current() bool {
 			return false
 		}
 	}
-	if !manage() {
+	if !manage() || noManager(j.OS) {
 		return true
 	}
 	if j.OS == "darwin" {
@@ -431,6 +441,9 @@ func (j Job) current() bool {
 }
 
 func unload(j Job) []string {
+	if noManager(j.OS) {
+		return nil
+	}
 	if j.OS == "darwin" {
 		if _, err := command("launchctl", "print", "gui/"+uid()+"/"+Label); err == nil {
 			_, _ = command("launchctl", "bootout", "gui/"+uid()+"/"+Label)
@@ -462,6 +475,9 @@ func load(j Job) []string {
 			return []string{"launchd didn't load it now (" + firstLine(out, err) + "); macOS loads it at your next login. With nobody logged in to this Mac's desktop, launchd has no session to run it in"}
 		}
 		return nil
+	}
+	if noManager(j.OS) {
+		return []string{"this machine has no systemd, so the 15-minute timer can't run here. It still gets every change when another machine syncs with it; `yonder schedule remove` stops this note"}
 	}
 	if out, err := command("systemctl", "--user", "daemon-reload"); err != nil {
 		return []string{"systemd didn't load it (" + firstLine(out, err) + "); the systemd user manager isn't running for this user. Log in once, or run `sudo loginctl enable-linger " + userName() + "` so it runs without a login, then `yonder schedule install`"}
@@ -541,7 +557,7 @@ func Remove(goos, home, stateDir string, decline bool) (Result, error) {
 			return res, err
 		}
 	}
-	if manage() && goos != "darwin" {
+	if manage() && goos != "darwin" && !noManager(goos) {
 		_, _ = command("systemctl", "--user", "daemon-reload")
 	}
 	res.Lines = append(res.Lines, "removed the sync schedule here")
@@ -558,8 +574,9 @@ type Status struct {
 	BinOK     bool     `json:"bin_ok"`    // that file exists
 	Loaded    *bool    `json:"loaded"`    // null when not checked
 	LoadError string   `json:"load_error,omitempty"`
-	LastExit  *int     `json:"last_exit,omitempty"` // as the service manager saw it
-	Linger    *bool    `json:"linger,omitempty"`    // linux: runs without a login
+	LastExit  *int     `json:"last_exit,omitempty"`  // as the service manager saw it
+	Linger    *bool    `json:"linger,omitempty"`     // linux: runs without a login
+	NoManager bool     `json:"no_manager,omitempty"` // linux without systemd: the timer can't run
 	Declined  bool     `json:"declined"`
 	LastRun   *Run     `json:"last_run"`
 	Log       string   `json:"log"`
@@ -588,6 +605,10 @@ func Check(goos, home, stateDir string) Status {
 		}
 	}
 	if !s.Installed || !manage() {
+		return s
+	}
+	if noManager(goos) {
+		s.NoManager = true
 		return s
 	}
 	loaded := false
@@ -632,6 +653,8 @@ func (s Status) Problem(now time.Time) (status, detail, fix string) {
 		return "fail", "no sync schedule: edits reach this machine only when a sync runs", "yonder schedule install"
 	case !s.Ours:
 		return "warn", "a " + Label + " job that yonder didn't write (" + s.Files[0] + ")", "yonder schedule install  (backs it up and takes it over)"
+	case s.NoManager:
+		return "warn", "no systemd here, so the timer can't run; the other machines' syncs still reach this one", "nothing needed; `yonder schedule remove` stops this warning"
 	case !s.BinOK:
 		return "fail", "the job runs " + s.Bin + ", which is gone (moved by an upgrade?)", "yonder schedule install"
 	case s.Loaded != nil && !*s.Loaded:

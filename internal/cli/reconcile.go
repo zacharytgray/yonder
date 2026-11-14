@@ -210,7 +210,7 @@ func (a *app) reconcileApply(planPath string, dryRun bool) error {
 		code, err := a.execOn(rec, self, yonderCmd(rec, "_reconcile-trim", "--probe"), nil, &out, &errb)
 		switch {
 		case err != nil:
-			return fmt.Errorf("%s can't be reached (%v); nothing was written; run this again when it is online", m, err)
+			return fmt.Errorf("%s can't be reached (%w); nothing was written; run this again when it is online", m, err)
 		case code != 0:
 			return fmt.Errorf("%s can't apply a reconcile (%s); upgrade yonder there to 0.4 or later; nothing was written", m, firstLine(errb.String()))
 		}
@@ -379,9 +379,11 @@ func (a *app) trimHere(self string, req trimRequest) trimDone {
 			continue
 		}
 		backup := filepath.Join(dir, "files", t.Path)
-		if err := os.MkdirAll(filepath.Dir(backup), 0o700); err == nil {
+		err = os.MkdirAll(filepath.Dir(backup), 0o700)
+		if err == nil {
 			err = os.WriteFile(backup, data, 0o600)
 		}
+		// never change the file without its backup
 		if err == nil {
 			err = writeKeepMode(p, []byte(next), st.Mode().Perm())
 		}
@@ -420,7 +422,7 @@ func validID(id string) bool {
 		return false
 	}
 	for _, r := range id {
-		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r == '-') {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && r != '-' {
 			return false
 		}
 	}

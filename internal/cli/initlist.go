@@ -73,7 +73,7 @@ func (a *app) initList(asJSON, probe bool, user string, allowShared bool) error 
 			_ = writeJSON(a.out, v)
 			return quietExit(ExitError)
 		}
-		return fmt.Errorf("%v; %s", err, v.Next)
+		return fmt.Errorf("%w; %s", err, v.Next)
 	}
 	cfg, _ := a.store.Config()
 	self := st.Self.Name()

@@ -115,7 +115,8 @@ instructions, skills, subagents and hooks, and syncs between machines:
   take the value out and use a secret name instead.
 - Hooks from other machines wait for review. Only the user can accept them, in a terminal. When
   `yonder sync` or `yonder doctor` says changes wait, tell the user to run
-  `yonder agents accept --all-machines` in their terminal: one summary, one yes, every machine.
+  `yonder agents accept --all-machines` in their terminal: one summary, they type `y` once, every
+  machine.
   Never try to accept for them.
 - Codex asks the user to trust a changed hook again before running it. After a Codex hook
   (`files/codex/...`) changes, tell them to open Codex and run `/hooks`.
@@ -160,7 +161,8 @@ explain it and write the plan.
    A section on one machine only is usually about that machine: suggest keeping it per machine,
    but ask. Never decide a difference yourself.
 4. Write the plan as JSON (actions `shared` with `from`, `per-machine`, `merge` with `text`,
-   `drop`, `leave`; the exact `key` from gather; `"v": 1` and the `fingerprint`):
+   `drop`, `leave`; the `key` exactly as gather prints it, heading level included; `"v": 1` and
+   the `fingerprint`):
    ```json
    {"v": 1, "fingerprint": "...", "sections": [
      {"key": "## style", "action": "shared", "from": "laptop"},

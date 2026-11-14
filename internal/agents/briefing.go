@@ -286,7 +286,7 @@ func availability(m registry.Machine) string {
 		return "always-on"
 	case strings.Contains(n, "sleep") || strings.Contains(n, "night"):
 		return "sleeps"
-	case strings.Contains(n, "offline") || strings.Contains(n, "sometimes on"):
+	case strings.Contains(n, "offline") || strings.Contains(n, "sometimes on") || strings.Contains(n, "often off") || strings.Contains(n, "usually off") || strings.Contains(n, "switched off"):
 		return "intermittent"
 	case m.Role == "laptop" || m.Facts.Laptop:
 		return "travels"

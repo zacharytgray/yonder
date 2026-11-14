@@ -247,7 +247,9 @@ func TestManagerCalls(t *testing.T) {
 		}
 		return "active", nil
 	}
-	defer func() { command = old }()
+	oldNo := noManager
+	noManager = func(string) bool { return false }
+	defer func() { command, noManager = old, oldNo }()
 	if _, err := Install(j); err != nil {
 		t.Fatal(err)
 	}
@@ -304,5 +306,30 @@ func TestApplyFollowsLayer(t *testing.T) {
 	}
 	if res, _ := Apply(true, "gpu-box"); len(res.Lines) > 0 {
 		t.Errorf("apply ignored the decline: %v", res.Lines)
+	}
+}
+
+// linux without systemd: one plain warning, a quiet second install, a WARN in doctor
+func TestNoSystemd(t *testing.T) {
+	j := testJob(t, "linux")
+	oldNo, oldCmd := noManager, command
+	noManager = func(string) bool { return true }
+	command = func(name string, args ...string) (string, error) {
+		t.Fatalf("called %s with no systemd", name)
+		return "", nil
+	}
+	defer func() { noManager, command = oldNo, oldCmd }()
+	t.Setenv("YONDER_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	res, err := Install(j)
+	if err != nil || len(res.Warn) != 1 || !strings.Contains(res.Warn[0], "no systemd") {
+		t.Fatalf("first install: %+v %v", res, err)
+	}
+	if res, _ := Install(j); len(res.Warn)+len(res.Lines) != 0 {
+		t.Fatalf("second install should be quiet: %+v", res)
+	}
+	st := Check(j.OS, j.Home, j.StateDir)
+	if s, d, _ := st.Problem(time.Now()); s != "warn" || !strings.Contains(d, "other machines") {
+		t.Fatalf("doctor: %s %s", s, d)
 	}
 }

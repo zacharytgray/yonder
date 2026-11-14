@@ -175,7 +175,7 @@ func (a *app) initCommand(io initOpts) error {
 	interactive, chosen, user, ids, noSkill, allowShared, noMesh, layers := io.interactive, io.chosen, io.user, io.ids, io.noSkill, io.allowShared, io.noMesh, io.layers
 	st, err := a.status()
 	if err != nil {
-		if errors.Is(err, tailnet.ErrNotInstalled) || errors.Is(err, tailnet.ErrNotRunning) {
+		if errors.Is(err, tailnet.ErrNotInstalled) || errors.Is(err, tailnet.ErrNotRunning) || errors.Is(err, tailnet.ErrSandboxed) {
 			return err
 		}
 		return fmt.Errorf("reading tailscale status: %w", err)
@@ -457,12 +457,18 @@ func (a *app) pickPeers(st *tailnet.Status, cands []candidate, chosen []string, 
 	if len(chosen) > 0 {
 		var picks []tailnet.Peer
 		for _, n := range chosen {
-			p, err := a.resolvePeer(st, strings.TrimSpace(n), allowShared, interactive)
+			n = strings.TrimSpace(n)
+			if n == st.Self.Name() || strings.TrimSuffix(n, ".") == strings.TrimSuffix(st.Self.DNSName, ".") {
+				fmt.Fprintf(a.out, "  %s: this machine; it is set up anyway, so --machines only needs the others\n", n)
+				continue
+			}
+			p, err := a.resolvePeer(st, n, allowShared, interactive)
 			if err != nil {
 				return nil, err
 			}
 			if p.DNSName == st.Self.DNSName {
-				return nil, fmt.Errorf("%s is this machine", n)
+				fmt.Fprintf(a.out, "  %s: this machine; it is set up anyway, so --machines only needs the others\n", n)
+				continue
 			}
 			if p.Mobile() {
 				return nil, fmt.Errorf("%s is a %s device; yonder runs on macOS and Linux only", n, p.OS)

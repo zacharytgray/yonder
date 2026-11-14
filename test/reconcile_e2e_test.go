@@ -59,8 +59,10 @@ func TestReconcileLocal(t *testing.T) {
 	}
 	b, _ := os.ReadFile(claude)
 	got := string(b)
-	block := got[strings.Index(got, "<!-- yonder:begin"):]
-	own := got[:strings.Index(got, "<!-- yonder:begin")]
+	own, block, found := strings.Cut(got, "<!-- yonder:begin")
+	if !found {
+		t.Fatalf("no block after reconcile:\n%s", got)
+	}
 	if !strings.Contains(own, "keep this here") || strings.Contains(own, "be brief") || strings.Contains(got, "todo") || !strings.Contains(block, "be brief") {
 		t.Fatalf("CLAUDE.md after reconcile:\n%s\n%s", got, r.stdout)
 	}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
@@ -16,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/zacharytgray/yonder/internal/agents"
@@ -29,22 +29,28 @@ import (
 var (
 	acceptTTY = func() bool { return isTerminal(os.Stdin) && isTerminal(os.Stdout) }
 	acceptAsk = func(q string) bool {
-		ok := false
-		if err := huh.NewConfirm().Title(q).Affirmative("Accept").Negative("Not now").Value(&ok).Run(); err != nil {
-			return false
-		}
-		return ok
+		fmt.Fprintf(os.Stdout, "%s Type y and press Enter to accept, anything else to leave it: ", q)
+		line, _ := acceptIn.ReadString('\n')
+		return slices.Contains(choiceKeys[choiceAccept], strings.ToLower(strings.TrimSpace(line)))
 	}
+	// a typed answer on the terminal, not a menu: the person types y to accept
 	acceptChoose = func(title string, opts []string) string {
-		var pick string
-		var hs []huh.Option[string]
+		var keys []string
 		for _, o := range opts {
-			hs = append(hs, huh.NewOption(o, o))
+			keys = append(keys, choiceKeys[o][0]+" "+strings.ToLower(o))
 		}
-		if err := huh.NewSelect[string]().Title(title).Options(hs...).Value(&pick).Run(); err != nil {
-			return ""
+		fmt.Fprintf(os.Stdout, "\n%s\n  %s\nType one letter and press Enter: ", title, strings.Join(keys, "\n  "))
+		line, err := acceptIn.ReadString('\n')
+		if err != nil && line == "" {
+			return choiceNo
 		}
-		return pick
+		ans := strings.ToLower(strings.TrimSpace(line))
+		for _, o := range opts {
+			if slices.Contains(choiceKeys[o], ans) {
+				return o
+			}
+		}
+		return choiceNo
 	}
 	acceptPage = func(w io.Writer, text string) {
 		pager := os.Getenv("PAGER")
@@ -68,13 +74,22 @@ var (
 	}
 )
 
-// the choices at the prompt
+// the choices at the prompt, and what the person types for each
 const (
 	choiceAccept = "Accept all"
 	choiceShow   = "Show the full diffs first"
 	choiceOne    = "Go through them one by one"
 	choiceNo     = "Not now"
 )
+
+var choiceKeys = map[string][]string{
+	choiceAccept: {"y", "yes"},
+	choiceShow:   {"s", "show"},
+	choiceOne:    {"o", "one"},
+	choiceNo:     {"n", "no", ""},
+}
+
+var acceptIn = bufio.NewReader(os.Stdin)
 
 // ticketTTL is how long a target honors the list it gave a caller
 const ticketTTL = 10 * time.Minute
@@ -233,7 +248,7 @@ default: hooks, executable files, hook configs), "all", or "none".`,
 func notTerminal(fleet bool) error {
 	c := "yonder agents accept --all"
 	if fleet {
-		c += " --all-machines"
+		c = "yonder agents accept --all-machines"
 	}
 	return fmt.Errorf("accept needs a person at a terminal, so it accepts nothing here. Ask the user to run `%s` in a terminal; `yonder agents diff <path>` shows one change", c)
 }

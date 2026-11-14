@@ -1045,6 +1045,9 @@ resident between runs.
   `StandardOutput=append:`). `--scheduled` cuts that log back when it passes 1 MB, writes
   `sync/schedule.json` when it starts and again with its exit code when it ends, waits a random 0 to
   30 seconds first (`YONDER_SCHEDULE_JITTER=off` skips it), and is otherwise a normal sync.
+- Linux without systemd (no `systemctl`: a container, a minimal install) can't run the timer.
+  Install writes the files, says so once, and is quiet after that; doctor WARNs "no systemd here"
+  and says nothing needs doing, since the other machines' syncs still reach it.
 - Machines don't all sync at the same minute: the minute in each 15 is a hash of the machine's name,
   plus the random wait. Two machines syncing each other at once find each other busy and skip
   (see the store lock above), so this keeps those skips rare.
@@ -1171,9 +1174,12 @@ grouped by kind: hooks (`hooks/`, `machines/<m>/hooks/`), harness files (`files/
 `machines/<m>/files/`), scripts (other executables) and other (with `review = "all"`). Each line
 is the path, the machine it came from with the harness when known, how long ago, and either
 "new, N lines, size" or "+a -r lines" against what is live, plus an exec-bit change. Paths,
-origins and diffs are shown escaped (control, format and bidi characters). Then one question:
-accept all, show the full diffs first (paged through `$PAGER`, else `less -R`; `--show` does it
-before asking), go through them one by one, or not now. `accept <path>...` asks per path, as
+origins and diffs are shown escaped (control, format and bidi characters). Then one question,
+answered by typing a letter and Enter: `y` accepts all, `s` shows the full diffs first (paged
+through `$PAGER`, else `less -R`; `--show` does it before asking), `o` goes through them one by
+one, and `n`, Enter alone or anything else is not now. A typed letter, not a menu: it is the one
+thing the person must type, it can't be picked by a stray key, and it reads the same through any
+terminal. `accept <path>...` asks per path, as
 before. Accepting takes only what the summary showed: each item carries the hash and exec bit
 listed, and a change that arrived since keeps waiting (`AcceptIf`). It needs a terminal on stdin
 and stdout and refuses otherwise, after printing the summary and the command for the person to

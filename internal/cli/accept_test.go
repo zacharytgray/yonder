@@ -58,7 +58,7 @@ func fakeTerm(t *testing.T, tty bool, picks ...string) *[]string {
 		picks = picks[1:]
 		return p
 	}
-	acceptPage = func(w io.Writer, text string) { asked = append(asked, "page"); w.Write([]byte(text)) }
+	acceptPage = func(w io.Writer, text string) { asked = append(asked, "page"); _, _ = w.Write([]byte(text)) }
 	return &asked
 }
 

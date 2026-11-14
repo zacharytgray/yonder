@@ -219,7 +219,8 @@ func (a *app) runScheduled(o syncOpts) error {
 	err := a.syncCommand("", nil, o)
 	code := ExitCode(err)
 	var ee *exitError
-	if err != nil && !(errors.As(err, &ee) && ee.msg == "") {
+	quiet := errors.As(err, &ee) && ee.msg == ""
+	if err != nil && !quiet {
 		fmt.Fprintf(a.out, "yonder: %v\n", err)
 	} else {
 		err = nil

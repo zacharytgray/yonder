@@ -27,8 +27,9 @@ machine.
   don't retry in a loop.
 - Yonder needs the network: Tailscale, SSH to the other machines, and downloads. If you are
   Codex, your sandbox blocks network access by default, so `yonder` commands that reach another
-  machine fail there. Ask the person to approve running them outside the sandbox (or to restart
-  Codex with network access), and say why. If you are Claude Code, the person approves commands as
+  machine fail there (yonder says it is running inside Codex's sandbox). Ask the person to
+  approve running them outside the sandbox (or to restart Codex with full access for this
+  setup), and say why. If you are Claude Code, the person approves commands as
   you go; ask them to allow `yonder` commands for this setup.
 - Run `yonder ... --help` whenever you're unsure of a flag. Every prompt Yonder has has a flag,
   and you should always use the flags (`--yes` and friends): you can't answer Yonder's
@@ -77,11 +78,12 @@ Linux, or a Mac without Homebrew:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zacharytgray/yonder/main/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"   # repeat in each command if your shell doesn't keep it
 ```
 
-That installs to `~/.local/bin/yonder`. If `yonder` isn't found afterwards, use
-`~/.local/bin/yonder` and tell the person to add `~/.local/bin` to their PATH. Check with
-`yonder version`.
+That installs to `~/.local/bin/yonder`. If `yonder` isn't found afterwards, start each command
+with `export PATH="$HOME/.local/bin:$PATH";` (your shell may not keep it between commands), and
+tell the person to add that line to their shell profile. Check with `yonder version`.
 
 You only install it here. `yonder init` installs it on the other machines itself.
 
@@ -143,6 +145,9 @@ and ask which they want:
 > You can turn either on or off later with `yonder enable` or `yonder disable`. Which would you
 > like?
 
+Ask now, too, whether you may create an SSH key on a machine that has none. A fresh machine
+often has none, and without one it can't reach the others directly (step 6).
+
 Also ask, optionally, for a role and a short note for each machine. The role is one of
 `laptop`, `desktop`, `server`, `gpu`, `other`. Notes are things like "sleeps at night" or "heavy
 jobs only". Agents read them to pick a machine. They can skip this.
@@ -163,6 +168,8 @@ yonder init --yes --machines pc,laptop --layers agents,secrets \
   --role pc=gpu --notes pc="heavy jobs only" --role laptop=laptop --notes laptop="travels"
 ```
 
+- `--machines` lists the other machines. This machine always joins; listing it does no harm.
+  Its role and notes still go in `--role` and `--notes`.
 - `--layers none` for no layers. Leave out machines they didn't pick.
 - Add `--user`, `--identity <machine>=<path>` or `--allow-shared` as step 3 found.
 - `--no-schedule` only if they asked for no automatic sync.
@@ -172,7 +179,11 @@ Read the whole output. It ends with the problems, if any, and each says what to 
 - `ssh key auth to <m> failed; run 'ssh-copy-id ...'`: ask the person to run that line, then
   `yonder add <m>`.
 - `<m> is offline ... saved as pending`: nothing to do now; `yonder add <m>` later.
-- A warning that launchd or systemd didn't load the schedule: see step 10.
+- `<m> has no mesh keys on record`: that machine has no SSH key of its own, so it can't reach
+  the others directly (this machine can still reach it). Ask the person if you may make one
+  there. If they agree: `yonder run <m> -- 'ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/id_ed25519'`,
+  then `yonder add <m>`, which hands the new key to the other machines itself.
+- A note that launchd or systemd didn't load the schedule: see step 10.
 - "Your machines' agent instructions don't match": that's step 8.
 
 Then run `yonder ls` and show the person their machines.
@@ -233,7 +244,9 @@ yonder agents import ~/.claude --kind skills --kind subagents --kind commands --
 
 On another machine: `yonder run <m> -- yonder agents import '~/.claude' --kind skills ...`.
 Codex hook configs go in with `yonder agents import ~/.codex/hooks.json --kind files --harness
-codex`.
+codex`. Claude Code hook scripts arrive in `~/.claude/hooks/` on every machine, but Yonder never
+edits `settings.json`, so the `hooks` entry that runs them stays the person's to add on each
+machine (tell them which scripts arrived).
 
 **Reconcile the instructions files.** Run:
 
@@ -241,9 +254,13 @@ codex`.
 yonder agents gather --json
 ```
 
+Copy each section's `key` exactly as gather prints it, heading level included (`# style` and
+`## style` are different keys).
+
 If init said the instructions don't match, or the summary shows sections that differ or that
 only some machines have, follow "Reconcile machines whose instructions differ" in the yonder
-skill (`skill/yonder/SKILL.md` in this repo; init also installed it into each agent harness).
+skill. init installed it at `~/.claude/skills/yonder/SKILL.md` and
+`~/.agents/skills/yonder/SKILL.md`; `yonder agents reconcile --help` shows the plan format.
 In short: tell the person about each difference in plain words and ask whether to share one
 version, keep each machine's own on purpose, merge them, or drop it. Write the plan, show the
 `--dry-run` result, and run `yonder agents reconcile --plan <file>` only after they say yes.
@@ -273,8 +290,8 @@ and it should. If `yonder sync` or `yonder doctor` says changes wait for review,
 >
 >     yonder agents accept --all-machines
 >
-> It shows one summary for all your machines and asks once. Press the option to see the full
-> diffs first if you want to read them.
+> It shows one summary for all your machines and asks once: type `y` and press Enter to accept
+> everything, or `s` to read the full diffs first.
 
 What the person imported or accepted at a terminal themselves doesn't ask again on their other
 machines; what you imported does, once.
@@ -295,6 +312,9 @@ says what to run. Do the ones you can; tell the person about the rest. Common on
   person runs `sudo loginctl enable-linger $USER` on it.
 - `schedule`, "launchd didn't load it" on a Mac nobody is logged in to: it starts at the next
   login. Nothing to do.
+- `schedule`, "no systemd here": a machine without systemd (a container, a minimal install)
+  can't run the timer. It still gets every change when another machine syncs with it. Nothing
+  to do; `yonder schedule remove <m>` hides the warning.
 - `review`: step 9.
 - `ssh` or `mesh`: run the `fix` line (`yonder mesh` lets every machine reach every other).
 - `version`: install the same Yonder version on each machine (`brew upgrade --cask yonder`, or
@@ -312,7 +332,8 @@ in their own words, to any agent on any of their machines:
 > Shoot, I forgot to move my slides to my laptop. Can you send them over?
 
 The agent will find the file with `yonder run`, and copy it with
-`yonder cp ~/Documents/Talk.key laptop:~/Desktop/`. Other ideas: "Which of my machines has the
+`yonder cp ~/Documents/Talk.key laptop:~/Desktop/` (a destination ending in `/` is created if it
+is missing). Other ideas: "Which of my machines has the
 most free disk?", "Run the tests on the PC", "Is my GPU box busy?"
 
 Also tell them:

@@ -19,6 +19,7 @@ const macAppBinary = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 var (
 	ErrNotInstalled = errors.New("tailscale not found; install it from https://tailscale.com/download")
 	ErrNotRunning   = errors.New("tailscale is not running or not logged in; run `tailscale up`")
+	ErrSandboxed    = errors.New("can't reach tailscale")
 )
 
 type Peer struct {
@@ -295,7 +296,15 @@ func Get(ctx context.Context) (*Status, error) {
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()
 		if err != nil && len(out) == 0 {
-			return nil, fmt.Errorf("%w (%s)", ErrNotRunning, strings.TrimSpace(stderr.String()))
+			if os.Getenv("CODEX_SANDBOX") != "" {
+				// codex's sandbox blocks the tailscale socket, so this isn't tailscale's fault
+				return nil, fmt.Errorf("%w: this runs inside Codex's sandbox, which blocks Tailscale and SSH; ask the user to approve running yonder outside the sandbox", ErrSandboxed)
+			}
+			detail := strings.TrimSpace(stderr.String())
+			if detail == "" {
+				detail = err.Error()
+			}
+			return nil, fmt.Errorf("%w (%s)", ErrNotRunning, detail)
 		}
 		data = out
 	}

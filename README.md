@@ -426,8 +426,8 @@ How sync behaves:
   `yonder sync --resolve <path> --keep mine|theirs`.
 - Hooks run code, so new or changed ones from another machine wait until you accept them in a
   terminal. So do executables and files linked into a harness's own folder. `yonder agents accept`
-  shows one summary of everything waiting, grouped into hooks, scripts and harness files, and one
-  yes accepts it all (`--show` pages through the full diffs first). `yonder agents accept
+  shows one summary of everything waiting, grouped into hooks, scripts and harness files, and you
+  type `y` once to accept it all (`s` or `--show` pages through the full diffs first). `yonder agents accept
   --all-machines` does every online machine from the terminal you're at. A change you already
   accepted, or imported yourself in a terminal, doesn't ask again on your other machines; one an
   agent made always does. `sync` and `doctor` print the command when something waits.
