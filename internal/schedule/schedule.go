@@ -418,6 +418,9 @@ func Install(j Job) (Result, error) {
 	}
 	w := load(j)
 	res.Warn = append(res.Warn, w...)
+	if noManager(j.OS) {
+		return res, nil // the timer can't run here; the warning says so
+	}
 	res.Lines = append(res.Lines, fmt.Sprintf("yonder sync runs every 15 minutes here (at :%02d and every 15 after), at login and on wake; log %s", Offset(j.Self), LogPath(j.StateDir)))
 	return res, nil
 }
@@ -654,7 +657,7 @@ func (s Status) Problem(now time.Time) (status, detail, fix string) {
 	case !s.Ours:
 		return "warn", "a " + Label + " job that yonder didn't write (" + s.Files[0] + ")", "yonder schedule install  (backs it up and takes it over)"
 	case s.NoManager:
-		return "warn", "no systemd here, so the timer can't run; the other machines' syncs still reach this one", "nothing needed; `yonder schedule remove` stops this warning"
+		return "warn", "no systemd here, so the timer can't run; a sync from another machine that has the timer still reaches this one, and `yonder sync` here works by hand", "nothing needed; `yonder schedule remove` stops this warning"
 	case !s.BinOK:
 		return "fail", "the job runs " + s.Bin + ", which is gone (moved by an upgrade?)", "yonder schedule install"
 	case s.Loaded != nil && !*s.Loaded:

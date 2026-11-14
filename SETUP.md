@@ -254,6 +254,10 @@ machine (tell them which scripts arrived).
 yonder agents gather --json
 ```
 
+A machine that is offline or pending isn't read, so its instructions aren't part of this
+reconcile. Tell the person, and gather and reconcile again after `yonder add <m>` once it is
+online.
+
 Copy each section's `key` exactly as gather prints it, heading level included (`# style` and
 `## style` are different keys).
 
