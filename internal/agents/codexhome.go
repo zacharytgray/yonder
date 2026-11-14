@@ -13,9 +13,13 @@ import (
 // one the last explicit `agents link` here found, so a sync whose environment
 // differs (the timer, a peer's ssh, another shell) never moves Codex's files;
 // before any link, $CODEX_HOME when set, else ~/.codex.
+// the saved folder belongs to this user's home only: a fixture home in a
+// test never reads it, so tests never reach the real one.
 func CodexHome(home string) string {
-	if saved := savedCodexHome(); saved != "" {
-		return saved
+	if realHome(home) {
+		if saved := savedCodexHome(); saved != "" {
+			return saved
+		}
 	}
 	return codexHomeFromEnv(home)
 }

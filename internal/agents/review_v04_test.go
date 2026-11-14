@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -161,5 +162,61 @@ func TestCodexHomeSticksAcrossRelink(t *testing.T) {
 		if got := CodexHome(home); got != custom {
 			t.Fatalf("CodexHome = %s, want the linked %s", got, custom)
 		}
+	}
+}
+
+// fable's final pass: the saved Codex folder belongs to the real home only,
+// so a fixture home in a test never reads it
+func TestCodexHomeIgnoresSavedFolderForFixtureHome(t *testing.T) {
+	yh := t.TempDir()
+	t.Setenv("YONDER_HOME", yh)
+	t.Setenv("CODEX_HOME", "")
+	saved := filepath.Join(yh, "home", "custom-codex")
+	data, _ := json.MarshalIndent(LinkState{Harnesses: []string{"codex"}, CodexHome: saved}, "", "  ")
+	p := filepath.Join(yh, "state", "agents", "links.json")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fixture := t.TempDir()
+	if got := CodexHome(fixture); got != filepath.Join(fixture, ".codex") {
+		t.Fatalf("a fixture home read the saved folder: %s", got)
+	}
+	if got := CodexHome(filepath.Join(yh, "home")); got != saved {
+		t.Fatalf("the home itself should use the saved folder, got %s", got)
+	}
+}
+
+// fable's final pass: the layer coming back on keeps the saved Codex folder
+func TestResumeKeepsCodexHome(t *testing.T) {
+	yh := t.TempDir()
+	t.Setenv("YONDER_HOME", yh)
+	home := filepath.Join(yh, "home")
+	storeDir := filepath.Join(yh, "data", StoreName)
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "instructions.md"), []byte("## Style\nKEEP_RULE\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	custom := filepath.Join(home, "custom-codex")
+	t.Setenv("CODEX_HOME", custom)
+	if err := NewLinker("laptop", io.Discard).Link([]string{"codex"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", "")
+	if err := ApplyLayer(false, "laptop", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyLayer(true, "laptop", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(read(filepath.Join(custom, "AGENTS.md")), "KEEP_RULE") {
+		t.Fatalf("resume lost the custom folder: %q", read(filepath.Join(custom, "AGENTS.md")))
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "AGENTS.md")); err == nil {
+		t.Fatal("resume rendered into ~/.codex")
 	}
 }

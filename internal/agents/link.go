@@ -122,7 +122,7 @@ func (l *Linker) save(st LinkState) error {
 	if l.DryRun {
 		return nil
 	}
-	if len(st.Entries) == 0 && len(st.Harnesses) == 0 {
+	if len(st.Entries) == 0 && len(st.Harnesses) == 0 && st.CodexHome == "" {
 		err := os.Remove(l.statePath())
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -333,22 +333,29 @@ func (l *Linker) wants(harnesses []string) plan {
 // hook and passthrough file. settings files are never touched. anything in the
 // way is backed up first, and unlink puts it back. it is safe to run again.
 func (l *Linker) Link(harnesses []string) error {
-	return l.locked(func() error { return l.link(harnesses) })
+	return l.locked(func() error {
+		if harnesses != nil && !l.DryRun {
+			// an explicit link decides where Codex's folder is, from this
+			// environment; a relink or a layer coming back on keeps it
+			st, err := l.State()
+			if err != nil {
+				return err
+			}
+			if ch := codexHomeFromEnv(l.Home); ch != st.CodexHome {
+				st.CodexHome = ch
+				if err := l.save(st); err != nil {
+					return err
+				}
+			}
+		}
+		return l.link(harnesses)
+	})
 }
 
 func (l *Linker) link(harnesses []string) error {
 	st, err := l.State()
 	if err != nil {
 		return err
-	}
-	if harnesses != nil && !l.DryRun {
-		// an explicit link decides where Codex's folder is, from this environment
-		if ch := codexHomeFromEnv(l.Home); ch != st.CodexHome {
-			st.CodexHome = ch
-			if err := l.save(st); err != nil {
-				return err
-			}
-		}
 	}
 	if harnesses == nil {
 		// a relink: decided under the lock, so a layer-off unlink that got

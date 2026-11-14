@@ -39,9 +39,17 @@ func GatherScript() string {
 	for _, f := range GatherFiles {
 		paths = append(paths, f.Path)
 	}
+	// codex's folder: the one the last explicit link saved, as CodexHome
+	// decides, then $CODEX_HOME, then ~/.codex
 	return `printf '%s\n' '` + ReplyStart + `'
+if [ -n "${YONDER_HOME:-}" ]; then st="$YONDER_HOME/state"; else st="${XDG_STATE_HOME:-$HOME/.local/state}/yonder"; fi
+ch=""
+if [ -f "$st/agents/links.json" ]; then
+  ch=$(sed -n 's/^ *"codex_home": *"\([^"\\]*\)",*$/\1/p' "$st/agents/links.json" | head -n 1)
+fi
+[ -n "$ch" ] || ch="${CODEX_HOME:-$HOME/.codex}"
 for f in ` + strings.Join(paths, " ") + `; do
-  case "$f" in .codex/*) p="${CODEX_HOME:-$HOME/.codex}/${f#.codex/}" ;; *) p="$HOME/$f" ;; esac
+  case "$f" in .codex/*) p="$ch/${f#.codex/}" ;; *) p="$HOME/$f" ;; esac
   [ -f "$p" ] || continue
   n=$(wc -c < "$p" | tr -d ' ')
   if [ "$n" -gt ` + strconv.Itoa(gatherMax) + ` ]; then printf '=== %s %s skipped\n' "$f" "$n"; continue; fi

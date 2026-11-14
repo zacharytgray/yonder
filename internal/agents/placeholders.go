@@ -289,3 +289,23 @@ func (l *Linker) Unresolved() []string {
 	}
 	return out
 }
+
+// CheckHarnesses is the harnesses a store's text must render for, as far as
+// this machine can tell: the ones linked here, and each one render.toml has
+// names for. with neither, all of them, since none could render a tier.
+func (l *Linker) CheckHarnesses() []string {
+	var out []string
+	if st, err := l.State(); err == nil {
+		out = append(out, st.Harnesses...)
+	}
+	t, _ := l.renderTable()
+	for _, h := range Names() {
+		if w, ok := wirings[h]; ok && len(t[w.key]) > 0 && !contains(out, h) {
+			out = append(out, h)
+		}
+	}
+	if len(out) == 0 {
+		return Names()
+	}
+	return out
+}

@@ -383,3 +383,32 @@ func TestTrimSkipsUnlinkedHarness(t *testing.T) {
 		t.Fatalf("saved harnesses changed: %v", st.Harnesses)
 	}
 }
+
+// fable's final pass: the render check covers the harnesses linked here and
+// those render.toml names, and it follows a symlinked store folder
+func TestRenderCheckScopeAndSymlinkedStore(t *testing.T) {
+	_, s, home := trimSetup(t, "# Style\nbe brief\n", map[string]string{".claude/CLAUDE.md": "# Mine\nkeep\n"})
+	if err := os.WriteFile(filepath.Join(s.Dir, "render.toml"), []byte("[claude]\nfast = \"Pebble\"\n\n[codex]\nfast = \"Quill\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := agents.NewLinker("laptop", io.Discard).Link([]string{"claude-code"}); err != nil {
+		t.Fatal(err)
+	}
+	// the store lives elsewhere and is linked back
+	moved := filepath.Join(t.TempDir(), "agents")
+	if err := os.Rename(s.Dir, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(moved, s.Dir); err != nil {
+		t.Fatal(err)
+	}
+	ok := agents.Reconcile{Store: map[string]string{"instructions.md": "# Style\nuse {{model:fast}}\n"}}
+	if err := renderCheck("laptop", s, ok); err != nil {
+		t.Fatalf("a tier named for claude and codex was refused: %v", err)
+	}
+	bad := agents.Reconcile{Store: map[string]string{"instructions.md": "# Style\nuse {{model:deep}}\n"}}
+	if err := renderCheck("laptop", s, bad); err == nil || !strings.Contains(err.Error(), "wouldn't render") {
+		t.Fatalf("a tier nobody names must be refused: %v", err)
+	}
+	_ = home
+}

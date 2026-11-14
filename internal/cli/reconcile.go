@@ -289,12 +289,17 @@ func renderCheck(self string, s *store.Store, rc agents.Reconcile) error {
 		return err
 	}
 	defer os.RemoveAll(tmp)
+	// a store moved into a dotfiles repo and linked back is the same store
+	dir := s.Dir
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
 	// only what renders into instructions: the texts, the briefing, render.toml
-	err = filepath.WalkDir(s.Dir, func(p string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
-		rel, _ := filepath.Rel(s.Dir, p)
+		rel, _ := filepath.Rel(dir, p)
 		top := !strings.Contains(rel, string(filepath.Separator))
 		inMachine := strings.HasPrefix(rel, "machines"+string(filepath.Separator)) && strings.Count(rel, string(filepath.Separator)) == 2
 		text := strings.HasSuffix(rel, ".md") || strings.HasSuffix(rel, ".toml")
@@ -332,7 +337,9 @@ func renderCheck(self string, s *store.Store, rc agents.Reconcile) error {
 	for _, m := range machines {
 		l := agents.NewLinker(m, io.Discard)
 		l.StoreDir = tmp
-		probs := l.RenderProblems(agents.Names())
+		// the harnesses linked here and those render.toml names: a tier named
+		// only for claude and codex must not refuse a plan for pi nobody uses
+		probs := l.RenderProblems(l.CheckHarnesses())
 		for _, p := range sortedKeys(probs) {
 			return fmt.Errorf("the plan's text wouldn't render on %s (%s: %w); nothing was written. Change that section's text in the plan, or add the name to render.toml in the store", m, agents.Tilde(p, agents.Home()), probs[p])
 		}

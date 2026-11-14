@@ -1268,7 +1268,12 @@ harness found here (the same detection as the skill install), or the ones named:
 Codex's folder is decided at an explicit `agents link`: `$CODEX_HOME` when that is set, else
 `~/.codex`. It is saved in `links.json` (`codex_home`), and every later relink, gather, reconcile
 and doctor uses the saved folder, whatever their own environment holds, so a sync run by the
-timer, by a peer over ssh or from another shell never moves Codex's files. Before any link the
+timer, by a peer over ssh or from another shell never moves Codex's files. A peer's gather is a
+shell script, so it reads `codex_home` from that machine's `links.json` itself (in
+`$YONDER_HOME/state`, else `$XDG_STATE_HOME/yonder`, else `~/.local/state/yonder`), then falls
+back to `$CODEX_HOME` and `~/.codex`. Only an explicit `agents link` changes the saved folder; a
+relink, or the agents layer coming back on, keeps it. The saved folder belongs to the user's own
+home: code given any other home (a test fixture) never reads it. Before any link the
 environment decides. The schedule job also carries `CODEX_HOME` when it is set at install. A
 `CODEX_HOME` outside the home folder is not supported: link and reconcile write only below the
 home, with no symlink on the way, and refuse it. `CODEX_HOME` applies only to this user's real
@@ -1531,9 +1536,12 @@ replaced in place, a new one appended, the rest of the file kept. The new store 
 the store's check (secrets and the rest) first.
 
 Applying, in order: a fresh gather (a machine offline now is named and left as it is); the plan
-checked against it; the store as the plan leaves it rendered in a temp copy, for this machine and
-each machine the plan touches, with every harness, so text that won't render (a
-`{{model:...}}` with no name, say) is refused before anything is written; the store diffs and the trims printed (with `--dry-run`, that is all); every
+checked against it; the store as the plan leaves it rendered in a temp copy (following a
+symlinked store folder), for this machine and each machine the plan touches, so text that won't
+render (a `{{model:...}}` with no name, say) is refused before anything is written. It renders
+for the harnesses linked here and every harness `render.toml` has names for (all of them when
+neither applies), so a tier named only for Claude Code and Codex doesn't refuse a plan for Pi.
+A peer with another harness linked still checks its own render before it trims; the store diffs and the trims printed (with `--dry-run`, that is all); every
 machine with something to trim runs `yonder _reconcile-trim --probe` through `_exec`, so an
 unreachable machine or an older yonder stops it before anything is written; a record saved in
 `agents/reconcile/<id>/record.json` (the plan, each store file before and after); the store

@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,5 +100,43 @@ func TestCompare(t *testing.T) {
 	}
 	if one := Compare([]MachineFiles{{Machine: "a", Files: map[string][]byte{".claude/CLAUDE.md": []byte("x\n")}}, {Machine: "b"}}); one.Diverged() {
 		t.Fatal("one machine with files has nothing to reconcile")
+	}
+}
+
+// a peer's gather reads Codex's file from the folder its last link saved,
+// even when the ssh shell has no CODEX_HOME
+func TestGatherScriptFindsSavedCodexHome(t *testing.T) {
+	home := t.TempDir()
+	custom := filepath.Join(home, "custom-codex")
+	for p, c := range map[string]string{
+		"custom-codex/AGENTS.md": "# Style\nfrom the saved folder\n",
+		".codex/AGENTS.md":       "# Style\nthe default folder\n",
+		"env-codex/AGENTS.md":    "# Style\nfrom CODEX_HOME\n",
+	} {
+		must(t, os.MkdirAll(filepath.Join(home, filepath.Dir(p)), 0o755))
+		must(t, os.WriteFile(filepath.Join(home, p), []byte(c), 0o644))
+	}
+	run := func(env ...string) string {
+		t.Helper()
+		cmd := exec.Command("sh", "-c", GatherScript())
+		cmd.Env = append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, env...)
+		out, err := cmd.Output()
+		must(t, err)
+		got, err := ParseGather(strings.NewReader(string(out)))
+		must(t, err)
+		return string(got[".codex/AGENTS.md"])
+	}
+	if got := run("CODEX_HOME=" + filepath.Join(home, "env-codex")); !strings.Contains(got, "from CODEX_HOME") {
+		t.Fatalf("no link yet: CODEX_HOME should decide: %q", got)
+	}
+	data, err := json.MarshalIndent(LinkState{Harnesses: []string{"codex"}, CodexHome: custom}, "", "  ")
+	must(t, err)
+	state := filepath.Join(home, ".local", "state", "yonder", "agents", "links.json")
+	must(t, os.MkdirAll(filepath.Dir(state), 0o755))
+	must(t, os.WriteFile(state, data, 0o600))
+	for _, env := range [][]string{nil, {"CODEX_HOME=" + filepath.Join(home, "env-codex")}} {
+		if got := run(env...); !strings.Contains(got, "from the saved folder") {
+			t.Fatalf("env %v: want the saved folder, got %q", env, got)
+		}
 	}
 }
