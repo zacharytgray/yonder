@@ -1,13 +1,14 @@
-My work is spread across computers. The slides are on my Mac mini, the project is on my desktop, and I'm on my laptop. Each AI agent only knows the machine it runs on, so I kept copying files and re-explaining context by hand.
+My work is spread across computers. Each AI agent only knows the machine it's on, so I kept copying files around and explaining the same things again.
 
-So I built Yonder. It connects my computers so the agent on any one of them can use all of them. To my agent, every machine works like one computer.
+So I built Yonder. It connects my computers so the agent on any one of them can use all of them. I send it plain messages:
 
-Say I'm about to give a presentation, and the slides are still on my Mac mini. I text my agent: "Shoot, I forgot to move my slides to my laptop. Can you send them over?" It finds them and puts them on my laptop's Desktop.
+- "Pick up where I left off on the thesis repo." The repo is on my desktop. The agent on my laptop finds it there and works on it.
+- "The Pi's disk is full, can you clean it up?" It checks what's using the space, then frees it on the Pi.
+- "Run the training script on the PC." It runs there in the background, and I check on it later.
+- "Send the slides on my Mac mini to my laptop." Done.
+- My agent instructions and skills are the same on every machine. I change them once, and every agent also knows a short map of my machines.
+- "Use my Hugging Face token." The agent asks for it by name. The value stays in 1Password or Bitwarden and out of output and logs.
 
-- Work from anywhere. I start on any machine. My agent can look on my other computers, so it finds my projects and files wherever they are.
-- Context stays in sync. My agent instructions, skills and a short map of my machines are the same on every computer. I don't keep them in sync myself.
-- Shared secrets, kept safe. API keys stay in 1Password or Bitwarden. Agents ask for a key by name, and Yonder keeps the value out of commands, logs and output.
-
-It's one small program, with no server and nothing running in the background. It uses Tailscale and SSH. It works with Claude Code, Codex, Pi and Hermes. Open source, MIT, macOS and Linux.
+It's one small program, with no server and no daemon. It uses Tailscale and SSH, and works with Claude Code, Codex, Pi and Hermes. A timer syncs agent config every 15 minutes. To set it up, tell your agent "Set up Yonder for me" with the repo link, and it walks you through the rest. Open source, MIT, macOS and Linux.
 
 github.com/zacharytgray/yonder

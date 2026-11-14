@@ -13,7 +13,7 @@
 [![MIT license][badge-license]](LICENSE)
 [![macOS and Linux][badge-platform]](#limits)
 
-**[<kbd> <br> Install <br> </kbd>](#install)**&nbsp;
+**[<kbd> <br> Set it up <br> </kbd>](#set-it-up)**&nbsp;
 **[<kbd> <br> What it does <br> </kbd>](#what-it-does)**&nbsp;
 **[<kbd> <br> Secrets <br> </kbd>](#secrets)**&nbsp;
 **[<kbd> <br> Commands <br> </kbd>](#commands)**&nbsp;
@@ -24,38 +24,52 @@
   <img src="docs/demo/hero.gif" width="100%" alt="Every computer you own, one agent. From a phone: Shoot, I forgot to move my slides to my laptop. Can you send them over? The agent on the Mac Mini runs yonder ls, finds Talk.key and copies it to the laptop's Desktop with yonder cp, then finds the thesis code on the PC with yonder run. yonder layers shows agent config syncing, and the laptop's CLAUDE.md holds the same map of every machine. A secret from 1Password prints as [HF_TOKEN], and yonder log records it by name. Then a Homebrew install, one binary with no server and no daemon, and the skill going into Claude Code, Codex, Pi and Hermes.">
 </a>
 
-**[▶ Watch the 41-second demo, with sound](docs/demo/yonder-demo.mp4)**
+**[▶ Watch the demo](docs/demo/yonder-demo.mp4)**
 
 </div>
 
-**Set it up with your agent.** Tell Claude Code, Codex or any coding agent:
+Your work is spread across computers. Each AI agent only knows the machine it's on, so you
+copy files around and explain the same things again. Yonder connects your computers so the
+agent on any one of them can use all of them.
+
+## What you can ask
+
+Send your agent a plain message, from any of your machines:
+
+- **"Pick up where I left off on the thesis repo."** The repo is on your desktop. The agent on
+  your laptop finds it there and works on it with `yonder run`.
+- **"The Pi's disk is full, can you clean it up?"** The agent looks at what is using the space,
+  then frees it on the Pi.
+- **"Run the training script on the PC."** It runs there, detached. You check on it later with
+  `yonder jobs`. Yonder only runs the command. It doesn't host models.
+- **"Send the slides on my Mac mini to my laptop."** `yonder cp` copies the file over.
+- **One setup everywhere.** Change an agent instruction or a skill once, and every machine has
+  it. Every agent also gets a short map of your machines.
+- **"Use my Hugging Face token."** The agent asks for it by name. The value comes from
+  1Password or Bitwarden and stays out of output and logs.
+
+## Three layers
+
+| Layer | | What it adds |
+|---|---|---|
+| **Connect** | always on | Finds your machines on Tailscale and sets up SSH between them. Agents get `yonder ls`, `run`, `cp` and `jobs`. |
+| **Agents** | optional | Your agent instructions, skills, subagents and hooks, synced between machines, with the map of your machines on top. |
+| **Secrets** | optional | Commands that use keys from 1Password or Bitwarden, by name. |
+
+It's one small program, with no server and no daemon. It uses Tailscale and SSH, and works
+with Claude Code, Codex, Pi and Hermes. With the agents layer on, a timer runs a short sync
+every 15 minutes. [Layers](#layers) shows how to switch them.
+
+## Set it up
+
+Tell Claude Code, Codex or any coding agent:
 
 > Set up Yonder for me: https://github.com/zacharytgray/yonder
 
-It follows [SETUP.md](SETUP.md): it checks Tailscale and SSH, asks which machines join and what
-to turn on, runs the setup, and tells you the few steps only you can do. Or do it yourself with
-the [manual steps](#install).
+It follows [SETUP.md](SETUP.md). It checks Tailscale and SSH, asks which machines join and
+which layers to turn on, runs the setup, and tells you the few steps only you can do.
 
-Your work is spread across computers. The slides are on the Mac mini, the project is on the
-desktop, and you're on your laptop. Each AI agent only knows the machine it runs on, so you end
-up copying files and re-explaining context by hand.
-
-Yonder connects your computers so the agent on any one of them can use all of them. To your
-agent, every machine works like one computer.
-
-> You're about to give a presentation, and the slides are still on your Mac mini. You text your
-> agent: "Shoot, I forgot to move my slides to my laptop. Can you send them over?" It finds them
-> and puts them on your laptop's Desktop.
-
-- **Work from anywhere.** Start on any machine. Your agent can look on your other computers, so
-  it finds your projects and files wherever they are.
-- **Context stays in sync.** Your agent instructions, skills and a short map of your machines
-  are the same on every computer. You don't have to keep them in sync yourself.
-- **Shared secrets, kept safe.** API keys stay in 1Password or Bitwarden. Agents ask for a key by
-  name, and Yonder keeps the value out of commands, logs and output.
-
-**Simple and lightweight.** It's one small program, with no server and no daemon. A timer runs
-a short sync every 15 minutes. It uses Tailscale and SSH. It works with Claude Code, Codex, Pi and Hermes.
+Or do it by hand:
 
 ```sh
 brew trust --cask zacharytgray/yonder/yonder
@@ -63,28 +77,41 @@ brew install --cask zacharytgray/yonder/yonder
 yonder init
 ```
 
+[Install](#install) has the details, and a script for machines without Homebrew.
+
 ## What it does
 
-The slides story, as it runs on the Mac mini:
+The Pi example, run from the laptop:
 
 ```
-you    Shoot, I forgot to move my slides to my laptop. Can you send them over?
+you    The Pi's disk is full, can you clean it up?
 
 agent  $ yonder ls
-       NAME          ROLE     STATE           HARDWARE                HARNESSES
-       laptop        laptop   online          M3 Pro · 36 GB          claude-code,codex
-       mac-mini      server   this machine    M4 · 16 GB              claude-code,hermes
-       pc            desktop  online          RTX 4090 24 GB · 64 GB  -
-       raspberry-pi  other    offline 2h ago  Cortex-A76 · 8 GB       -
+       NAME      ROLE     STATE         HARDWARE                HARNESSES
+       laptop    laptop   this machine  M3 Pro · 36 GB          claude-code,codex
+       mac-mini  server   online        M4 · 16 GB              claude-code,hermes
+       pc        desktop  online        RTX 4090 24 GB · 64 GB  codex
+       pi        other    online        Cortex-A76 · 8 GB       -
        layers: secrets on, agents on (yonder layers)
 
-       $ ls ~/Documents/*.key
-       /Users/me/Documents/Talk.key
+       $ yonder run pi -- df -h /
+       Filesystem      Size  Used Avail Use% Mounted on
+       /dev/mmcblk0p2   29G   29G  120M 100% /
 
-       $ yonder cp ~/Documents/Talk.key laptop:~/Desktop/
-       copied Talk.key (folder, 23 files, 18.4 MB) to laptop:/Users/me/Desktop/Talk.key
+       $ yonder run pi -- 'du -sh ~/* | sort -h | tail -2'
+       2.1G    /home/me/backups
+       19G     /home/me/camera
 
-       Done. Talk.key is on your laptop's Desktop.
+       ~/camera holds 19 GB of clips, and 18 GB of them are over 30 days old.
+       Delete those?
+
+you    yes
+
+agent  $ yonder run pi -- 'find ~/camera -type f -mtime +30 -delete && df -h /'
+       Filesystem      Size  Used Avail Use% Mounted on
+       /dev/mmcblk0p2   29G   11G   17G  40% /
+
+       Done. The Pi has 17 GB free.
 ```
 
 <table>
@@ -134,7 +161,7 @@ that, with its own permission modes.
 
 ## Install
 
-To have an agent do all of this, point it at [SETUP.md](SETUP.md) (above). By hand:
+To have an agent do this, see [Set it up](#set-it-up). By hand:
 
 You need [Tailscale](https://tailscale.com/download) on each machine, and SSH turned on for the
 machines you want to reach (on macOS: System Settings → General → Sharing → Remote Login).
@@ -192,7 +219,7 @@ yonder init --yes --machines mac-mini,pc --layers agents --role pc=gpu --notes p
 ## Send files
 
 ```sh
-yonder cp ~/Documents/Talk.key laptop:~/Desktop/
+yonder cp ~/Downloads/dataset.zip pc:~/data/
 ```
 
 Each side is a local path or `<machine>:<path>`, like scp. Folders copy whole, so a Keynote file
@@ -331,7 +358,7 @@ it. Without prompts:
 
 ```sh
 yonder secret setup --yes                       # the default machines
-yonder secret setup --machines raspberry-pi     # one machine, e.g. one that was offline
+yonder secret setup --machines pi               # one machine, e.g. one that was offline
 yonder secret setup --machines pc --replace     # give it a new token
 ```
 
@@ -503,7 +530,7 @@ Tailscale cannot tell a sleeping laptop from one that is switched off, so Yonder
 It says `offline`, shows when the machine was last seen, and adds your notes:
 
 ```
-yonder: raspberry-pi is offline (last seen 2h ago) — notes: sleeps at night
+yonder: pi is offline (last seen 2h ago) — notes: sleeps at night
 ```
 
 If a laptop is lost or stolen, first remove it from your tailnet in the Tailscale admin console.
