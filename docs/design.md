@@ -1047,7 +1047,8 @@ resident between runs.
   30 seconds first (`YONDER_SCHEDULE_JITTER=off` skips it), and is otherwise a normal sync.
 - Linux without systemd (no `systemctl`: a container, a minimal install) can't run the timer.
   Install writes the files, says so once, and is quiet after that; doctor WARNs "no systemd here"
-  and says nothing needs doing, since the other machines' syncs still reach it.
+  and says a sync from a machine that has the timer still reaches it, and `yonder sync` works by
+  hand. Install prints only that note, not the line saying sync runs every 15 minutes.
 - Machines don't all sync at the same minute: the minute in each 15 is a hash of the machine's name,
   plus the random wait. Two machines syncing each other at once find each other busy and skip
   (see the store lock above), so this keeps those skips rare.

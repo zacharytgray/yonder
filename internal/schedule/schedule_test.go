@@ -329,7 +329,7 @@ func TestNoSystemd(t *testing.T) {
 		t.Fatalf("second install should be quiet: %+v", res)
 	}
 	st := Check(j.OS, j.Home, j.StateDir)
-	if s, d, _ := st.Problem(time.Now()); s != "warn" || !strings.Contains(d, "other machines") {
+	if s, d, _ := st.Problem(time.Now()); s != "warn" || !strings.Contains(d, "another machine") {
 		t.Fatalf("doctor: %s %s", s, d)
 	}
 }
