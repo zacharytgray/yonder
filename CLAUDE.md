@@ -4,8 +4,7 @@
 # yonder
 
 Go CLI that connects a person's own machines over Tailscale and SSH. Module
-`github.com/zacharytgray/yonder`. The folder may still be named `patchbay`; the product,
-command and module are `yonder`.
+`github.com/zacharytgray/yonder`.
 
 `docs/design.md` is the spec: layout, file paths, record schema, the `_exec` envelope, exit
 codes and the `ls --json` shape. Change code and design.md together. If you deviate from
