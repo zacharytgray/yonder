@@ -24,6 +24,7 @@ var GatherFiles = []GatherFile{
 	{"claude-code", ".claude/CLAUDE.md"},
 	{"codex", ".codex/AGENTS.md"},
 	{"pi", ".pi/agent/AGENTS.md"},
+	{"antigravity", ".gemini/AGENTS.md"},
 }
 
 const gatherMax = 256 << 10 // a bigger file isn't instructions anyone wrote by hand

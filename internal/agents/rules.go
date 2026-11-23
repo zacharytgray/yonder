@@ -109,9 +109,9 @@ func Runs(rel string, exec bool) bool {
 // a harness's own settings, auth and instruction files: never under files/,
 // since linking one would replace the user's file
 var harnessFiles = []string{
-	"settings*.json", "config.toml", "config.yaml", "config.yml", ".claude.json",
+	"settings*.json", "config.toml", "config.yaml", "config.yml", "config.json", ".claude.json",
 	"auth.json", ".credentials*", "credentials*",
-	"claude.md", "claude.local.md", "agents.md", "soul.md",
+	"claude.md", "claude.local.md", "agents.md", "soul.md", "gemini.md",
 }
 
 // HarnessFile reports whether a files/<key>/ name is one of those.

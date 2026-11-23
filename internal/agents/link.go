@@ -42,6 +42,9 @@ var wirings = map[string]wiring{
 	// it seeds a default SOUL.md when there is none, so yonder never creates it
 	"hermes": {key: "hermes", instructions: ".hermes/SOUL.md", mustExist: true, files: ".hermes",
 		note: "hermes: yonder leaves its config alone; to give it the shared skills, add %s to skills.external_dirs in ~/.hermes/config.yaml"},
+	// agy reads ~/.gemini/AGENTS.md and skills under ~/.gemini/config. its own
+	// state (~/.gemini/antigravity-cli) is never touched
+	"antigravity": {key: "antigravity", instructions: ".gemini/AGENTS.md", wholeFile: true, skills: ".gemini/config/skills", files: ".gemini/config"},
 }
 
 // entry kinds
@@ -329,7 +332,7 @@ func (l *Linker) wants(harnesses []string) plan {
 }
 
 // Link wires the store into the harnesses: the instructions rendered into a
-// marked block (Claude Code) or a rendered AGENTS.md (Codex, Pi), and one symlink per skill, subagent, command,
+// marked block (Claude Code) or a rendered AGENTS.md (Codex, Pi, Antigravity), and one symlink per skill, subagent, command,
 // hook and passthrough file. settings files are never touched. anything in the
 // way is backed up first, and unlink puts it back. it is safe to run again.
 func (l *Linker) Link(harnesses []string) error {
@@ -364,6 +367,24 @@ func (l *Linker) link(harnesses []string) error {
 			return nil
 		}
 		harnesses = st.Harnesses
+	} else {
+		// naming a harness adds it; the ones linked already stay. only unlink drops one
+		var all, kept []string
+		for _, h := range st.Harnesses {
+			all = append(all, h)
+			if !contains(harnesses, h) {
+				kept = append(kept, h)
+			}
+		}
+		for _, h := range harnesses {
+			if !contains(all, h) {
+				all = append(all, h)
+			}
+		}
+		if len(kept) > 0 {
+			l.printf("keeping %s linked too (yonder agents unlink drops them all)", strings.Join(kept, ", "))
+		}
+		harnesses = all
 	}
 	explicit := harnesses != nil
 	p := l.wants(harnesses)

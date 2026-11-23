@@ -27,6 +27,7 @@ skills folder:
   claude-code  ~/.claude/skills/yonder
   codex, pi    ~/.agents/skills/yonder
   hermes       ~/.hermes/skills/yonder
+  antigravity  ~/.gemini/config/skills/yonder (agy; it doesn't read ~/.agents/skills)
 
 With the agents layer on (yonder enable agents), the agents store in
 ~/.local/share/yonder/agents holds instructions, skills, subagents, commands and hooks,
@@ -38,7 +39,7 @@ Store layout:
   briefing.md                  the hand-written part of the briefing about your machines
   render.toml                  each harness's model names for {{model:<tier>}} in the text
   instructions.md              shared instructions for every harness
-  instructions.<h>.md          extra text for one harness (claude, codex, pi, hermes)
+  instructions.<h>.md          extra text for one harness (claude, codex, pi, hermes, antigravity)
   skills/<name>/               one folder per skill
   claude/agents/, claude/commands/   Claude Code subagents and commands
   hooks/                       hook scripts, linked into ~/.claude/hooks

@@ -59,7 +59,7 @@ func TestInstallDetectedOnly(t *testing.T) {
 	}
 	st := Status(home)
 	for _, h := range st.Harnesses {
-		want := map[string]string{"claude-code": StateCurrent, "codex": StateCurrent, "pi": StateCurrent, "hermes": StateMissing}[h.Name]
+		want := map[string]string{"claude-code": StateCurrent, "codex": StateCurrent, "pi": StateCurrent, "hermes": StateMissing, "antigravity": StateMissing}[h.Name]
 		if h.State != want {
 			t.Errorf("%s: state %s, want %s", h.Name, h.State, want)
 		}
@@ -68,6 +68,43 @@ func TestInstallDetectedOnly(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Join(home, ".claude"))
 	if len(entries) != 1 || entries[0].Name() != "skills" {
 		t.Fatalf("~/.claude got more than skills/: %v", entries)
+	}
+}
+
+func TestAntigravityDetectAndInstall(t *testing.T) {
+	home := bare(t)
+	h, ok := Lookup("agy")
+	if !ok || h.Name != "antigravity" {
+		t.Fatalf("agy should name antigravity: %+v", h)
+	}
+	// ~/.gemini alone is gemini cli's too
+	mkdir(t, filepath.Join(home, ".gemini", "config"))
+	if ok, _ := h.Detect(home); ok {
+		t.Fatal("~/.gemini alone isn't antigravity")
+	}
+	mkdir(t, filepath.Join(home, ".gemini", "antigravity-cli"))
+	if ok, where := h.Detect(home); !ok || where != "~/.gemini/antigravity-cli" {
+		t.Fatalf("detect: %v %s", ok, where)
+	}
+	rs, err := Install(Options{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".gemini", "config", "skills", "yonder")
+	if r := byPath(rs)[dir]; r.Action != "installed" || strings.Join(r.Names, ",") != "antigravity" {
+		t.Fatalf("results: %+v", rs)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if es, _ := os.ReadDir(filepath.Join(home, ".gemini", "antigravity-cli")); len(es) != 0 {
+		t.Fatalf("agy's own folder was touched: %v", es)
+	}
+	if _, err := Uninstall(Options{Home: home, Harnesses: []string{"antigravity"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(dir); err == nil {
+		t.Fatal("uninstall should remove the skill")
 	}
 }
 

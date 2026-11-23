@@ -19,6 +19,7 @@ var harnessTable = []struct{ name, bin string }{
 	{"hermes", "hermes"},
 	{"opencode", "opencode"},
 	{"gemini", "gemini"},
+	{"antigravity", "agy"},
 }
 
 func probeHarnesses(ctx context.Context) []registry.Harness {
