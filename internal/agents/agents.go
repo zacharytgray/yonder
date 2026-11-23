@@ -31,12 +31,15 @@ type Harness struct {
 	Aliases []string
 }
 
-// Harnesses, researched 2026-11. claude code doesn't read ~/.agents/skills.
+// Harnesses, researched 2026-11. claude code and antigravity (agy) don't read
+// ~/.agents/skills; agy reads skills from ~/.gemini/config/skills, its global
+// customization folder. ~/.gemini alone is gemini cli's too, so it doesn't count.
 var Harnesses = []Harness{
 	{Name: "claude-code", Bins: []string{"claude"}, Config: ".claude", Skills: ".claude/skills", Aliases: []string{"claude"}},
 	{Name: "codex", Bins: []string{"codex"}, Config: ".codex", Skills: ".agents/skills"},
 	{Name: "pi", Bins: []string{"pi"}, Config: ".pi", Skills: ".agents/skills"},
 	{Name: "hermes", Bins: []string{"hermes"}, Config: ".hermes", Skills: ".hermes/skills"},
+	{Name: "antigravity", Bins: []string{"agy"}, Config: ".gemini/antigravity-cli", Skills: ".gemini/config/skills", Aliases: []string{"agy"}},
 }
 
 const (

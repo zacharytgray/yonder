@@ -289,6 +289,133 @@ func TestUnlinkPutsBackReplacedSkillsFolder(t *testing.T) {
 	}
 }
 
+func TestLinkAntigravity(t *testing.T) {
+	f := newFixture(t)
+	f.put(f.storeDir, "instructions.md", "shared rules\n")
+	f.put(f.storeDir, "instructions.antigravity.md", "agy extra\n")
+	f.put(f.storeDir, "instructions.codex.md", "codex extra\n")
+	f.put(f.storeDir, "skills/foo/SKILL.md", "foo\n")
+	f.put(f.storeDir, "files/antigravity/mcp_config.json", "{}\n")
+	f.put(f.storeDir, "files/antigravity/config.json", "{}\n") // agy's settings: never linked
+	// agy's own state and settings
+	f.put(f.home, ".gemini/antigravity-cli/settings.json", `{"agy":true}`)
+	f.put(f.home, ".gemini/settings.json", `{"mine":true}`)
+	f.put(f.home, ".gemini/config/config.json", `{"cfg":true}`)
+	f.put(f.home, ".gemini/config/mcp_config.json", "")
+
+	l := f.linker()
+	if err := l.Link([]string{"antigravity"}); err != nil {
+		t.Fatal(err)
+	}
+	agy := read(filepath.Join(f.home, ".gemini/AGENTS.md"))
+	if !strings.HasPrefix(agy, renderMark) || !strings.Contains(agy, "shared rules\n\nagy extra\n") || strings.Contains(agy, "codex extra") {
+		t.Fatalf("~/.gemini/AGENTS.md:\n%s", agy)
+	}
+	for link, target := range map[string]string{
+		".gemini/config/skills/foo":      "skills/foo",
+		".gemini/config/mcp_config.json": "files/antigravity/mcp_config.json",
+	} {
+		if got, err := os.Readlink(filepath.Join(f.home, link)); err != nil || got != filepath.Join(f.storeDir, target) {
+			t.Errorf("%s -> %q (%v), want the store's %s", link, got, err, target)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(f.home, ".agents/skills/foo")); err == nil {
+		t.Fatal("agy doesn't read ~/.agents/skills")
+	}
+	if got := read(filepath.Join(f.home, ".gemini/config/config.json")); got != `{"cfg":true}` {
+		t.Fatalf("agy's config.json was touched: %q", got)
+	}
+	if len(l.Problems()) != 0 {
+		t.Fatalf("problems: %v", l.Problems())
+	}
+	must(t, l.Unlink(false))
+	if _, err := os.Lstat(filepath.Join(f.home, ".gemini/AGENTS.md")); err == nil {
+		t.Fatal("the rendered AGENTS.md should be gone")
+	}
+	if _, err := os.Lstat(filepath.Join(f.home, ".gemini/config/skills/foo")); err == nil {
+		t.Fatal("the skill link should be gone")
+	}
+	for p, want := range map[string]string{
+		".gemini/antigravity-cli/settings.json": `{"agy":true}`,
+		".gemini/settings.json":                 `{"mine":true}`,
+		".gemini/config/config.json":            `{"cfg":true}`,
+		".gemini/config/mcp_config.json":        "",
+	} {
+		if got := read(filepath.Join(f.home, p)); got != want {
+			t.Errorf("%s after unlink: %q, want %q", p, got, want)
+		}
+	}
+
+	// the user's own AGENTS.md gets a block, and comes back byte for byte
+	own := "# my agy rules\nbe brief\n"
+	f.put(f.home, ".gemini/AGENTS.md", own)
+	must(t, l.Link([]string{"antigravity"}))
+	if got := read(filepath.Join(f.home, ".gemini/AGENTS.md")); !strings.HasPrefix(got, own+"\n"+blockBegin) || !strings.Contains(got, "agy extra") {
+		t.Fatalf("own AGENTS.md:\n%s", got)
+	}
+	must(t, l.Unlink(false))
+	if got := read(filepath.Join(f.home, ".gemini/AGENTS.md")); got != own {
+		t.Fatalf("own AGENTS.md after unlink: %q", got)
+	}
+}
+
+// adding a harness never unlinks the ones linked already (it once did:
+// `link --harness hermes` dropped the rest)
+func TestLinkNamedHarnessKeepsLinked(t *testing.T) {
+	f := newFixture(t)
+	f.put(f.storeDir, "instructions.md", "shared rules\n")
+	f.put(f.storeDir, "instructions.hermes.md", "hermes extra\n")
+	f.put(f.storeDir, "skills/foo/SKILL.md", "foo\n")
+	f.put(f.home, ".hermes/SOUL.md", "my persona\n")
+	all := []string{"claude-code", "codex", "pi", "hermes"}
+	l := f.linker()
+	must(t, l.Link(all))
+	files := []string{".claude/CLAUDE.md", ".codex/AGENTS.md", ".pi/agent/AGENTS.md", ".hermes/SOUL.md"}
+	before := map[string]string{}
+	for _, p := range files {
+		before[p] = read(filepath.Join(f.home, p))
+		if !strings.Contains(before[p], "<!-- yonder") {
+			t.Fatalf("%s not linked:\n%s", p, before[p])
+		}
+	}
+	for _, step := range [][]string{{"antigravity"}, {"hermes"}, nil} {
+		must(t, l.Link(step))
+		st, _ := l.State()
+		want := append(append([]string(nil), all...), "antigravity")
+		if strings.Join(st.Harnesses, ",") != strings.Join(want, ",") {
+			t.Fatalf("after link %v: harnesses %v, want %v", step, st.Harnesses, want)
+		}
+		for _, p := range files {
+			if got := read(filepath.Join(f.home, p)); got != before[p] {
+				t.Fatalf("after link %v, %s changed:\n%s", step, p, got)
+			}
+		}
+		for _, p := range []string{".claude/skills/foo", ".agents/skills/foo", ".gemini/config/skills/foo"} {
+			if _, err := os.Lstat(filepath.Join(f.home, p)); err != nil {
+				t.Fatalf("after link %v, %s is gone", step, p)
+			}
+		}
+		if !strings.Contains(read(filepath.Join(f.home, ".gemini/AGENTS.md")), "shared rules") {
+			t.Fatalf("after link %v, antigravity isn't linked", step)
+		}
+		if ps := l.Problems(); len(ps) != 0 {
+			t.Fatalf("problems: %v", ps)
+		}
+	}
+	// a dry run plans the others too, so it shows nothing to undo
+	var out strings.Builder
+	dry := f.linker()
+	dry.DryRun, dry.Out = true, &out
+	must(t, dry.Link([]string{"antigravity"}))
+	if strings.Contains(out.String(), "would undo") {
+		t.Fatalf("dry run would unlink:\n%s", out.String())
+	}
+	must(t, l.Unlink(false))
+	if st, _ := l.State(); len(st.Harnesses) != 0 {
+		t.Fatalf("unlink drops them all: %v", st.Harnesses)
+	}
+}
+
 func TestPauseAndResume(t *testing.T) {
 	f := newFixture(t)
 	f.put(f.storeDir, "skills/foo/SKILL.md", "foo\n")

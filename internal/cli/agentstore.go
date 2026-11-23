@@ -95,6 +95,11 @@ instructions start with the briefing about your machines (yonder agents briefing
                briefing and instructions.hermes.md (the shared instructions too only with
                [shared] hermes = true in render.toml), and files/hermes/*; it prints how
                to add the skills folder yourself
+  antigravity  ~/.gemini/AGENTS.md like pi, skills in ~/.gemini/config/skills,
+               files/antigravity/* linked into ~/.gemini/config; agy's own
+               ~/.gemini/antigravity-cli is never touched
+Naming a harness adds it: the ones linked here already stay linked. To drop one, run
+` + "`yonder agents unlink`" + `, then link the ones you want.
 Settings files are never edited. Anything in the way is backed up first and put back by
 ` + "`yonder agents unlink`" + `. A symlink in the way (an instructions file or a skills folder
 that links elsewhere) is refused unless --replace-links. The instructions are a copy, not

@@ -29,7 +29,7 @@ var (
 )
 
 // harness keys a table may name
-var renderKeys = []string{"claude", "codex", "pi", "hermes"}
+var renderKeys = []string{"claude", "codex", "pi", "hermes", "antigravity"}
 
 // sharedTable is render.toml's table of opt-ins, and the harnesses it may name
 const sharedTable = "shared"

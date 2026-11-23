@@ -411,7 +411,7 @@ syncs between your machines:
 
 ```sh
 yonder agents import ~/.claude                # CLAUDE.md, skills/, agents/, commands/, hooks/
-yonder agents link                            # wire it into Claude Code, Codex, Pi and Hermes here
+yonder agents link                            # wire it into Claude Code, Codex, Pi, Hermes and Antigravity here
 yonder sync                                   # send it to every online machine
 ```
 
@@ -419,10 +419,11 @@ yonder sync                                   # send it to every online machine
 `instructions.codex.md` add text for one. `machines/<name>/` holds what only one machine gets.
 
 `link` never edits a settings file. In `~/.claude/CLAUDE.md` it writes the instructions into a
-marked block and keeps your own text. It renders `~/.codex/AGENTS.md` and `~/.pi/agent/AGENTS.md`
-the same way, and links each skill, subagent, command and hook. After you edit the store, the
+marked block and keeps your own text. It renders `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`
+and Antigravity's `~/.gemini/AGENTS.md` the same way, and links each skill, subagent, command and hook. After you edit the store, the
 next `yonder sync` renders the new text in on every machine. Anything in the way is backed up first.
-`yonder agents unlink` puts it all back.
+`yonder agents unlink` puts it all back. `link --harness <name>` adds a harness and keeps the ones
+already linked.
 
 The block starts with a briefing about your machines, so every agent knows them without asking.
 Its machine list comes from the records: name, role, address, OS, hardware, and one word on
@@ -449,7 +450,7 @@ per-machine files, takes what moved out of each machine's own file after a backu
 store in. `yonder agents reconcile --undo` puts every file back.
 
 For rules that name models, write a tier like `{{model:top}}` and give each harness its name for
-it in `render.toml` in the store, under `[claude]`, `[codex]`, `[pi]` or `[hermes]`. A rule that
+it in `render.toml` in the store, under `[claude]`, `[codex]`, `[pi]`, `[hermes]` or `[antigravity]`. A rule that
 differs in more than a name goes in that harness's `instructions.<harness>.md`.
 
 How sync behaves:
@@ -532,6 +533,7 @@ folder:
 | Claude Code | `~/.claude/skills/yonder/` |
 | Codex, Pi | `~/.agents/skills/yonder/` |
 | Hermes | `~/.hermes/skills/yonder/` |
+| Antigravity (`agy`) | `~/.gemini/config/skills/yonder/` |
 
 It writes only that folder and never edits a harness's settings. The skill costs no context until
 an agent needs another machine. Then it tells the agent to read `yonder ls`, pick a machine by its

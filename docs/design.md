@@ -123,7 +123,7 @@ memory_gb = 64.0              # GiB, one decimal (disk and gpu memory too)
 disk_total_gb = 1800.0        # root filesystem
 disk_free_gb = 512.0
 [[facts.gpus]]                # name, vendor, memory_gb, memory_used_gb, util_percent, unified
-[[facts.harnesses]]           # name (claude-code, codex, pi, hermes, opencode, gemini), version, path
+[[facts.harnesses]]           # name (claude-code, codex, pi, hermes, opencode, gemini, antigravity), version, path
 [facts.extra]                 # anything without a typed field yet
 ```
 
@@ -879,12 +879,14 @@ mode only lists them, since checking would ask for an approval. Every failure ca
 
 `yonder agents install` copies `skill/yonder/` (embedded with `go:embed` from `skill/embed.go`)
 into each harness's user skills folder: `~/.claude/skills/` (Claude Code; it doesn't read
-`~/.agents/skills`), `~/.agents/skills/` (Codex, Pi), `~/.hermes/skills/` (Hermes). It writes only
+`~/.agents/skills`), `~/.agents/skills/` (Codex, Pi), `~/.hermes/skills/` (Hermes),
+`~/.gemini/config/skills/` (Antigravity, `agy`; it doesn't read `~/.agents/skills` either). It writes only
 its own `yonder/` folder and never edits a harness's settings file. (Syncing the rest of a
 harness's config is the agents store, below.)
 
-- A harness counts as installed if its binary (`claude`, `codex`, `pi`, `hermes`) is on PATH or
-  its config dir (`~/.claude`, `~/.codex`, `~/.pi`, `~/.hermes`) exists. `--harness h` (repeatable)
+- A harness counts as installed if its binary (`claude`, `codex`, `pi`, `hermes`, `agy`) is on PATH
+  or its config dir (`~/.claude`, `~/.codex`, `~/.pi`, `~/.hermes`, `~/.gemini/antigravity-cli`)
+  exists. `~/.gemini` alone doesn't count for Antigravity, since Gemini CLI uses it too. `--harness h` (repeatable)
   installs for h anyway. `--dry-run` writes nothing.
 - The folder is built in a temp dir beside the target and swapped in with renames. A symlink or
   file at the target is left alone. The folder holds `.yonder-version`: `<version> <skill hash>`.
@@ -1129,7 +1131,7 @@ The agents layer syncs `~/.local/share/yonder/agents`:
 briefing.md                   the hand-written part of the briefing (see The briefing)
 render.toml                   each harness's name for each model tier (see Model names per harness), and [shared] opt-ins
 instructions.md               shared, harness-neutral
-instructions.<key>.md         an optional overlay for one harness: claude, codex, pi or hermes
+instructions.<key>.md         an optional overlay for one harness: claude, codex, pi, hermes or antigravity
 skills/<name>/...             one folder per skill
 claude/agents/*.md            Claude Code subagents
 claude/commands/*.md          Claude Code commands
@@ -1153,8 +1155,9 @@ anything. A file name that looks like a secret never syncs, on the sending or th
 `.git-credentials`, `.netrc`, `_netrc`, `*.age`, `*token*`, `*secret*`. `skills/yonder/` (each
 machine installs its own) and `skills/synced/` (Claude.ai's own folder) never sync. Under
 `files/<key>/`, a harness's own settings, auth and instruction files never sync and are never
-linked: `settings*.json`, `config.toml`, `config.yaml`, `config.yml`, `.claude.json`, `auth.json`,
-credentials, `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `SOUL.md` (instructions go in
+linked: `settings*.json`, `config.toml`, `config.yaml`, `config.yml`, `config.json` (Antigravity's
+settings), `.claude.json`, `auth.json`, credentials, `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`,
+`SOUL.md`, `GEMINI.md` (instructions go in
 `instructions.md`). An instructions file holding yonder's own marker (`<!-- yonder:`) never
 syncs and is never rendered, since it would break the block it lands in. Content that looks like a key is refused with its line number:
 private key blocks, `sk-...` API keys, GitHub, Slack and AWS key formats, and long runs that mix
@@ -1246,7 +1249,7 @@ a hostile one, and yonder doesn't pretend otherwise. What the design does guaran
   arrived after the summary keeps waiting. One peer's reply can't name another machine's changes.
 - The hidden commands aren't a way around the terminal. `_accept-list` and `_accept-apply` refuse
   a local call (no `SSH_CONNECTION`), and refuse a caller whose `_exec` envelope names an agent
-  harness (`claude-code`, `codex`, `pi`, `hermes`): `_exec` passes the envelope's harness and
+  harness (`claude-code`, `codex`, `pi`, `hermes`, `antigravity`): `_exec` passes the envelope's harness and
   caller to the command as `YONDER_EXEC_HARNESS` and `YONDER_EXEC_FROM`, set from the envelope
   and never inherited. `shell` and unknown names pass, so a person running `--all-machines` over
   ssh still works. The harness check is advisory, since an agent can hide its markers; the real
@@ -1256,13 +1259,16 @@ a hostile one, and yonder doesn't pretend otherwise. What the design does guaran
 ### Wiring the harnesses
 
 `yonder agents link [--harness h]... [--dry-run] [--replace-links]` wires the store into each
-harness found here (the same detection as the skill install), or the ones named:
+harness found here (the same detection as the skill install), or the ones named. The harnesses
+already linked here stay linked: naming one adds it, and a harness no longer detected isn't
+dropped. Only `agents unlink` drops harnesses; link the ones wanted after it.
 
 | Harness | Instructions | Skills | Other |
 |---|---|---|---|
 | Claude Code | A marked block in `~/.claude/CLAUDE.md` holding the briefing, then the text of `instructions.md`, `instructions.claude.md` and the machine's two, where they exist, joined with blank lines. The user's own text stays. | One link per skill in `~/.claude/skills/<name>`. | One link per file in `~/.claude/agents/`, `~/.claude/commands/` and `~/.claude/hooks/`; `files/claude/*` into `~/.claude/`. |
 | Codex | `~/.codex/AGENTS.md` (or the saved `$CODEX_HOME` folder, below) rendered from the same files with the codex overlay, when missing or yonder's; else the rendered text in a marked block. | One link per skill in `~/.agents/skills/<name>`. | `files/codex/*` linked into `~/.codex/` (or that folder). |
 | Pi | Same as Codex, into `~/.pi/agent/AGENTS.md`. | `~/.agents/skills` (shared with Codex). | `files/pi/*` into `~/.pi/agent/`. |
+| Antigravity | Same as Codex, into `~/.gemini/AGENTS.md`, with the `antigravity` overlay. `agy` reads it in every session, besides each repo's `AGENTS.md`. It truncates a rules file past 24 KB. | One link per skill in `~/.gemini/config/skills/<name>`, its global customization folder; it doesn't read `~/.agents/skills`. | `files/antigravity/*` into `~/.gemini/config/`. Its own state, `~/.gemini/antigravity-cli/`, is never touched. |
 | Hermes | A marked block in `~/.hermes/SOUL.md`, only when that file exists, holding the briefing and `instructions.hermes.md` (and the machine's), not the shared `instructions.md`. Hermes is a messaging gateway with its own persona, so coding-agent rules stay out of it unless `[shared] hermes = true` in `agents/render.toml` (then the shared text and the machine's come after the briefing, as for the others). Hermes loads SOUL.md from its home in every session, whatever the working folder; its AGENTS.md, CLAUDE.md and `.hermes.md` come from the working folder only, so none of those is global. It seeds a default SOUL.md when there is none, so yonder never creates it; link says to run Hermes once first. Its fleet lines outside the block are the user's to drop; doctor flags any that repeat the briefing. | Not wired: link prints that the store's skills folder can be added to `skills.external_dirs` in its config. | `files/hermes/*` into `~/.hermes/`. |
 
 Codex's folder is decided at an explicit `agents link`: `$CODEX_HOME` when that is set, else
@@ -1442,7 +1448,7 @@ fast = "Quill"
 Only that exact syntax is replaced (`{{model:` then a tier of a-z, 0-9 and `-`, then `}}`); `{{
 model:top }}`, `{{model:Top}}` and the word "top" stay as they are. It works in
 `instructions*.md`, machine overlays included, and in `briefing.md`. The tables are `[claude]`,
-`[codex]`, `[pi]` and `[hermes]` (the overlay keys); each value is one short line, at most 100
+`[codex]`, `[pi]`, `[hermes]` and `[antigravity]` (the overlay keys); each value is one short line, at most 100
 bytes, with no control, escape, format or line-separator characters, no `{{` and no marker. A
 broken table matters only to text that uses a placeholder. One more table,
 `[shared]`, holds opt-ins: `hermes = true` gives Hermes the shared instructions too (see Wiring
@@ -1482,7 +1488,8 @@ Before the agents layer, each machine has its own `~/.claude/CLAUDE.md` and `AGE
 they drift apart. Yonder never merges prose or picks one: an agent does it with the user.
 
 `yonder agents gather [--json]` reads each online machine's own instructions files
-(`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`; Hermes's `SOUL.md` is its
+(`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`, `~/.gemini/AGENTS.md`;
+Hermes's `SOUL.md` is its
 persona and is left out). This machine's are read directly; every other machine's through one
 read-only `_exec` that prints each file that exists (files over 256 KB are skipped). Yonder's
 block is taken out and a rendered file counts as empty, so only the user's own text is
